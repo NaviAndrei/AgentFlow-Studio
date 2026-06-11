@@ -3,5 +3,9 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  base: '/AgentFlow-Studio/',  
+  plugins: [
+    react(),
+    tailwindcss(),
+  ],
 })
