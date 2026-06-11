@@ -1,0 +1,169 @@
+@import 'tailwindcss';
+@import '@xyflow/react/dist/style.css';
+
+@theme {
+  --color-canvas: #0d0e10;
+  --color-surface: #13151a;
+  --color-surface-2: #1a1d24;
+  --color-accent: #00c4cc;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  background-color: var(--color-canvas);
+}
+
+/* React Flow dark overrides */
+.react-flow {
+  background-color: var(--color-canvas);
+}
+
+.react-flow__handle {
+  width: 10px;
+  height: 10px;
+  background-color: var(--color-accent);
+  border: 2px solid var(--color-canvas);
+}
+
+.react-flow__edge-path {
+  stroke-width: 1.5;
+}
+
+.react-flow__edge.selected .react-flow__edge-path {
+  stroke: var(--color-accent);
+}
+
+.react-flow__edge-text {
+  fill: #9ca3af;
+  font-size: 10px;
+  font-family: var(--font-mono);
+}
+
+.react-flow__edge-textbg {
+  fill: var(--color-surface-2);
+}
+
+.react-flow__controls {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.react-flow__controls-button {
+  background-color: var(--color-surface);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.react-flow__controls-button:hover {
+  background-color: var(--color-surface-2);
+}
+
+.react-flow__controls-button svg {
+  fill: #9ca3af;
+}
+
+.react-flow__minimap {
+  background-color: var(--color-surface);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.react-flow__minimap-mask {
+  fill: rgba(13, 14, 16, 0.7);
+}
+
+.react-flow__attribution {
+  background: transparent;
+  color: #4b5563;
+}
+
+/* Flow simulation: active node glow */
+@keyframes sim-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(0, 196, 204, 0.55);
+  }
+  50% {
+    box-shadow: 0 0 0 7px rgba(0, 196, 204, 0);
+  }
+}
+
+.sim-active {
+  border-color: var(--color-accent) !important;
+  animation: sim-pulse 1.2s ease-in-out infinite;
+}
+
+/* Breathing radial gradient overlay on the active node */
+.sim-breathe {
+  background: radial-gradient(
+    circle at 50% 50%,
+    rgba(0, 196, 204, 0.45),
+    transparent 70%
+  );
+  animation: sim-breathe 1.5s ease-in-out infinite;
+}
+
+@keyframes sim-breathe {
+  0%,
+  100% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+/* Error simulation: red pulse (reserved for future error injection) */
+.sim-error {
+  border-color: #dc2626 !important;
+  animation: sim-error-pulse 1s ease-in-out infinite;
+}
+
+@keyframes sim-error-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.55);
+  }
+  50% {
+    box-shadow: 0 0 0 7px rgba(220, 38, 38, 0);
+  }
+}
+
+.sim-caret {
+  animation: sim-caret-blink 0.8s step-end infinite;
+}
+
+@keyframes sim-caret-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sim-active {
+    animation: none;
+    box-shadow: 0 0 0 3px rgba(0, 196, 204, 0.35);
+  }
+
+  .sim-breathe {
+    animation: none;
+    opacity: 0.35;
+  }
+
+  .sim-error {
+    animation: none;
+    box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.4);
+  }
+
+  .sim-caret {
+    animation: none;
+  }
+
+  .react-flow__edge.animated path {
+    animation: none;
+  }
+}

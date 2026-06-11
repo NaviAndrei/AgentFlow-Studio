@@ -1,0 +1,62 @@
+{
+  "id": "rag-pipeline",
+  "name": "RAG Pipeline",
+  "description": "Retrieval-augmented generation: fetch relevant chunks from a vector store, then generate a grounded answer.",
+  "nodes": [
+    {
+      "id": "note-1",
+      "type": "note",
+      "position": { "x": 300, "y": 20 },
+      "data": {
+        "label": "How it works",
+        "text": "RAG: retrieve the most relevant document chunks, stuff them into the prompt, and let the LLM generate a grounded answer."
+      }
+    },
+    {
+      "id": "start-1",
+      "type": "start",
+      "position": { "x": 40, "y": 220 },
+      "data": { "label": "Start", "inputVariables": ["question"] }
+    },
+    {
+      "id": "tool-1",
+      "type": "retriever",
+      "position": { "x": 300, "y": 220 },
+      "data": {
+        "label": "Retriever",
+        "knowledgeBase": "docs",
+        "topK": 4,
+        "similarityThreshold": 0.75
+      }
+    },
+    {
+      "id": "llm-1",
+      "type": "llm",
+      "position": { "x": 560, "y": 220 },
+      "data": {
+        "label": "Generator",
+        "model": "ollama/llama3",
+        "systemPrompt": "Answer the question using ONLY the retrieved context. If the context is insufficient, say so.",
+        "temperature": 0.3
+      }
+    },
+    {
+      "id": "output-1",
+      "type": "output",
+      "position": { "x": 820, "y": 220 },
+      "data": { "label": "Answer" }
+    },
+    {
+      "id": "memory-1",
+      "type": "memory",
+      "position": { "x": 300, "y": 420 },
+      "data": { "label": "Vector Store", "memoryType": "vector-store" }
+    }
+  ],
+  "edges": [
+    { "id": "e1", "source": "start-1", "target": "tool-1" },
+    { "id": "e2", "source": "tool-1", "target": "llm-1" },
+    { "id": "e3", "source": "llm-1", "target": "output-1" },
+    { "id": "e4", "source": "memory-1", "target": "tool-1", "label": "index" }
+  ]
+}

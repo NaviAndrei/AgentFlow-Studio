@@ -1,0 +1,72 @@
+{
+  "id": "parallel-fanout",
+  "name": "Parallel Fan-out",
+  "description": "A supervisor fans the task out to three specialist agents in parallel; an aggregator merges their results into one answer.",
+  "category": "Multi-Agent",
+  "nodes": [
+    {
+      "id": "note-1",
+      "type": "note",
+      "position": { "x": 300, "y": 20 },
+      "data": {
+        "label": "How it works",
+        "text": "Unlike routing (pick one worker), fan-out sends the task to ALL workers at once. The Aggregator waits for every branch and synthesizes a single result."
+      }
+    },
+    {
+      "id": "start-1",
+      "type": "start",
+      "position": { "x": 40, "y": 280 },
+      "data": { "label": "Start", "inputVariables": ["task"] }
+    },
+    {
+      "id": "supervisor-1",
+      "type": "supervisor",
+      "position": { "x": 300, "y": 280 },
+      "data": {
+        "label": "Dispatcher",
+        "description": "Fans the task out to all specialists in parallel."
+      }
+    },
+    {
+      "id": "agent-1",
+      "type": "agent",
+      "position": { "x": 580, "y": 120 },
+      "data": { "label": "Research Agent", "tools": ["web_search"], "maxIterations": 5 }
+    },
+    {
+      "id": "agent-2",
+      "type": "agent",
+      "position": { "x": 580, "y": 280 },
+      "data": { "label": "Analysis Agent", "tools": ["python_repl"], "maxIterations": 5 }
+    },
+    {
+      "id": "agent-3",
+      "type": "agent",
+      "position": { "x": 580, "y": 440 },
+      "data": { "label": "Writing Agent", "tools": [], "maxIterations": 5 }
+    },
+    {
+      "id": "agent-4",
+      "type": "agent",
+      "position": { "x": 860, "y": 280 },
+      "data": { "label": "Aggregator", "tools": [], "maxIterations": 3 }
+    },
+    {
+      "id": "output-1",
+      "type": "output",
+      "position": { "x": 1120, "y": 280 },
+      "data": { "label": "Merged Result" }
+    }
+  ],
+  "edges": [
+    { "id": "e1", "source": "start-1", "target": "supervisor-1" },
+    { "id": "e2", "source": "supervisor-1", "target": "agent-1" },
+    { "id": "e3", "source": "supervisor-1", "target": "agent-2" },
+    { "id": "e4", "source": "supervisor-1", "target": "agent-3" },
+    { "id": "e5", "source": "agent-1", "target": "agent-4" },
+    { "id": "e6", "source": "agent-2", "target": "agent-4" },
+    { "id": "e7", "source": "agent-3", "target": "agent-4" },
+    { "id": "e8", "source": "agent-4", "target": "output-1" }
+  ]
+}

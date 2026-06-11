@@ -1,0 +1,54 @@
+{
+  "id": "swarm",
+  "name": "Swarm",
+  "description": "Peer agents with no central coordinator — each worker can hand the task off to the peer best equipped to continue.",
+  "nodes": [
+    {
+      "id": "note-1",
+      "type": "note",
+      "position": { "x": 280, "y": 20 },
+      "data": {
+        "label": "How it works",
+        "text": "No supervisor: each swarm worker decides for itself when to hand the conversation off to a peer. Whoever finishes produces the output."
+      }
+    },
+    {
+      "id": "start-1",
+      "type": "start",
+      "position": { "x": 40, "y": 260 },
+      "data": { "label": "Start", "inputVariables": ["task"] }
+    },
+    {
+      "id": "swarm-1",
+      "type": "swarmWorker",
+      "position": { "x": 300, "y": 160 },
+      "data": { "label": "Triage Worker", "description": "First contact; hands off to a specialist." }
+    },
+    {
+      "id": "swarm-2",
+      "type": "swarmWorker",
+      "position": { "x": 560, "y": 360 },
+      "data": { "label": "Research Worker", "description": "Digs into the details; can hand back or forward." }
+    },
+    {
+      "id": "swarm-3",
+      "type": "swarmWorker",
+      "position": { "x": 820, "y": 160 },
+      "data": { "label": "Solver Worker", "description": "Produces the final solution." }
+    },
+    {
+      "id": "output-1",
+      "type": "output",
+      "position": { "x": 1080, "y": 260 },
+      "data": { "label": "Result" }
+    }
+  ],
+  "edges": [
+    { "id": "e1", "source": "start-1", "target": "swarm-1" },
+    { "id": "e2", "source": "swarm-1", "target": "swarm-2", "label": "handoff" },
+    { "id": "e3", "source": "swarm-2", "target": "swarm-1", "label": "handoff" },
+    { "id": "e4", "source": "swarm-2", "target": "swarm-3", "label": "handoff" },
+    { "id": "e5", "source": "swarm-3", "target": "swarm-2", "label": "handoff" },
+    { "id": "e6", "source": "swarm-3", "target": "output-1", "label": "done" }
+  ]
+}

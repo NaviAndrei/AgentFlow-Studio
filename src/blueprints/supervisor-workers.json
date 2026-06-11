@@ -1,0 +1,64 @@
+{
+  "id": "supervisor-workers",
+  "name": "Supervisor + Workers",
+  "description": "A supervisor agent routes each task to the most suitable specialist worker, then collects the result.",
+  "nodes": [
+    {
+      "id": "note-1",
+      "type": "note",
+      "position": { "x": 280, "y": 20 },
+      "data": {
+        "label": "How it works",
+        "text": "The supervisor inspects each incoming task and routes it to the best worker. Workers report back and the result flows to the output."
+      }
+    },
+    {
+      "id": "start-1",
+      "type": "start",
+      "position": { "x": 40, "y": 280 },
+      "data": { "label": "Start", "inputVariables": ["task"] }
+    },
+    {
+      "id": "supervisor-1",
+      "type": "supervisor",
+      "position": { "x": 300, "y": 280 },
+      "data": {
+        "label": "Supervisor",
+        "description": "Routes each task to the most suitable worker."
+      }
+    },
+    {
+      "id": "agent-1",
+      "type": "agent",
+      "position": { "x": 580, "y": 120 },
+      "data": { "label": "Research Worker", "tools": ["web_search"], "maxIterations": 5 }
+    },
+    {
+      "id": "agent-2",
+      "type": "agent",
+      "position": { "x": 580, "y": 280 },
+      "data": { "label": "Coding Worker", "tools": ["python_repl"], "maxIterations": 5 }
+    },
+    {
+      "id": "agent-3",
+      "type": "agent",
+      "position": { "x": 580, "y": 440 },
+      "data": { "label": "Writing Worker", "tools": [], "maxIterations": 5 }
+    },
+    {
+      "id": "output-1",
+      "type": "output",
+      "position": { "x": 860, "y": 280 },
+      "data": { "label": "Result" }
+    }
+  ],
+  "edges": [
+    { "id": "e1", "source": "start-1", "target": "supervisor-1" },
+    { "id": "e2", "source": "supervisor-1", "target": "agent-1", "label": "research" },
+    { "id": "e3", "source": "supervisor-1", "target": "agent-2", "label": "code" },
+    { "id": "e4", "source": "supervisor-1", "target": "agent-3", "label": "write" },
+    { "id": "e5", "source": "agent-1", "target": "output-1" },
+    { "id": "e6", "source": "agent-2", "target": "output-1" },
+    { "id": "e7", "source": "agent-3", "target": "output-1" }
+  ]
+}
