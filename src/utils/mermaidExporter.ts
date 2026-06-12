@@ -1,6 +1,5 @@
-import type { Edge } from '@xyflow/react'
 import { NODE_META } from '../nodes/registry'
-import type { AgentFlowNode, AgentFlowNodeType, EdgeKind } from '../types'
+import type { AgentFlowEdge, AgentFlowNode, AgentFlowNodeType } from '../types'
 
 /** Annotation-only node types left out of the diagram. */
 const EXCLUDED_TYPES: AgentFlowNodeType[] = ['note', 'group']
@@ -32,7 +31,7 @@ function nodeShape(type: AgentFlowNodeType, label: string): string {
  * Render the canvas as a Mermaid flowchart: stadium Start/Output, diamond
  * conditions, dashed conditional edges, and category colors via classDefs.
  */
-export function exportMermaid(nodes: AgentFlowNode[], edges: Edge[]): string {
+export function exportMermaid(nodes: AgentFlowNode[], edges: AgentFlowEdge[]): string {
   const diagramNodes = nodes.filter(
     (n) => n.type !== undefined && !EXCLUDED_TYPES.includes(n.type),
   )
@@ -54,7 +53,7 @@ export function exportMermaid(nodes: AgentFlowNode[], edges: Edge[]): string {
   lines.push('')
   for (const edge of edges) {
     if (!ids.has(edge.source) || !ids.has(edge.target)) continue
-    const kind = (edge.data?.edgeType as EdgeKind | undefined) ?? 'direct'
+    const kind = edge.data?.edgeType ?? 'direct'
     const label =
       typeof edge.label === 'string' && edge.label !== ''
         ? mermaidLabel(edge.label)

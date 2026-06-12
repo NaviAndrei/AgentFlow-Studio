@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Check, Code2, Copy } from 'lucide-react'
-import { useBlueprintStore } from '../store/blueprintStore'
+import { useUIStore } from '../store/uiStore'
 import { useCanvasStore } from '../store/canvasStore'
 import { exportPython, exportRequirements } from '../utils/codeExporter'
 import { exportMermaid } from '../utils/mermaidExporter'
@@ -9,8 +9,8 @@ import { Modal } from './Modal'
 type ExportTab = 'main.py' | 'requirements.txt' | 'diagram.mmd'
 
 export function ExportModal() {
-  const exportOpen = useBlueprintStore((s) => s.exportOpen)
-  const setExportOpen = useBlueprintStore((s) => s.setExportOpen)
+  const exportOpen = useUIStore((s) => s.exportOpen)
+  const setExportOpen = useUIStore((s) => s.setExportOpen)
   const nodes = useCanvasStore((s) => s.nodes)
   const edges = useCanvasStore((s) => s.edges)
   const [copied, setCopied] = useState(false)

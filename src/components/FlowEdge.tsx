@@ -8,7 +8,7 @@ import {
   useSimulationStore,
 } from '../store/simulationStore'
 import { edgeDurationSec } from '../utils/fakeData'
-import type { EdgeKind } from '../types'
+import type { AgentFlowEdge, EdgeKind } from '../types'
 
 const KIND_STYLES: Record<EdgeKind, React.CSSProperties> = {
   direct: { stroke: '#3a4150', strokeWidth: 1.5 },
@@ -106,7 +106,7 @@ export function FlowEdge({
   selected,
   markerStart,
   markerEnd,
-}: EdgeProps) {
+}: EdgeProps<AgentFlowEdge>) {
   const [hovered, setHovered] = useState(false)
   const [editing, setEditing] = useState(false)
   const updateEdgeLabel = useCanvasStore((s) => s.updateEdgeLabel)
@@ -134,7 +134,7 @@ export function FlowEdge({
     targetY,
     targetPosition,
   })
-  const kind = (data?.edgeType as EdgeKind | undefined) ?? 'direct'
+  const kind = data?.edgeType ?? 'direct'
   const labelText = typeof label === 'string' ? label : ''
 
   // Fan-out stagger position and merge detection are derived from static

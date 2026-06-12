@@ -1,4 +1,4 @@
-import type { Node } from '@xyflow/react'
+import type { Edge, Node } from '@xyflow/react'
 
 export type NodeCategory = 'core' | 'flow' | 'multiagent' | 'annotation'
 
@@ -79,6 +79,8 @@ export type AgentFlowNodeData = {
 export type AgentFlowNode = Node<AgentFlowNodeData, AgentFlowNodeType>
 
 export type EdgeKind = 'direct' | 'conditional' | 'bidirectional'
+
+export type AgentFlowEdge = Edge<{ edgeType?: EdgeKind }>
 
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant'

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { PanelRightClose, PanelRightOpen, RotateCcw } from 'lucide-react'
 import { NODE_META } from '../nodes'
 import { ICON_OPTIONS } from '../nodes/iconOptions'
-import { useBlueprintStore } from '../store/blueprintStore'
+import { useUIStore } from '../store/uiStore'
 import { useCanvasStore } from '../store/canvasStore'
 import { useSimulationStore } from '../store/simulationStore'
 import { discoverMcpTools, isInsecureRemoteUrl } from '../utils/llmClient'
@@ -504,10 +504,10 @@ function ConfigPanel() {
 
 export function Inspector() {
   const simActive = useSimulationStore((s) => s.isActive)
-  const inspectorOpen = useBlueprintStore((s) => s.inspectorOpen)
-  const toggleInspector = useBlueprintStore((s) => s.toggleInspector)
-  const inspectorWidth = useBlueprintStore((s) => s.inspectorWidth)
-  const setInspectorWidth = useBlueprintStore((s) => s.setInspectorWidth)
+  const inspectorOpen = useUIStore((s) => s.inspectorOpen)
+  const toggleInspector = useUIStore((s) => s.toggleInspector)
+  const inspectorWidth = useUIStore((s) => s.inspectorWidth)
+  const setInspectorWidth = useUIStore((s) => s.setInspectorWidth)
   const [tab, setTab] = useState<'config' | 'state'>('config')
 
   // Auto-switch to the state view when a simulation starts, back when it ends.
@@ -520,7 +520,7 @@ export function Inspector() {
     (event: React.PointerEvent<HTMLDivElement>) => {
       event.preventDefault()
       const startX = event.clientX
-      const startWidth = useBlueprintStore.getState().inspectorWidth
+      const startWidth = useUIStore.getState().inspectorWidth
       const onMove = (e: PointerEvent) =>
         setInspectorWidth(startWidth + (startX - e.clientX))
       const onUp = () => {
@@ -550,7 +550,12 @@ export function Inspector() {
 
   return (
     <aside
-      style={{ width: inspectorWidth }}
+      style={{
+        width: inspectorWidth,
+        // Make room for the fixed playback bar so scrolled content (e.g. the
+        // last node's output in the State Inspector) isn't clipped beneath it.
+        paddingBottom: simActive ? 'calc(3rem + 1rem)' : undefined,
+      }}
       className="relative shrink-0 overflow-y-auto border-l border-white/10 bg-surface p-4"
     >
       <div

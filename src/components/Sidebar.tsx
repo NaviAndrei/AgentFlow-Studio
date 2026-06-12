@@ -1,7 +1,7 @@
 import type { DragEvent } from 'react'
 import { PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import { NODE_META, PALETTE } from '../nodes'
-import { useBlueprintStore } from '../store/blueprintStore'
+import { useUIStore } from '../store/uiStore'
 import type { AgentFlowNodeType } from '../types'
 
 function PaletteItem({ type }: { type: AgentFlowNodeType }) {
@@ -34,8 +34,8 @@ function PaletteItem({ type }: { type: AgentFlowNodeType }) {
 }
 
 export function Sidebar() {
-  const sidebarOpen = useBlueprintStore((s) => s.sidebarOpen)
-  const toggleSidebar = useBlueprintStore((s) => s.toggleSidebar)
+  const sidebarOpen = useUIStore((s) => s.sidebarOpen)
+  const toggleSidebar = useUIStore((s) => s.toggleSidebar)
 
   if (!sidebarOpen) {
     return (

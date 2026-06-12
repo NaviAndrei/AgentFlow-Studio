@@ -1,5 +1,5 @@
 import { Keyboard } from 'lucide-react'
-import { useBlueprintStore } from '../store/blueprintStore'
+import { useUIStore } from '../store/uiStore'
 import { Modal } from './Modal'
 
 const SHORTCUTS: { keys: string; description: string }[] = [
@@ -17,8 +17,8 @@ const SHORTCUTS: { keys: string; description: string }[] = [
 ]
 
 export function ShortcutsModal() {
-  const shortcutsOpen = useBlueprintStore((s) => s.shortcutsOpen)
-  const setShortcutsOpen = useBlueprintStore((s) => s.setShortcutsOpen)
+  const shortcutsOpen = useUIStore((s) => s.shortcutsOpen)
+  const setShortcutsOpen = useUIStore((s) => s.setShortcutsOpen)
 
   return (
     <Modal

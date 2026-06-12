@@ -1,13 +1,12 @@
 import { create } from 'zustand'
-import type { Edge } from '@xyflow/react'
-import type { AgentFlowNode, Blueprint } from '../types'
+import type { AgentFlowEdge, AgentFlowNode, Blueprint } from '../types'
 import { useCanvasStore } from './canvasStore'
 
 /** Inspector resize bounds (px). */
 export const INSPECTOR_MIN_WIDTH = 240
 export const INSPECTOR_MAX_WIDTH = 480
 
-interface BlueprintState {
+interface UIState {
   galleryOpen: boolean
   exportOpen: boolean
   quickAddOpen: boolean
@@ -31,7 +30,7 @@ interface BlueprintState {
 const widePanelDefault =
   typeof window === 'undefined' || window.innerWidth >= 1024
 
-export const useBlueprintStore = create<BlueprintState>((set, get) => ({
+export const useUIStore = create<UIState>((set, get) => ({
   galleryOpen: false,
   exportOpen: false,
   quickAddOpen: false,
@@ -68,7 +67,7 @@ export const useBlueprintStore = create<BlueprintState>((set, get) => ({
       position: n.position,
       data: n.data,
     }))
-    const edges: Edge[] = blueprint.edges.map((e) => ({
+    const edges: AgentFlowEdge[] = blueprint.edges.map((e) => ({
       ...e,
       type: 'agentflow',
       animated: true,

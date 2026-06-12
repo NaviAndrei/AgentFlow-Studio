@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { useBlueprintStore } from '../store/blueprintStore'
+import { useUIStore } from '../store/uiStore'
 import { useCanvasStore } from '../store/canvasStore'
 import { useSimulationStore } from '../store/simulationStore'
 
@@ -18,7 +18,7 @@ export function useKeyboardShortcuts() {
     const onKeyDown = (event: KeyboardEvent) => {
       if (isEditableTarget(event.target)) return
       const canvas = useCanvasStore.getState()
-      const ui = useBlueprintStore.getState()
+      const ui = useUIStore.getState()
 
       if (event.key === 'Escape') {
         if (

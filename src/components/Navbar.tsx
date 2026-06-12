@@ -13,7 +13,7 @@ import {
   Zap,
 } from 'lucide-react'
 import { useCanvasStore } from '../store/canvasStore'
-import { useBlueprintStore } from '../store/blueprintStore'
+import { useUIStore } from '../store/uiStore'
 import { useLLMConfigStore } from '../store/llmConfigStore'
 import { useSimulationStore } from '../store/simulationStore'
 import {
@@ -26,13 +26,14 @@ import { ConfirmDialog } from './Modal'
 
 export function Navbar() {
   const clearCanvas = useCanvasStore((s) => s.clearCanvas)
+  const markClean = useCanvasStore((s) => s.markClean)
   const hasNodes = useCanvasStore((s) => s.nodes.length > 0)
   const hasErrors = useCanvasStore((s) =>
     s.validationIssues.some((i) => i.level === 'error'),
   )
-  const setGalleryOpen = useBlueprintStore((s) => s.setGalleryOpen)
-  const setExportOpen = useBlueprintStore((s) => s.setExportOpen)
-  const setShortcutsOpen = useBlueprintStore((s) => s.setShortcutsOpen)
+  const setGalleryOpen = useUIStore((s) => s.setGalleryOpen)
+  const setExportOpen = useUIStore((s) => s.setExportOpen)
+  const setShortcutsOpen = useUIStore((s) => s.setShortcutsOpen)
   const simulationActive = useSimulationStore((s) => s.isActive)
   const startSimulation = useSimulationStore((s) => s.start)
   const stopSimulation = useSimulationStore((s) => s.stop)
@@ -86,6 +87,8 @@ export function Navbar() {
   const handleSave = () => {
     const { nodes, edges } = useCanvasStore.getState()
     downloadCanvas(nodes, edges)
+    // Mark the canvas clean once the download has been triggered.
+    markClean()
   }
 
   const handleOpenFile = (file: File) => {

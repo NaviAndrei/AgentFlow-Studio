@@ -16,9 +16,11 @@ export interface LLMConfig {
   geminiModel: GeminiModel
 }
 
+// "flash"/"pro" are capability tiers; map to the current concrete Gemini
+// model ids (2.5 GA line).
 const GEMINI_MODEL_IDS: Record<GeminiModel, string> = {
-  'gemini-flash': 'gemini-1.5-flash',
-  'gemini-pro': 'gemini-1.5-pro',
+  'gemini-flash': 'gemini-2.5-flash',
+  'gemini-pro': 'gemini-2.5-pro',
 }
 
 function hostOf(url: string): string {

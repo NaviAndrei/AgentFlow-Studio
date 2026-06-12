@@ -1,15 +1,15 @@
 import { useReactFlow } from '@xyflow/react'
 import { LayoutTemplate } from 'lucide-react'
 import { BLUEPRINTS } from '../blueprints'
-import { useBlueprintStore } from '../store/blueprintStore'
+import { useUIStore } from '../store/uiStore'
 import type { Blueprint } from '../types'
 import { BlueprintThumbnail } from './BlueprintThumbnail'
 import { Modal } from './Modal'
 
 export function BlueprintGallery() {
-  const galleryOpen = useBlueprintStore((s) => s.galleryOpen)
-  const setGalleryOpen = useBlueprintStore((s) => s.setGalleryOpen)
-  const loadBlueprint = useBlueprintStore((s) => s.loadBlueprint)
+  const galleryOpen = useUIStore((s) => s.galleryOpen)
+  const setGalleryOpen = useUIStore((s) => s.setGalleryOpen)
+  const loadBlueprint = useUIStore((s) => s.loadBlueprint)
   const { fitView } = useReactFlow()
 
   if (!galleryOpen) return null

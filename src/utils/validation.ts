@@ -1,12 +1,11 @@
-import type { Edge } from '@xyflow/react'
-import type { AgentFlowNode, ValidationIssue } from '../types'
+import type { AgentFlowEdge, AgentFlowNode, ValidationIssue } from '../types'
 
 /** Node types that participate in execution flow (notes are annotations). */
 const NON_FLOW_TYPES = ['note', 'group']
 
 export function validateGraph(
   nodes: AgentFlowNode[],
-  edges: Edge[],
+  edges: AgentFlowEdge[],
 ): ValidationIssue[] {
   if (nodes.length === 0) return []
 

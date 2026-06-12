@@ -7,12 +7,12 @@ import {
   ReactFlow,
   useReactFlow,
 } from '@xyflow/react'
-import type { Edge, EdgeTypes, IsValidConnection } from '@xyflow/react'
+import type { EdgeTypes, IsValidConnection } from '@xyflow/react'
 import type { DragEvent, MouseEvent as ReactMouseEvent } from 'react'
 import { ArrowLeftRight, ArrowRight, GitBranch, Trash2 } from 'lucide-react'
 import { nodeTypes, getNodeMeta, NODE_META } from '../nodes'
 import { useCanvasStore } from '../store/canvasStore'
-import type { AgentFlowNode, AgentFlowNodeType, EdgeKind } from '../types'
+import type { AgentFlowEdge, AgentFlowNode, AgentFlowNodeType, EdgeKind } from '../types'
 import { deserializeCanvas, readCanvasFile } from '../utils/canvasSerializer'
 import { FlowEdge, ParticleDefs } from './FlowEdge'
 import { SelectionToolbar } from './SelectionToolbar'
@@ -84,7 +84,7 @@ export function Canvas() {
 
   // Reject self-loops and exact-duplicate edges; cycles stay allowed (loop
   // blueprints like ReAct depend on back-edges).
-  const isValidConnection = useCallback<IsValidConnection<Edge>>(
+  const isValidConnection = useCallback<IsValidConnection<AgentFlowEdge>>(
     (connection) => {
       if (!connection.source || !connection.target) return false
       if (connection.source === connection.target) return false
@@ -101,13 +101,13 @@ export function Canvas() {
   )
 
   const onEdgeContextMenu = useCallback(
-    (event: ReactMouseEvent, edge: Edge) => {
+    (event: ReactMouseEvent, edge: AgentFlowEdge) => {
       event.preventDefault()
       setEdgeMenu({
         edgeId: edge.id,
         x: event.clientX,
         y: event.clientY,
-        currentKind: (edge.data?.edgeType as EdgeKind | undefined) ?? 'direct',
+        currentKind: edge.data?.edgeType ?? 'direct',
       })
     },
     [],

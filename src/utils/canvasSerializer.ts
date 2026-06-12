@@ -3,20 +3,19 @@
  * and back. Group frames (parentId, explicit size, hidden children) and
  * edge kinds round-trip exactly.
  */
-import type { Edge } from '@xyflow/react'
 import type {
+  AgentFlowEdge,
   AgentFlowNode,
   CanvasDocument,
   CanvasDocumentEdge,
   CanvasDocumentNode,
-  EdgeKind,
 } from '../types'
 import { CANVAS_SCHEMA_VERSION, parseCanvasDocument } from './blueprintSchema'
 import { markersForKind } from './edgeKinds'
 
 export function serializeCanvas(
   nodes: AgentFlowNode[],
-  edges: Edge[],
+  edges: AgentFlowEdge[],
 ): CanvasDocument {
   const docNodes: CanvasDocumentNode[] = nodes
     .filter((n): n is AgentFlowNode & { type: NonNullable<AgentFlowNode['type']> } =>
@@ -33,7 +32,7 @@ export function serializeCanvas(
       ...(n.hidden === true && { hidden: true }),
     }))
   const docEdges: CanvasDocumentEdge[] = edges.map((e) => {
-    const kind = (e.data?.edgeType as EdgeKind | undefined) ?? 'direct'
+    const kind = e.data?.edgeType ?? 'direct'
     return {
       id: e.id,
       source: e.source,
@@ -52,7 +51,7 @@ export function serializeCanvas(
 
 export function deserializeCanvas(doc: CanvasDocument): {
   nodes: AgentFlowNode[]
-  edges: Edge[]
+  edges: AgentFlowEdge[]
 } {
   const nodes: AgentFlowNode[] = doc.nodes.map((n) => ({
     id: n.id,
@@ -64,7 +63,7 @@ export function deserializeCanvas(doc: CanvasDocument): {
     ...(n.height !== undefined && { height: n.height }),
     ...(n.hidden === true && { hidden: true }),
   }))
-  const edges: Edge[] = doc.edges.map((e) => {
+  const edges: AgentFlowEdge[] = doc.edges.map((e) => {
     const kind = e.edgeKind ?? 'direct'
     return {
       id: e.id,
@@ -82,7 +81,7 @@ export function deserializeCanvas(doc: CanvasDocument): {
 }
 
 /** Trigger a browser download of the current canvas as a .json file. */
-export function downloadCanvas(nodes: AgentFlowNode[], edges: Edge[]): void {
+export function downloadCanvas(nodes: AgentFlowNode[], edges: AgentFlowEdge[]): void {
   const doc = serializeCanvas(nodes, edges)
   const blob = new Blob([JSON.stringify(doc, null, 2)], {
     type: 'application/json',

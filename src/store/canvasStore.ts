@@ -2,12 +2,12 @@ import { create } from 'zustand'
 import { addEdge, applyEdgeChanges, applyNodeChanges } from '@xyflow/react'
 import type {
   Connection,
-  Edge,
   EdgeChange,
   NodeChange,
   XYPosition,
 } from '@xyflow/react'
 import type {
+  AgentFlowEdge,
   AgentFlowNode,
   AgentFlowNodeData,
   AgentFlowNodeType,
@@ -20,18 +20,20 @@ import { validateGraph } from '../utils/validation'
 
 interface Snapshot {
   nodes: AgentFlowNode[]
-  edges: Edge[]
+  edges: AgentFlowEdge[]
 }
 
 interface CanvasState {
   nodes: AgentFlowNode[]
-  edges: Edge[]
+  edges: AgentFlowEdge[]
   selectedNodeId: string | null
   validationIssues: ValidationIssue[]
   /** O(1) node-type lookup for per-edge selectors; rebuilt on membership changes. */
   nodeTypeById: Record<string, AgentFlowNodeType>
   history: Snapshot[]
   future: Snapshot[]
+  /** True whenever the canvas has unsaved mutations; cleared by markClean(). */
+  isDirty: boolean
   onNodesChange: (changes: NodeChange<AgentFlowNode>[]) => void
   onEdgesChange: (changes: EdgeChange[]) => void
   onConnect: (connection: Connection) => void
@@ -41,7 +43,7 @@ interface CanvasState {
   /** Select exactly one node (used by the trace log to highlight entries). */
   selectOnly: (id: string) => void
   clearCanvas: () => void
-  loadGraph: (nodes: AgentFlowNode[], edges: Edge[]) => void
+  loadGraph: (nodes: AgentFlowNode[], edges: AgentFlowEdge[]) => void
   undo: () => void
   redo: () => void
   deleteSelected: () => void
@@ -53,6 +55,8 @@ interface CanvasState {
   removeEdge: (id: string) => void
   groupSelected: () => void
   toggleGroupCollapse: (id: string) => void
+  /** Call after a successful Save to clear the dirty flag. */
+  markClean: () => void
 }
 
 /**
@@ -82,7 +86,7 @@ function releaseOrphans(
 const HISTORY_LIMIT = 50
 
 /** Bundle a graph mutation with a fresh validation pass and type lookup. */
-function validated(nodes: AgentFlowNode[], edges: Edge[]) {
+function validated(nodes: AgentFlowNode[], edges: AgentFlowEdge[]) {
   const nodeTypeById: Record<string, AgentFlowNodeType> = {}
   for (const n of nodes) {
     if (n.type !== undefined) nodeTypeById[n.id] = n.type
@@ -130,6 +134,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
     nodeTypeById: {},
     history: [],
     future: [],
+    isDirty: false,
 
     onNodesChange: (changes) => {
       const dragChange = changes.find(
@@ -155,10 +160,14 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
         const nextNodes = applyNodeChanges(changes, get().nodes)
         // A selection change (click or box-select) re-derives the inspector
         // target from the resulting `selected` flags.
+        // Position/dimension changes are structural mutations → mark dirty.
+        const hasMutation = changes.some(
+          (c) => c.type === 'position' || c.type === 'dimensions',
+        )
         set(
           changes.some((c) => c.type === 'select')
-            ? { nodes: nextNodes, selectedNodeId: soleSelectedId(nextNodes) }
-            : { nodes: nextNodes },
+            ? { nodes: nextNodes, selectedNodeId: soleSelectedId(nextNodes), ...(hasMutation && { isDirty: true }) }
+            : { nodes: nextNodes, ...(hasMutation && { isDirty: true }) },
         )
         return
       }
@@ -180,6 +189,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
       const selected = get().selectedNodeId
       set({
         ...validated(nodes, get().edges),
+        isDirty: true,
         selectedNodeId: changes.some((c) => c.type === 'select')
           ? soleSelectedId(nodes)
           : selected && nodes.some((n) => n.id === selected)
@@ -192,20 +202,21 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
       if (changes.some((c) => c.type === 'remove')) {
         pushHistory()
       }
-      set(validated(get().nodes, applyEdgeChanges(changes, get().edges)))
+      set({ ...validated(get().nodes, applyEdgeChanges(changes, get().edges)), isDirty: true })
     },
 
     onConnect: (connection) => {
       pushHistory()
-      set(
-        validated(
+      set({
+        ...validated(
           get().nodes,
           addEdge(
             { ...connection, type: 'agentflow', animated: true },
             get().edges,
           ),
         ),
-      )
+        isDirty: true,
+      })
     },
 
     addNode: (type, position) => {
@@ -216,7 +227,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
         position,
         data: createDefaultNodeData(type),
       }
-      set(validated([...get().nodes, node], get().edges))
+      set({ ...validated([...get().nodes, node], get().edges), isDirty: true })
     },
 
     updateNodeData: (id, patch) => {
@@ -228,7 +239,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
       const nodes = get().nodes.map((n) =>
         n.id === id ? { ...n, data: { ...n.data, ...patch } } : n,
       )
-      set(validated(nodes, get().edges))
+      set({ ...validated(nodes, get().edges), isDirty: true })
     },
 
     setSelectedNode: (id) => set({ selectedNodeId: id }),
@@ -244,12 +255,14 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
 
     clearCanvas: () => {
       pushHistory()
-      set({ ...validated([], []), selectedNodeId: null })
+      // Clearing the canvas is treated as a deliberate fresh start — not dirty.
+      set({ ...validated([], []), selectedNodeId: null, isDirty: false })
     },
 
     loadGraph: (nodes, edges) => {
       pushHistory()
-      set({ ...validated(nodes, edges), selectedNodeId: null })
+      // Loading a saved graph resets the dirty flag — it's a clean baseline.
+      set({ ...validated(nodes, edges), selectedNodeId: null, isDirty: false })
     },
 
     undo: () => {
@@ -261,6 +274,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
         history: history.slice(0, -1),
         future: [...future, { nodes, edges }],
         selectedNodeId: null,
+        isDirty: true,
       })
     },
 
@@ -273,6 +287,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
         history: [...history.slice(-(HISTORY_LIMIT - 1)), { nodes, edges }],
         future: future.slice(0, -1),
         selectedNodeId: null,
+        isDirty: true,
       })
     },
 
@@ -302,6 +317,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
       const selected = get().selectedNodeId
       set({
         ...validated(remainingNodes, remainingEdges),
+        isDirty: true,
         selectedNodeId:
           selected && !nodeIds.has(selected) ? selected : null,
       })
@@ -326,7 +342,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
         }
       })
       // Also clone edges whose both ends were duplicated.
-      const clonedEdges: Edge[] = edges
+      const clonedEdges: AgentFlowEdge[] = edges
         .filter((e) => idMap.has(e.source) && idMap.has(e.target))
         .map((e) => ({
           ...e,
@@ -339,19 +355,24 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
         ...nodes.map((n) => (n.selected ? { ...n, selected: false } : n)),
         ...clones,
       ]
-      set(validated(newNodes, [...edges, ...clonedEdges]))
+      set({ ...validated(newNodes, [...edges, ...clonedEdges]), isDirty: true })
     },
 
     selectAll: () => {
       set({
         nodes: get().nodes.map((n) => ({ ...n, selected: true })),
+        edges: get().edges.map((e) => ({ ...e, selected: true })),
       })
     },
 
     updateEdgeLabel: (id, label) => {
-      set({
-        edges: get().edges.map((e) => (e.id === id ? { ...e, label } : e)),
-      })
+      const now = Date.now()
+      if (now - lastDataSnapshotAt > 800) {
+        pushHistory()
+        lastDataSnapshotAt = now
+      }
+      const edges = get().edges.map((e) => (e.id === id ? { ...e, label } : e))
+      set({ ...validated(get().nodes, edges), isDirty: true })
     },
 
     setEdgeKind: (id, kind) => {
@@ -366,17 +387,19 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
               }
             : e,
         ),
+        isDirty: true,
       })
     },
 
     removeEdge: (id) => {
       pushHistory()
-      set(
-        validated(
+      set({
+        ...validated(
           get().nodes,
           get().edges.filter((e) => e.id !== id),
         ),
-      )
+        isDirty: true,
+      })
     },
 
     groupSelected: () => {
@@ -426,13 +449,14 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
             : n,
         ),
       ]
-      set(validated(newNodes, edges))
+      set({ ...validated(newNodes, edges), isDirty: true })
     },
 
     toggleGroupCollapse: (id) => {
       const { nodes, edges } = get()
       const group = nodes.find((n) => n.id === id)
       if (!group || group.type !== 'group') return
+      pushHistory()
       const collapsing = group.data.collapsed !== true
       const childIds = new Set(
         nodes.filter((n) => n.parentId === id).map((n) => n.id),
@@ -467,7 +491,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
           ? { ...e, hidden: collapsing }
           : e,
       )
-      set({ nodes: newNodes, edges: newEdges })
+      set({ nodes: newNodes, edges: newEdges, isDirty: true })
     },
 
     deselectAll: () => {
@@ -481,5 +505,12 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
         selectedNodeId: null,
       })
     },
+
+    markClean: () => set({ isDirty: false }),
   }
+})
+
+// Warn the user before they close/refresh the tab while there are unsaved changes.
+window.addEventListener('beforeunload', (e) => {
+  if (useCanvasStore.getState().isDirty) e.preventDefault()
 })

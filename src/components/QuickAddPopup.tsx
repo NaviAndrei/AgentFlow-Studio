@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useReactFlow } from '@xyflow/react'
 import { Search } from 'lucide-react'
 import { NODE_META, PALETTE } from '../nodes'
-import { useBlueprintStore } from '../store/blueprintStore'
+import { useUIStore } from '../store/uiStore'
 import { useCanvasStore } from '../store/canvasStore'
 import type { AgentFlowNodeType } from '../types'
 
@@ -15,7 +15,7 @@ const TABS: { label: string; group: string | null }[] = [
 ]
 
 function QuickAddInner() {
-  const setQuickAddOpen = useBlueprintStore((s) => s.setQuickAddOpen)
+  const setQuickAddOpen = useUIStore((s) => s.setQuickAddOpen)
   const addNode = useCanvasStore((s) => s.addNode)
   const { screenToFlowPosition } = useReactFlow()
   const [query, setQuery] = useState('')
@@ -139,7 +139,7 @@ function QuickAddInner() {
 }
 
 export function QuickAddPopup() {
-  const quickAddOpen = useBlueprintStore((s) => s.quickAddOpen)
+  const quickAddOpen = useUIStore((s) => s.quickAddOpen)
   // Remount the inner component each time it opens so query/tab state resets.
   if (!quickAddOpen) return null
   return <QuickAddInner />

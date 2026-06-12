@@ -1,5 +1,5 @@
 import { LayoutTemplate, MousePointerClick, PanelLeft, Workflow } from 'lucide-react'
-import { useBlueprintStore } from '../store/blueprintStore'
+import { useUIStore } from '../store/uiStore'
 import { useCanvasStore } from '../store/canvasStore'
 import { useSimulationStore } from '../store/simulationStore'
 
@@ -18,8 +18,8 @@ const SHORTCUTS: { keys: string; description: string }[] = [
 export function WelcomeOverlay() {
   const isEmpty = useCanvasStore((s) => s.nodes.length === 0)
   const simActive = useSimulationStore((s) => s.isActive)
-  const setGalleryOpen = useBlueprintStore((s) => s.setGalleryOpen)
-  const setQuickAddOpen = useBlueprintStore((s) => s.setQuickAddOpen)
+  const setGalleryOpen = useUIStore((s) => s.setGalleryOpen)
+  const setQuickAddOpen = useUIStore((s) => s.setQuickAddOpen)
 
   if (!isEmpty || simActive) return null
 
