@@ -104,6 +104,27 @@ function parseGraph(
   return { nodes, edges }
 }
 
+/**
+ * Version migration switchboard. Documents older than the current schema
+ * are rewritten in place, one version step per case, before parsing. v1 is
+ * current, so this is a pass-through today; when v2 lands, add
+ * `case 1: …upgrade to v2…` and bump CANVAS_SCHEMA_VERSION.
+ */
+function migrate(
+  raw: Record<string, unknown>,
+  version: number,
+): Record<string, unknown> {
+  let doc = raw
+  for (let v = version; v < CANVAS_SCHEMA_VERSION; v++) {
+    switch (v) {
+      // case 1: doc = upgradeV1toV2(doc); break
+      default:
+        break
+    }
+  }
+  return doc
+}
+
 /** Validate an imported canvas document; null (with a warning) if invalid. */
 export function parseCanvasDocument(raw: unknown): CanvasDocument | null {
   if (!isRecord(raw)) {
@@ -116,12 +137,13 @@ export function parseCanvasDocument(raw: unknown): CanvasDocument | null {
     console.warn(`Canvas import rejected: unknown schemaVersion ${version}`)
     return null
   }
-  const graph = parseGraph(raw.nodes, raw.edges)
+  const migrated = migrate(raw, version)
+  const graph = parseGraph(migrated.nodes, migrated.edges)
   if (!graph) {
     console.warn('Canvas import rejected: malformed nodes or edges')
     return null
   }
-  return { schemaVersion: version, ...graph }
+  return { schemaVersion: CANVAS_SCHEMA_VERSION, ...graph }
 }
 
 /** Validate a bundled blueprint; null (with a warning) if invalid. */

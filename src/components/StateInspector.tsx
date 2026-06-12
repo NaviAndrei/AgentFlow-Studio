@@ -1,7 +1,6 @@
-import { NODE_META } from '../nodes'
+import { getNodeMeta } from '../nodes'
 import { useCanvasStore } from '../store/canvasStore'
 import { useSimulationStore } from '../store/simulationStore'
-import type { AgentFlowNodeType } from '../types'
 
 /**
  * Minimal recursive JSON renderer with hand-rolled syntax colors:
@@ -68,8 +67,9 @@ export function StateInspector() {
   const messages = useSimulationStore((s) => s.messages)
   const nodes = useCanvasStore((s) => s.nodes)
 
-  const executed = executionQueue
-    .slice(0, currentNodeIndex)
+  // Dedupe: loop iterations put a node in the executed slice twice; the
+  // section shows its latest output once.
+  const executed = [...new Set(executionQueue.slice(0, currentNodeIndex))]
     .map((id) => ({ id, node: nodes.find((n) => n.id === id) }))
     .filter((e) => e.node !== undefined && nodeOutputs[e.id] !== undefined)
 
@@ -92,7 +92,7 @@ export function StateInspector() {
       )}
       {executed.map(({ id, node }) => {
         if (!node) return null
-        const meta = node.type ? NODE_META[node.type as AgentFlowNodeType] : null
+        const meta = getNodeMeta(node.type)
         return (
           <div key={id}>
             <h3 className="mb-1 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-gray-400">

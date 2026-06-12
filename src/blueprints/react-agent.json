@@ -1,5 +1,6 @@
 {
   "id": "react-agent",
+  "schemaVersion": 1,
   "name": "ReAct Agent",
   "description": "Reason → act → observe loop: the LLM thinks, calls a tool, then a condition decides whether to loop back or answer.",
   "nodes": [

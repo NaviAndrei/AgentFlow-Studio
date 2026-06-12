@@ -1,5 +1,6 @@
 {
   "id": "evaluator-critic",
+  "schemaVersion": 1,
   "name": "Evaluator / Critic",
   "description": "A worker agent produces output, a critic agent scores it, and a condition loops back for revision until the critic passes it.",
   "category": "Quality Loop",

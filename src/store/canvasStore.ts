@@ -95,6 +95,17 @@ function validated(nodes: AgentFlowNode[], edges: Edge[]) {
   }
 }
 
+/** The single selected node id, or null when zero or many are selected. */
+function soleSelectedId(nodes: AgentFlowNode[]): string | null {
+  let found: string | null = null
+  for (const n of nodes) {
+    if (!n.selected) continue
+    if (found !== null) return null
+    found = n.id
+  }
+  return found
+}
+
 // Throttle history snapshots for rapid-fire data edits (typing in the
 // inspector) so undo steps back over whole edits, not single keystrokes.
 let lastDataSnapshotAt = 0
@@ -141,7 +152,14 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
             c.type === 'select',
         )
       ) {
-        set({ nodes: applyNodeChanges(changes, get().nodes) })
+        const nextNodes = applyNodeChanges(changes, get().nodes)
+        // A selection change (click or box-select) re-derives the inspector
+        // target from the resulting `selected` flags.
+        set(
+          changes.some((c) => c.type === 'select')
+            ? { nodes: nextNodes, selectedNodeId: soleSelectedId(nextNodes) }
+            : { nodes: nextNodes },
+        )
         return
       }
       const removeIds = new Set(
@@ -162,8 +180,11 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
       const selected = get().selectedNodeId
       set({
         ...validated(nodes, get().edges),
-        selectedNodeId:
-          selected && nodes.some((n) => n.id === selected) ? selected : null,
+        selectedNodeId: changes.some((c) => c.type === 'select')
+          ? soleSelectedId(nodes)
+          : selected && nodes.some((n) => n.id === selected)
+            ? selected
+            : null,
       })
     },
 

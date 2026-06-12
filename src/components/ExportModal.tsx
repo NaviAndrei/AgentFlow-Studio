@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react'
-import { Check, Code2, Copy, X } from 'lucide-react'
+import { Check, Code2, Copy } from 'lucide-react'
 import { useBlueprintStore } from '../store/blueprintStore'
 import { useCanvasStore } from '../store/canvasStore'
 import { exportPython, exportRequirements } from '../utils/codeExporter'
 import { exportMermaid } from '../utils/mermaidExporter'
+import { Modal } from './Modal'
 
 type ExportTab = 'main.py' | 'requirements.txt' | 'diagram.mmd'
 
@@ -42,36 +43,23 @@ export function ExportModal() {
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-6"
-      onClick={() => setExportOpen(false)}
+    <Modal
+      open={exportOpen}
+      onClose={() => setExportOpen(false)}
+      title="Export LangGraph Python"
+      icon={Code2}
+      maxWidth="3xl"
+      className="flex max-h-[85vh] w-full max-w-3xl flex-col rounded-xl border border-white/10 bg-surface p-5 shadow-2xl outline-none"
+      headerActions={
+        <button
+          onClick={handleCopy}
+          className="flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-black transition-opacity hover:opacity-90"
+        >
+          {copied ? <Check size={13} /> : <Copy size={13} />}
+          {copied ? 'Copied!' : 'Copy to Clipboard'}
+        </button>
+      }
     >
-      <div
-        className="flex max-h-[85vh] w-full max-w-3xl flex-col rounded-xl border border-white/10 bg-surface p-5 shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="flex items-center gap-2 text-sm font-bold text-gray-100">
-            <Code2 size={16} className="text-accent" />
-            Export LangGraph Python
-          </h2>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleCopy}
-              className="flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-black transition-opacity hover:opacity-90"
-            >
-              {copied ? <Check size={13} /> : <Copy size={13} />}
-              {copied ? 'Copied!' : 'Copy to Clipboard'}
-            </button>
-            <button
-              onClick={() => setExportOpen(false)}
-              className="rounded-md p-1 text-gray-400 hover:bg-surface-2 hover:text-white"
-              aria-label="Close export modal"
-            >
-              <X size={16} />
-            </button>
-          </div>
-        </div>
         <div className="mb-3 flex items-center justify-between">
           <div className="flex gap-1">
             {(['main.py', 'requirements.txt', 'diagram.mmd'] as ExportTab[]).map((t) => (
@@ -107,7 +95,6 @@ export function ExportModal() {
         <pre className="flex-1 overflow-auto rounded-lg border border-white/10 bg-canvas p-4 text-[11px] leading-relaxed text-gray-300">
           <code>{shownContent}</code>
         </pre>
-      </div>
-    </div>
+    </Modal>
   )
 }

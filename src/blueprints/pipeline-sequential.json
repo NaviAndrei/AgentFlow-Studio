@@ -1,5 +1,6 @@
 {
   "id": "pipeline-sequential",
+  "schemaVersion": 1,
   "name": "Sequential Pipeline",
   "description": "A simple assembly line: four specialist agents transform the work in fixed order, each building on the previous result.",
   "category": "Pipeline",

@@ -35,5 +35,5 @@ export const nodeTypes: NodeTypes = {
   group: GroupNode,
 }
 
-export { NODE_META, PALETTE } from './registry'
+export { NODE_META, PALETTE, getNodeMeta } from './registry'
 export type { NodeMeta } from './registry'

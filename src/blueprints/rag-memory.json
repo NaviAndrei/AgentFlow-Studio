@@ -1,5 +1,6 @@
 {
   "id": "rag-memory",
+  "schemaVersion": 1,
   "name": "RAG + Memory",
   "description": "Retrieval feeds a long-term memory layer that enriches the prompt before generation — RAG context plus conversation history.",
   "category": "RAG",

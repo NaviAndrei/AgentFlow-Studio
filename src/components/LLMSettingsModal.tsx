@@ -1,8 +1,13 @@
 import { useState } from 'react'
-import { CheckCircle2, PlugZap, Settings, X, XCircle } from 'lucide-react'
+import { CheckCircle2, PlugZap, Settings, XCircle } from 'lucide-react'
 import { useLLMConfigStore } from '../store/llmConfigStore'
-import { listOllamaModels, testGeminiConnection } from '../utils/llmClient'
+import {
+  isInsecureRemoteUrl,
+  listOllamaModels,
+  testGeminiConnection,
+} from '../utils/llmClient'
 import type { GeminiModel, LLMProvider } from '../utils/llmClient'
+import { Modal } from './Modal'
 
 type TestState = 'idle' | 'testing' | 'ok' | 'error'
 
@@ -72,28 +77,13 @@ export function LLMSettingsModal() {
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-6"
-      onClick={() => setSettingsOpen(false)}
+    <Modal
+      open={settingsOpen}
+      onClose={() => setSettingsOpen(false)}
+      title="LLM Connection"
+      icon={Settings}
+      maxWidth="sm"
     >
-      <div
-        className="w-full max-w-sm rounded-xl border border-white/10 bg-surface p-5 shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="flex items-center gap-2 text-sm font-bold text-gray-100">
-            <Settings size={16} className="text-accent" />
-            LLM Connection
-          </h2>
-          <button
-            onClick={() => setSettingsOpen(false)}
-            className="rounded-md p-1 text-gray-400 hover:bg-surface-2 hover:text-white"
-            aria-label="Close settings"
-          >
-            <X size={16} />
-          </button>
-        </div>
-
         <span className={labelCls}>Provider</span>
         <div className="mb-4 flex gap-1 rounded-md border border-white/10 p-0.5">
           {(['ollama', 'gemini'] as LLMProvider[]).map((p) => (
@@ -124,6 +114,12 @@ export function LLMSettingsModal() {
                 value={ollamaUrl}
                 onChange={(e) => setOllamaUrl(e.target.value)}
               />
+              {isInsecureRemoteUrl(ollamaUrl) && (
+                <p className="mt-1 text-[10px] text-amber-400">
+                  Remote non-HTTPS URL — prompts and responses travel
+                  unencrypted.
+                </p>
+              )}
             </label>
             <div>
               <span className={labelCls}>Model</span>
@@ -212,7 +208,6 @@ export function LLMSettingsModal() {
           Settings are kept in memory for this session only. Live mode sends
           LLM node prompts to the configured provider.
         </p>
-      </div>
-    </div>
+    </Modal>
   )
 }

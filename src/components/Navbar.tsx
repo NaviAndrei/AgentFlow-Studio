@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Code2,
   Download,
@@ -22,6 +22,7 @@ import {
   readCanvasFile,
 } from '../utils/canvasSerializer'
 import { listOllamaModels } from '../utils/llmClient'
+import { ConfirmDialog } from './Modal'
 
 export function Navbar() {
   const clearCanvas = useCanvasStore((s) => s.clearCanvas)
@@ -70,10 +71,14 @@ export function Navbar() {
       )
   }
 
+  const [confirmNewOpen, setConfirmNewOpen] = useState(false)
+
   const handleNew = () => {
-    if (!hasNodes || window.confirm('Clear the canvas? Unsaved work will be lost.')) {
+    if (!hasNodes) {
       clearCanvas()
+      return
     }
+    setConfirmNewOpen(true)
   }
 
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -215,6 +220,17 @@ export function Navbar() {
           <HelpCircle size={13} />
         </button>
       </div>
+      <ConfirmDialog
+        open={confirmNewOpen}
+        title="Clear the canvas?"
+        message="Unsaved work will be lost. Save first if you want to keep it."
+        confirmLabel="Clear canvas"
+        onConfirm={() => {
+          clearCanvas()
+          setConfirmNewOpen(false)
+        }}
+        onCancel={() => setConfirmNewOpen(false)}
+      />
     </header>
   )
 }

@@ -52,6 +52,9 @@ function QuickAddInner() {
       onClick={() => setQuickAddOpen(false)}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Quick-add a node"
         className="w-full max-w-md rounded-xl border border-white/10 bg-surface shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >

@@ -1,5 +1,7 @@
 import type { DragEvent } from 'react'
+import { PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import { NODE_META, PALETTE } from '../nodes'
+import { useBlueprintStore } from '../store/blueprintStore'
 import type { AgentFlowNodeType } from '../types'
 
 function PaletteItem({ type }: { type: AgentFlowNodeType }) {
@@ -32,11 +34,39 @@ function PaletteItem({ type }: { type: AgentFlowNodeType }) {
 }
 
 export function Sidebar() {
+  const sidebarOpen = useBlueprintStore((s) => s.sidebarOpen)
+  const toggleSidebar = useBlueprintStore((s) => s.toggleSidebar)
+
+  if (!sidebarOpen) {
+    return (
+      <div className="flex w-9 shrink-0 flex-col items-center border-r border-white/10 bg-surface py-2">
+        <button
+          onClick={toggleSidebar}
+          title="Show node palette"
+          aria-label="Show node palette"
+          className="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-surface-2 hover:text-white"
+        >
+          <PanelLeftOpen size={15} />
+        </button>
+      </div>
+    )
+  }
+
   return (
     <aside className="w-[260px] shrink-0 overflow-y-auto border-r border-white/10 bg-surface p-3">
-      <p className="mb-3 text-[10px] uppercase tracking-wider text-gray-500">
-        Drag nodes onto the canvas
-      </p>
+      <div className="mb-3 flex items-center justify-between">
+        <p className="text-[10px] uppercase tracking-wider text-gray-500">
+          Drag nodes onto the canvas
+        </p>
+        <button
+          onClick={toggleSidebar}
+          title="Collapse palette"
+          aria-label="Collapse palette"
+          className="rounded-md p-1 text-gray-500 transition-colors hover:bg-surface-2 hover:text-white"
+        >
+          <PanelLeftClose size={14} />
+        </button>
+      </div>
       {PALETTE.map((group) => (
         <section key={group.title} className="mb-4">
           <h2 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-gray-400">

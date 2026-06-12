@@ -1,5 +1,6 @@
 import { ViewportPortal } from '@xyflow/react'
 import { Group } from 'lucide-react'
+import { useShallow } from 'zustand/react/shallow'
 import { useCanvasStore } from '../store/canvasStore'
 
 /**
@@ -7,16 +8,26 @@ import { useCanvasStore } from '../store/canvasStore'
  * Rendered through ViewportPortal so it tracks pan/zoom in flow coordinates.
  */
 export function SelectionToolbar() {
-  const nodes = useCanvasStore((s) => s.nodes)
+  // Select the already-reduced {count, minX, minY} with shallow equality, so a
+  // drag that only moves the selection re-renders this once per frame at most.
+  const summary = useCanvasStore(
+    useShallow((s) => {
+      let count = 0
+      let minX = Infinity
+      let minY = Infinity
+      for (const n of s.nodes) {
+        if (!n.selected || n.type === 'group' || n.parentId) continue
+        count += 1
+        if (n.position.x < minX) minX = n.position.x
+        if (n.position.y < minY) minY = n.position.y
+      }
+      return { count, minX, minY }
+    }),
+  )
   const groupSelected = useCanvasStore((s) => s.groupSelected)
 
-  const targets = nodes.filter(
-    (n) => n.selected && n.type !== 'group' && !n.parentId,
-  )
-  if (targets.length < 2) return null
-
-  const minX = Math.min(...targets.map((n) => n.position.x))
-  const minY = Math.min(...targets.map((n) => n.position.y))
+  if (summary.count < 2) return null
+  const { minX, minY } = summary
 
   return (
     <ViewportPortal>
@@ -29,7 +40,7 @@ export function SelectionToolbar() {
           className="flex items-center gap-1.5 rounded-md border border-accent/50 bg-surface px-2.5 py-1.5 text-xs text-accent shadow-lg transition-colors hover:bg-surface-2"
         >
           <Group size={13} />
-          Group {targets.length} nodes
+          Group {summary.count} nodes
         </button>
       </div>
     </ViewportPortal>

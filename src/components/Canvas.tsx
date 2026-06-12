@@ -10,11 +10,11 @@ import {
 import type { Edge, EdgeTypes, IsValidConnection } from '@xyflow/react'
 import type { DragEvent, MouseEvent as ReactMouseEvent } from 'react'
 import { ArrowLeftRight, ArrowRight, GitBranch, Trash2 } from 'lucide-react'
-import { nodeTypes, NODE_META } from '../nodes'
+import { nodeTypes, getNodeMeta, NODE_META } from '../nodes'
 import { useCanvasStore } from '../store/canvasStore'
 import type { AgentFlowNode, AgentFlowNodeType, EdgeKind } from '../types'
 import { deserializeCanvas, readCanvasFile } from '../utils/canvasSerializer'
-import { FlowEdge } from './FlowEdge'
+import { FlowEdge, ParticleDefs } from './FlowEdge'
 import { SelectionToolbar } from './SelectionToolbar'
 
 const edgeTypes: EdgeTypes = {
@@ -41,7 +41,6 @@ export function Canvas() {
   const onEdgesChange = useCanvasStore((s) => s.onEdgesChange)
   const onConnect = useCanvasStore((s) => s.onConnect)
   const addNode = useCanvasStore((s) => s.addNode)
-  const setSelectedNode = useCanvasStore((s) => s.setSelectedNode)
   const setEdgeKind = useCanvasStore((s) => s.setEdgeKind)
   const removeEdge = useCanvasStore((s) => s.removeEdge)
   const { screenToFlowPosition } = useReactFlow()
@@ -116,6 +115,7 @@ export function Canvas() {
 
   return (
     <>
+      <ParticleDefs />
       <ReactFlow<AgentFlowNode>
         nodes={nodes}
         edges={edges}
@@ -125,11 +125,7 @@ export function Canvas() {
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
         isValidConnection={isValidConnection}
-        onNodeClick={(_, node) => setSelectedNode(node.id)}
-        onPaneClick={() => {
-          setSelectedNode(null)
-          setEdgeMenu(null)
-        }}
+        onPaneClick={() => setEdgeMenu(null)}
         onEdgeContextMenu={onEdgeContextMenu}
         onDrop={onDrop}
         onDragOver={onDragOver}
@@ -151,9 +147,7 @@ export function Canvas() {
           position="bottom-right"
           pannable
           zoomable
-          nodeColor={(node) =>
-            node.type ? NODE_META[node.type as AgentFlowNodeType].color : '#3a4150'
-          }
+          nodeColor={(node) => getNodeMeta(node.type)?.color ?? '#3a4150'}
         />
       </ReactFlow>
       {edgeMenu && (

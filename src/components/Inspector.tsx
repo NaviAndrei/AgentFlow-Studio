@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react'
-import { RotateCcw } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
+import { PanelRightClose, PanelRightOpen, RotateCcw } from 'lucide-react'
 import { NODE_META } from '../nodes'
 import { ICON_OPTIONS } from '../nodes/iconOptions'
+import { useBlueprintStore } from '../store/blueprintStore'
 import { useCanvasStore } from '../store/canvasStore'
 import { useSimulationStore } from '../store/simulationStore'
-import { discoverMcpTools } from '../utils/llmClient'
+import { discoverMcpTools, isInsecureRemoteUrl } from '../utils/llmClient'
 import { StateInspector } from './StateInspector'
 import type { AgentFlowNodeData, LLMModel, MemoryType } from '../types'
 
@@ -284,6 +285,11 @@ function MCPServerFields({ data, update }: FieldsProps) {
           value={data.serverUrl ?? ''}
           onChange={(e) => update({ serverUrl: e.target.value })}
         />
+        {isInsecureRemoteUrl(data.serverUrl ?? '') && (
+          <p className="mt-1 text-[10px] text-amber-400">
+            Remote non-HTTPS URL — tool calls travel unencrypted.
+          </p>
+        )}
       </label>
       <button
         onClick={discover}
@@ -429,29 +435,28 @@ function NoteFields({ data, update }: FieldsProps) {
 
 function ConfigPanel() {
   const selectedNodeId = useCanvasStore((s) => s.selectedNodeId)
-  const node = useCanvasStore((s) =>
-    s.nodes.find((n) => n.id === s.selectedNodeId),
+  // Select data and type separately: a pure position drag replaces the node
+  // object but keeps the same `data` reference, so this panel won't re-render
+  // while the node is being moved.
+  const nodeType = useCanvasStore(
+    (s) => s.nodes.find((n) => n.id === s.selectedNodeId)?.type,
+  )
+  const nodeData = useCanvasStore(
+    (s) => s.nodes.find((n) => n.id === s.selectedNodeId)?.data,
   )
   const updateNodeData = useCanvasStore((s) => s.updateNodeData)
 
-  if (!selectedNodeId || !node || !node.type) {
+  if (!selectedNodeId || !nodeData || !nodeType) {
     return (
-      <>
-        <h2 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-gray-400">
-          Inspector
-        </h2>
-        <p className="text-xs text-gray-500">
-          Select a node to configure it.
-        </p>
-      </>
+      <p className="text-xs text-gray-500">Select a node to configure it.</p>
     )
   }
 
-  const meta = NODE_META[node.type]
+  const meta = NODE_META[nodeType]
   const Icon = meta.icon
   const update = (patch: Partial<AgentFlowNodeData>) =>
-    updateNodeData(node.id, patch)
-  const props: FieldsProps = { data: node.data, update }
+    updateNodeData(selectedNodeId, patch)
+  const props: FieldsProps = { data: nodeData, update }
 
   return (
     <>
@@ -469,27 +474,27 @@ function ConfigPanel() {
           <span className={labelCls}>Name</span>
           <input
             className={inputCls}
-            value={node.data.label}
+            value={nodeData.label}
             onChange={(e) => update({ label: e.target.value })}
           />
         </label>
-        {node.type === 'start' && <StartFields {...props} />}
-        {node.type === 'llm' && <LLMFields {...props} />}
-        {node.type === 'agent' && <AgentFields {...props} />}
-        {node.type === 'tool' && <ToolFields {...props} />}
-        {node.type === 'memory' && <MemoryFields {...props} />}
-        {node.type === 'condition' && <ConditionFields {...props} />}
-        {node.type === 'loop' && <LoopFields {...props} />}
-        {(node.type === 'humanInLoop' ||
-          node.type === 'supervisor' ||
-          node.type === 'swarmWorker') && <DescriptionFields {...props} />}
-        {node.type === 'retriever' && <RetrieverFields {...props} />}
-        {node.type === 'mcpServer' && <MCPServerFields {...props} />}
-        {node.type === 'structuredOutput' && (
+        {nodeType === 'start' && <StartFields {...props} />}
+        {nodeType === 'llm' && <LLMFields {...props} />}
+        {nodeType === 'agent' && <AgentFields {...props} />}
+        {nodeType === 'tool' && <ToolFields {...props} />}
+        {nodeType === 'memory' && <MemoryFields {...props} />}
+        {nodeType === 'condition' && <ConditionFields {...props} />}
+        {nodeType === 'loop' && <LoopFields {...props} />}
+        {(nodeType === 'humanInLoop' ||
+          nodeType === 'supervisor' ||
+          nodeType === 'swarmWorker') && <DescriptionFields {...props} />}
+        {nodeType === 'retriever' && <RetrieverFields {...props} />}
+        {nodeType === 'mcpServer' && <MCPServerFields {...props} />}
+        {nodeType === 'structuredOutput' && (
           <StructuredOutputFields {...props} />
         )}
-        {node.type === 'note' && <NoteFields {...props} />}
-        {node.type !== 'note' && node.type !== 'group' && (
+        {nodeType === 'note' && <NoteFields {...props} />}
+        {nodeType !== 'note' && nodeType !== 'group' && (
           <AppearanceFields {...props} />
         )}
       </div>
@@ -499,6 +504,10 @@ function ConfigPanel() {
 
 export function Inspector() {
   const simActive = useSimulationStore((s) => s.isActive)
+  const inspectorOpen = useBlueprintStore((s) => s.inspectorOpen)
+  const toggleInspector = useBlueprintStore((s) => s.toggleInspector)
+  const inspectorWidth = useBlueprintStore((s) => s.inspectorWidth)
+  const setInspectorWidth = useBlueprintStore((s) => s.setInspectorWidth)
   const [tab, setTab] = useState<'config' | 'state'>('config')
 
   // Auto-switch to the state view when a simulation starts, back when it ends.
@@ -506,11 +515,52 @@ export function Inspector() {
     setTab(simActive ? 'state' : 'config')
   }, [simActive])
 
+  // Drag the left edge to resize; width is clamped by the store setter.
+  const onResizeStart = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      event.preventDefault()
+      const startX = event.clientX
+      const startWidth = useBlueprintStore.getState().inspectorWidth
+      const onMove = (e: PointerEvent) =>
+        setInspectorWidth(startWidth + (startX - e.clientX))
+      const onUp = () => {
+        window.removeEventListener('pointermove', onMove)
+        window.removeEventListener('pointerup', onUp)
+      }
+      window.addEventListener('pointermove', onMove)
+      window.addEventListener('pointerup', onUp)
+    },
+    [setInspectorWidth],
+  )
+
+  if (!inspectorOpen) {
+    return (
+      <div className="flex w-9 shrink-0 flex-col items-center border-l border-white/10 bg-surface py-2">
+        <button
+          onClick={toggleInspector}
+          title="Show inspector"
+          aria-label="Show inspector"
+          className="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-surface-2 hover:text-white"
+        >
+          <PanelRightOpen size={15} />
+        </button>
+      </div>
+    )
+  }
+
   return (
-    <aside className="w-[300px] shrink-0 overflow-y-auto border-l border-white/10 bg-surface p-4">
-      {simActive && (
-        <div className="mb-3 flex gap-1 border-b border-white/10 pb-2">
-          {(
+    <aside
+      style={{ width: inspectorWidth }}
+      className="relative shrink-0 overflow-y-auto border-l border-white/10 bg-surface p-4"
+    >
+      <div
+        onPointerDown={onResizeStart}
+        title="Drag to resize"
+        className="absolute inset-y-0 left-0 w-1 cursor-col-resize hover:bg-accent/40"
+      />
+      <div className="mb-3 flex items-center gap-1 border-b border-white/10 pb-2">
+        {simActive ? (
+          (
             [
               { key: 'config', label: 'Inspector' },
               { key: 'state', label: 'State Inspector' },
@@ -527,9 +577,21 @@ export function Inspector() {
             >
               {t.label}
             </button>
-          ))}
-        </div>
-      )}
+          ))
+        ) : (
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+            Inspector
+          </span>
+        )}
+        <button
+          onClick={toggleInspector}
+          title="Collapse inspector"
+          aria-label="Collapse inspector"
+          className="ml-auto rounded-md p-1 text-gray-500 transition-colors hover:bg-surface-2 hover:text-white"
+        >
+          <PanelRightClose size={14} />
+        </button>
+      </div>
       {simActive && tab === 'state' ? <StateInspector /> : <ConfigPanel />}
     </aside>
   )

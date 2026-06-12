@@ -42,6 +42,13 @@ const SIMULATED_TYPES: AgentFlowNodeType[] = [
 const LOOP_GAP_MS = 250
 
 /**
+ * Executions allowed per node in one run. Cycles (ReAct-style loop-backs)
+ * re-enqueue their nodes once, so a loop is shown for one extra iteration
+ * and then terminates instead of running forever.
+ */
+const MAX_NODE_VISITS = 2
+
+/**
  * Node types that touch the real provider/transcript in Live mode; everything
  * else (agents, supervisors, tools…) stays simulated even when Live is on.
  */
@@ -96,6 +103,8 @@ let abortController: AbortController | null = null
 // writes collapse into at most one update per frame.
 let streamBuffer: Record<string, string> = {}
 let streamFlushFrame: number | null = null
+// Times each node has been enqueued this run; bounds loop iterations.
+let visitCounts = new Map<string, number>()
 
 function abortInFlight() {
   abortController?.abort()
@@ -105,16 +114,51 @@ function abortInFlight() {
 const delay = (ms: number) =>
   new Promise<void>((resolve) => window.setTimeout(resolve, ms))
 
-function buildQueue(): string[] {
+/**
+ * Entry points for the dynamic walker: Start nodes, else nodes with no
+ * incoming flow edge, else (pure cycle) the topological head. The rest of
+ * the run is discovered by following edges as nodes execute.
+ */
+function buildSeeds(): string[] {
   const { nodes, edges } = useCanvasStore.getState()
   const flowNodes = nodes.filter(
     (n) => n.type !== undefined && SIMULATED_TYPES.includes(n.type),
   )
   const ids = new Set(flowNodes.map((n) => n.id))
+  const flowEdges = edges.filter(
+    (e) => ids.has(e.source) && ids.has(e.target),
+  )
+  const starts = flowNodes.filter((n) => n.type === 'start').map((n) => n.id)
+  if (starts.length > 0) return starts
+  const hasIncoming = new Set(flowEdges.map((e) => e.target))
+  const roots = flowNodes
+    .filter((n) => !hasIncoming.has(n.id))
+    .map((n) => n.id)
+  if (roots.length > 0) return roots
   return topologicalSort(
     flowNodes.map((n) => n.id),
-    edges.filter((e) => ids.has(e.source) && ids.has(e.target)),
-  )
+    flowEdges,
+  ).slice(0, 1)
+}
+
+/** All node ids reachable by walking edges forward from `from` (inclusive). */
+function reachableFrom(
+  edges: { source: string; target: string }[],
+  from: string,
+): Set<string> {
+  const seen = new Set<string>([from])
+  const stack = [from]
+  while (stack.length > 0) {
+    const id = stack.pop()
+    if (id === undefined) break
+    for (const e of edges) {
+      if (e.source === id && !seen.has(e.target)) {
+        seen.add(e.target)
+        stack.push(e.target)
+      }
+    }
+  }
+  return seen
 }
 
 function findNode(id: string): AgentFlowNode | undefined {
@@ -173,54 +217,96 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
         typeof e.label === 'string' && e.label !== '' ? e.label : e.target,
       )
 
+  /** Ids of nodes that participate in the simulated flow. */
+  const flowNodeIds = (): Set<string> =>
+    new Set(
+      useCanvasStore
+        .getState()
+        .nodes.filter(
+          (n) => n.type !== undefined && SIMULATED_TYPES.includes(n.type),
+        )
+        .map((n) => n.id),
+    )
+
+  /** Flow-node successors of a node (what the walker enqueues next). */
+  const flowTargets = (nodeId: string): string[] => {
+    const ids = flowNodeIds()
+    return useCanvasStore
+      .getState()
+      .edges.filter((e) => e.source === nodeId && ids.has(e.target))
+      .map((e) => e.target)
+  }
+
   /**
-   * After a condition resolves, mark every node reachable only via its
-   * non-taken branches as skipped. Nodes also reachable from the taken
-   * branch (joins) or already executed (loop back-edges) are left alone.
-   * Returns null when the taken value can't be matched to an edge.
+   * Append targets to the queue unless they're skip-marked, already pending,
+   * or out of visit budget. Increments the per-node visit count for each
+   * accepted target.
    */
-  const computeSkipped = (
+  const enqueueTargets = (
+    queue: string[],
+    pendingFrom: number,
+    skipped: Set<string>,
+    targets: string[],
+  ): string[] => {
+    const next = [...queue]
+    for (const target of targets) {
+      if (skipped.has(target)) continue
+      if ((visitCounts.get(target) ?? 0) >= MAX_NODE_VISITS) continue
+      if (next.slice(pendingFrom).includes(target)) continue
+      visitCounts.set(target, (visitCounts.get(target) ?? 0) + 1)
+      next.push(target)
+    }
+    return next
+  }
+
+  /**
+   * Resolve which edge a condition took: only that target continues, and
+   * nodes reachable solely via non-taken branches are skip-marked. Nodes
+   * also reachable from the taken branch (joins), already executed (loop
+   * back-edges), or the condition itself are left alone. Previously skipped
+   * nodes that the taken path needs are un-skipped. When the taken value
+   * can't be matched to an edge, all targets continue (fan behavior).
+   */
+  const resolveCondition = (
     conditionId: string,
     taken: unknown,
-  ): Set<string> | null => {
-    if (typeof taken !== 'string') return null
+  ): { targets: string[]; skipped: Set<string>; newlySkipped: string[] } => {
+    const fallback = {
+      targets: flowTargets(conditionId),
+      skipped: get().skippedNodeIds,
+      newlySkipped: [] as string[],
+    }
+    if (typeof taken !== 'string') return fallback
     const { edges } = useCanvasStore.getState()
     const outs = edges.filter((e) => e.source === conditionId)
-    if (outs.length < 2) return null
+    if (outs.length < 2) return fallback
     const takenEdge = outs.find(
       (e) =>
         (typeof e.label === 'string' && e.label !== ''
           ? e.label
           : e.target) === taken,
     )
-    if (!takenEdge) return null
-    const reach = (from: string): Set<string> => {
-      const seen = new Set<string>([from])
-      const stack = [from]
-      while (stack.length > 0) {
-        const id = stack.pop()
-        if (id === undefined) break
-        for (const e of edges) {
-          if (e.source === id && !seen.has(e.target)) {
-            seen.add(e.target)
-            stack.push(e.target)
-          }
-        }
-      }
-      return seen
-    }
-    const takenReach = reach(takenEdge.target)
+    if (!takenEdge) return fallback
+    const takenReach = reachableFrom(edges, takenEdge.target)
     const { executedIds, skippedNodeIds } = get()
-    const skipped = new Set(skippedNodeIds)
+    const skipped = new Set(
+      [...skippedNodeIds].filter((id) => !takenReach.has(id)),
+    )
+    const newlySkipped: string[] = []
     for (const out of outs) {
       if (out === takenEdge) continue
-      for (const id of reach(out.target)) {
-        if (takenReach.has(id)) continue
-        if (id === conditionId || executedIds.has(id)) continue
+      for (const id of reachableFrom(edges, out.target)) {
+        if (takenReach.has(id) || id === conditionId) continue
+        if (executedIds.has(id) || skipped.has(id)) continue
         skipped.add(id)
+        newlySkipped.push(id)
       }
     }
-    return skipped.size > skippedNodeIds.size ? skipped : null
+    return {
+      targets: flowNodeIds().has(takenEdge.target) ? [takenEdge.target] : [],
+      skipped,
+      newlySkipped,
+    }
   }
 
   /**
@@ -347,24 +433,10 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
       const metrics = useSimulationMetricsStore.getState()
       metrics.setStep(currentNodeIndex, executionQueue.length)
 
-      // A node on a branch the condition didn't take: log it as skipped and
-      // move on without executing.
+      // Defensive: skip-marked entries are filtered from the pending queue
+      // when the condition resolves, so a marked head just advances.
       if (get().skippedNodeIds.has(nodeId)) {
         set({
-          trace: [
-            ...get().trace,
-            {
-              id: crypto.randomUUID(),
-              at: Date.now(),
-              nodeId,
-              nodeName: node.data.label,
-              nodeType: node.type ?? 'unknown',
-              status: 'skipped',
-              durationMs: 0,
-              input: '—',
-              output: 'branch not taken',
-            },
-          ],
           currentNodeIndex: currentNodeIndex + 1,
           activeId: executionQueue[currentNodeIndex + 1] ?? null,
         })
@@ -422,13 +494,18 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
           output = fakeOutputFor(node, get().userInput)
           if (node.type === 'condition') {
             // Resolve the branch against the actual outgoing edges (instead
-            // of the configured branch names) so the skip marking below can
-            // map it to an edge. Mirrors the live heuristic: take the last
-            // branch, conventionally the "done" path.
+            // of the configured branch names) so the walker can map it to an
+            // edge. First visit follows the first branch (loop-style
+            // "continue"); a revisit takes the last (conventionally "done")
+            // so cycles terminate.
             const targets = outgoingIdentifiers(nodeId)
+            const visits = visitCounts.get(nodeId) ?? 1
             output = {
               evaluated: targets,
-              taken: targets[targets.length - 1] ?? 'default',
+              taken:
+                visits >= MAX_NODE_VISITS
+                  ? (targets[targets.length - 1] ?? 'default')
+                  : (targets[0] ?? 'default'),
             }
           }
           metrics.addTokens(fakeTokensFor(node))
@@ -456,24 +533,70 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
       // Stopped or restarted while this node was executing — discard.
       if (token !== runToken) return
 
-      let skippedNodeIds = get().skippedNodeIds
+      // Loop nodes report their actual visit as the iteration (both modes).
+      if (node.type === 'loop') {
+        const visits = visitCounts.get(nodeId) ?? 1
+        output = {
+          iteration: visits,
+          until: node.data.loopCondition ?? '',
+          done: visits >= MAX_NODE_VISITS,
+        }
+      }
+
+      // Walk forward: conditions follow only the taken edge (marking the
+      // rest skipped); every other node fans out to all flow targets.
+      let skipped = get().skippedNodeIds
+      let nextTargets: string[]
+      const skipEntries: TraceEntry[] = []
       if (node.type === 'condition') {
         const taken = (output as { taken?: unknown } | null)?.taken
-        skippedNodeIds = computeSkipped(nodeId, taken) ?? skippedNodeIds
+        const resolution = resolveCondition(nodeId, taken)
+        skipped = resolution.skipped
+        nextTargets = resolution.targets
+        for (const skippedId of resolution.newlySkipped) {
+          const skippedNode = findNode(skippedId)
+          if (!skippedNode) continue
+          skipEntries.push({
+            id: crypto.randomUUID(),
+            at: Date.now(),
+            nodeId: skippedId,
+            nodeName: skippedNode.data.label,
+            nodeType: skippedNode.type ?? 'unknown',
+            status: 'skipped',
+            durationMs: 0,
+            input: '—',
+            output: 'branch not taken',
+          })
+        }
+      } else {
+        nextTargets = flowTargets(nodeId)
       }
+
       const errored = get().erroredNodeIds
       const nextIndex = get().currentNodeIndex + 1
+      const grown = enqueueTargets(
+        get().executionQueue,
+        nextIndex,
+        skipped,
+        nextTargets,
+      )
+      // Drop freshly skip-marked nodes from the pending part of the queue.
+      const nextQueue = [
+        ...grown.slice(0, nextIndex),
+        ...grown.slice(nextIndex).filter((id) => !skipped.has(id)),
+      ]
       set({
         erroredNodeIds: errored.includes(nodeId)
           ? errored.filter((id) => id !== nodeId)
           : errored,
         nodeOutputs: { ...get().nodeOutputs, [nodeId]: output },
         nodeEngines: { ...get().nodeEngines, [nodeId]: engine },
-        trace: [...get().trace, makeEntry('ok', output)],
+        trace: [...get().trace, makeEntry('ok', output), ...skipEntries],
         executedIds: new Set(get().executedIds).add(nodeId),
-        skippedNodeIds,
+        skippedNodeIds: skipped,
+        executionQueue: nextQueue,
         currentNodeIndex: nextIndex,
-        activeId: executionQueue[nextIndex] ?? null,
+        activeId: nextQueue[nextIndex] ?? null,
       })
       if (finished()) finishRun()
     } finally {
@@ -496,6 +619,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
 
   const resetRunState = (executionQueue: string[]) => {
     discardPendingStreams()
+    visitCounts = new Map(executionQueue.map((id) => [id, 1]))
     set({
       currentNodeIndex: 0,
       executionQueue,
@@ -538,7 +662,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
     clearTrace: () => set({ trace: [] }),
 
     start: () => {
-      const executionQueue = buildQueue()
+      const executionQueue = buildSeeds()
       if (executionQueue.length === 0) return
       runToken++
       set({ isActive: true })
@@ -550,6 +674,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
       runToken++
       abortInFlight()
       discardPendingStreams()
+      visitCounts = new Map()
       set({
         isActive: false,
         isRunning: false,
@@ -598,7 +723,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
     restart: () => {
       runToken++
       abortInFlight()
-      resetRunState(buildQueue())
+      resetRunState(buildSeeds())
       get().play()
     },
   }

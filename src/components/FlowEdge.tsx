@@ -18,6 +18,8 @@ const KIND_STYLES: Record<EdgeKind, React.CSSProperties> = {
 
 const PARTICLE_COUNT = 5
 const FANOUT_STAGGER_SEC = 0.2
+/** Beyond this many fan-out children, edges fall back to a stroke highlight. */
+const FANOUT_PARTICLE_CAP = 6
 
 type ParticleRole = 'incoming' | 'fanout' | null
 
@@ -28,16 +30,16 @@ interface ParticlesProps {
   fanIndex: number
   /** Fade particles out along the path (parent particle entering a fan-out). */
   fade: boolean
-  trailFilterId: string
 }
 
 /**
  * 5 particles per active edge. Incoming particles use negative begin times so
  * the stream is pre-distributed along the path; fan-out particles spawn with a
- * 200ms stagger per child edge. Each particle drags two blurred, lower-opacity
- * copies behind it as a fading trail (skipped under prefers-reduced-motion).
+ * 200ms stagger per child edge. Each particle is a single radial-gradient
+ * glow circle (id `afs-particle-glow`, defined once in ParticleDefs) — no
+ * per-edge blur filter, so there are no repeated GPU filter passes.
  */
-function Particles({ path, durSec, role, fanIndex, fade, trailFilterId }: ParticlesProps) {
+function Particles({ path, durSec, role, fanIndex, fade }: ParticlesProps) {
   const reduced = prefersReducedMotion()
   return (
     <>
@@ -47,58 +49,45 @@ function Particles({ path, durSec, role, fanIndex, fade, trailFilterId }: Partic
             ? fanIndex * FANOUT_STAGGER_SEC + (i * durSec) / PARTICLE_COUNT
             : -((i * durSec) / PARTICLE_COUNT)
         return (
-          <g key={i}>
-            <circle r={3.5} fill="#00c4cc">
-              <animateMotion
+          <circle key={i} r={reduced ? 3.5 : 5} fill="url(#afs-particle-glow)">
+            <animateMotion
+              dur={`${durSec}s`}
+              begin={`${begin}s`}
+              repeatCount="indefinite"
+              path={path}
+            />
+            {fade && !reduced && (
+              <animate
+                attributeName="opacity"
+                values="1;0.1"
                 dur={`${durSec}s`}
                 begin={`${begin}s`}
                 repeatCount="indefinite"
-                path={path}
               />
-              {fade && !reduced && (
-                <animate
-                  attributeName="opacity"
-                  values="1;0.1"
-                  dur={`${durSec}s`}
-                  begin={`${begin}s`}
-                  repeatCount="indefinite"
-                />
-              )}
-            </circle>
-            {!reduced && (
-              <>
-                <circle
-                  r={3}
-                  fill="#00c4cc"
-                  opacity={0.4}
-                  filter={`url(#${trailFilterId})`}
-                >
-                  <animateMotion
-                    dur={`${durSec}s`}
-                    begin={`${begin + 0.09}s`}
-                    repeatCount="indefinite"
-                    path={path}
-                  />
-                </circle>
-                <circle
-                  r={2.5}
-                  fill="#00c4cc"
-                  opacity={0.18}
-                  filter={`url(#${trailFilterId})`}
-                >
-                  <animateMotion
-                    dur={`${durSec}s`}
-                    begin={`${begin + 0.18}s`}
-                    repeatCount="indefinite"
-                    path={path}
-                  />
-                </circle>
-              </>
             )}
-          </g>
+          </circle>
         )
       })}
     </>
+  )
+}
+
+/**
+ * Shared SVG defs referenced by every edge's particles. Rendered once (in
+ * Canvas) so the gradient isn't duplicated per edge. `url(#id)` references
+ * resolve document-wide, so this works from React Flow's own edge SVG.
+ */
+export function ParticleDefs() {
+  return (
+    <svg width={0} height={0} aria-hidden className="absolute">
+      <defs>
+        <radialGradient id="afs-particle-glow">
+          <stop offset="0%" stopColor="#00c4cc" stopOpacity={1} />
+          <stop offset="45%" stopColor="#00c4cc" stopOpacity={0.85} />
+          <stop offset="100%" stopColor="#00c4cc" stopOpacity={0} />
+        </radialGradient>
+      </defs>
+    </svg>
   )
 }
 
@@ -147,13 +136,14 @@ export function FlowEdge({
   })
   const kind = (data?.edgeType as EdgeKind | undefined) ?? 'direct'
   const labelText = typeof label === 'string' ? label : ''
-  const trailFilterId = `trail-${id}`
 
   // Fan-out stagger position and merge detection are derived from static
   // canvas data, so non-reactive reads are sufficient here.
   let fanIndex = 0
   let fadeParent = false
   let showMergeFlash = false
+  // Past the cap, a large fan-out keeps the cyan stroke but drops particles.
+  let showParticles = particleRole !== null
   if (particleRole === 'fanout') {
     const outs = useCanvasStore
       .getState()
@@ -162,6 +152,7 @@ export function FlowEdge({
       0,
       outs.findIndex((e) => e.id === id),
     )
+    if (fanIndex >= FANOUT_PARTICLE_CAP) showParticles = false
   } else if (particleRole === 'incoming') {
     fadeParent = targetType === 'supervisor'
     const sim = useSimulationStore.getState()
@@ -182,17 +173,6 @@ export function FlowEdge({
         setEditing(true)
       }}
     >
-      <defs>
-        <filter
-          id={trailFilterId}
-          x="-100%"
-          y="-100%"
-          width="300%"
-          height="300%"
-        >
-          <feGaussianBlur stdDeviation="1.8" />
-        </filter>
-      </defs>
       <BaseEdge
         id={id}
         path={edgePath}
@@ -207,14 +187,13 @@ export function FlowEdge({
               : {}),
         }}
       />
-      {particleRole && (
+      {particleRole && showParticles && (
         <Particles
           path={edgePath}
           durSec={edgeDurationSec(targetType)}
           role={particleRole}
           fanIndex={fanIndex}
           fade={fadeParent}
-          trailFilterId={trailFilterId}
         />
       )}
       {showMergeFlash && !prefersReducedMotion() && (

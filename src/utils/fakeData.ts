@@ -117,7 +117,7 @@ export function fakeOutputFor(node: AgentFlowNode, userInput: string): unknown {
     case 'llm':
       return {
         role: 'assistant',
-        content: `(simulated) response from ${label}`,
+        content: `(simulated) ${label} reply to: "${truncate(userInput || 'Hello!', 60)}"`,
         model: node.data.model ?? 'gemini-flash',
         temperature: node.data.temperature ?? 0.7,
       }
@@ -134,7 +134,7 @@ export function fakeOutputFor(node: AgentFlowNode, userInput: string): unknown {
           `call: ${(node.data.tools ?? ['tool']).filter(Boolean)[0] ?? 'tool'}("…")`,
           'observe: result received',
         ],
-        final_answer: `(simulated) final answer from ${label}`,
+        final_answer: `(simulated) ${label} answer to: "${truncate(userInput || 'Hello!', 60)}"`,
       }
     case 'memory':
       return {

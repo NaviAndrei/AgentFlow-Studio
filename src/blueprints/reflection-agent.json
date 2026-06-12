@@ -1,5 +1,6 @@
 {
   "id": "reflection-agent",
+  "schemaVersion": 1,
   "name": "Reflection Agent",
   "description": "An agent generates output, then a reflection agent critiques its own reasoning; weak answers loop back for another attempt.",
   "category": "Quality Loop",

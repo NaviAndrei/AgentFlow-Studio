@@ -1,5 +1,6 @@
 {
   "id": "swarm",
+  "schemaVersion": 1,
   "name": "Swarm",
   "description": "Peer agents with no central coordinator — each worker can hand the task off to the peer best equipped to continue.",
   "nodes": [

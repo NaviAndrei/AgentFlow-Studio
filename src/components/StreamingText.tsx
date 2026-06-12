@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 interface StreamingTextProps {
   text: string
@@ -11,21 +11,25 @@ const LINES_PER_SEC = 3
 
 /**
  * Progressively reveals `text`. If the target text grows while revealing
- * (live LLM streaming), the reveal simply keeps catching up.
+ * (live LLM streaming), the reveal simply keeps catching up. The unit count
+ * lives in a ref so a growing stream doesn't tear down and recreate the
+ * interval on every chunk — it's created once per mount (keyed on mode).
  */
 export function StreamingText({ text, mode }: StreamingTextProps) {
   const [count, setCount] = useState(0)
   const units = mode === 'chars' ? text.length : text.split('\n').length
+  const unitsRef = useRef(units)
+  unitsRef.current = units
 
   useEffect(() => {
     const interval = window.setInterval(
       () => {
-        setCount((c) => (c < units ? c + 1 : c))
+        setCount((c) => (c < unitsRef.current ? c + 1 : c))
       },
       1000 / (mode === 'chars' ? CHARS_PER_SEC : LINES_PER_SEC),
     )
     return () => window.clearInterval(interval)
-  }, [units, mode])
+  }, [mode])
 
   const shown = Math.min(count, units)
   const visible =

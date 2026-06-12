@@ -1,5 +1,6 @@
 {
   "id": "rag-pipeline",
+  "schemaVersion": 1,
   "name": "RAG Pipeline",
   "description": "Retrieval-augmented generation: fetch relevant chunks from a vector store, then generate a grounded answer.",
   "nodes": [

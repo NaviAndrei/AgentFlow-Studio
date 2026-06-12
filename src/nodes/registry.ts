@@ -159,6 +159,13 @@ export const NODE_META: Record<AgentFlowNodeType, NodeMeta> = {
   },
 }
 
+/** Narrow an unknown/string node type to its metadata once, safely. */
+export function getNodeMeta(type: string | undefined): NodeMeta | undefined {
+  return type !== undefined && type in NODE_META
+    ? NODE_META[type as AgentFlowNodeType]
+    : undefined
+}
+
 export const PALETTE: { title: string; types: AgentFlowNodeType[] }[] = [
   {
     title: 'Core',

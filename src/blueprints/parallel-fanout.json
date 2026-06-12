@@ -1,5 +1,6 @@
 {
   "id": "parallel-fanout",
+  "schemaVersion": 1,
   "name": "Parallel Fan-out",
   "description": "A supervisor fans the task out to three specialist agents in parallel; an aggregator merges their results into one answer.",
   "category": "Multi-Agent",

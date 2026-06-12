@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import { useReactFlow } from '@xyflow/react'
 import { ChevronDown, Trash2, Zap } from 'lucide-react'
-import { NODE_META } from '../nodes'
+import { getNodeMeta } from '../nodes'
 import { useCanvasStore } from '../store/canvasStore'
 import { useSimulationStore } from '../store/simulationStore'
-import type { AgentFlowNodeType, TraceEntry } from '../types'
+import type { TraceEntry } from '../types'
 
 type TraceFilter = 'all' | 'errors' | 'llm' | 'tools'
 
@@ -107,9 +107,7 @@ export function TraceLog() {
           </p>
         )}
         {entries.map((entry) => {
-          const meta = NODE_META[entry.nodeType as AgentFlowNodeType] as
-            | (typeof NODE_META)[AgentFlowNodeType]
-            | undefined
+          const meta = getNodeMeta(entry.nodeType)
           return (
             <button
               key={entry.id}

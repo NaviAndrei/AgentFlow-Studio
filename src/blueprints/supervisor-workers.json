@@ -1,5 +1,6 @@
 {
   "id": "supervisor-workers",
+  "schemaVersion": 1,
   "name": "Supervisor + Workers",
   "description": "A supervisor agent routes each task to the most suitable specialist worker, then collects the result.",
   "nodes": [

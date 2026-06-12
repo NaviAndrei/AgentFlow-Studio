@@ -1,5 +1,6 @@
 {
   "id": "human-in-loop",
+  "schemaVersion": 1,
   "name": "Human-in-Loop",
   "description": "An agent drafts, execution pauses for human approval, then a second agent finalizes the approved draft.",
   "nodes": [
