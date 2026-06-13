@@ -43,14 +43,21 @@ describe('blueprint gallery', () => {
     expect(ids).toContain('deep-research-agent')
   })
 
+  it('includes the Wave 3 emerging blueprints', () => {
+    expect(ids).toContain('web-research-agent')
+    expect(ids).toContain('multi-framework-orchestration')
+    expect(ids).toContain('vision-document-analyzer')
+  })
+
   it('no longer ships the retired rag-memory blueprint', () => {
     expect(ids).not.toContain('rag-memory')
   })
 
   it('every blueprint parsed (none dropped by the schema validator)', () => {
     // 15 from Waves 0+1, plus Wave 2: Map(2) + CodeExec(1) + Evaluator(1) +
-    // Subgraph(1) + Memory(1) + Flagship Deep Research Agent.
-    expect(BLUEPRINTS.length).toBe(22)
+    // Subgraph(1) + Memory(1) + Flagship Deep Research Agent (7).
+    // Plus Wave 3: Web Research + Multi-Framework Orchestration + Vision (3).
+    expect(BLUEPRINTS.length).toBe(25)
   })
 
   it('the new blueprints have no validation errors', () => {
@@ -68,6 +75,9 @@ describe('blueprint gallery', () => {
       'hierarchical-teams',
       'long-term-memory-chatbot',
       'deep-research-agent',
+      'web-research-agent',
+      'multi-framework-orchestration',
+      'vision-document-analyzer',
     ]) {
       const bp = BLUEPRINTS.find((b) => b.id === id)
       expect(bp).toBeDefined()

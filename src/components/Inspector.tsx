@@ -371,6 +371,198 @@ function CodeExecutorFields({ data, update }: FieldsProps) {
   )
 }
 
+function MultimodalInputFields({ data, update }: FieldsProps) {
+  const inputType = data.inputType ?? 'image'
+  return (
+    <>
+      <label className="block">
+        <span className={labelCls}>Input type</span>
+        <select
+          className={inputCls}
+          value={inputType}
+          onChange={(e) =>
+            update({
+              inputType: e.target.value as
+                | 'image'
+                | 'audio'
+                | 'document'
+                | 'mixed',
+            })
+          }
+        >
+          <option value="image">image</option>
+          <option value="audio">audio</option>
+          <option value="document">document</option>
+          <option value="mixed">mixed</option>
+        </select>
+      </label>
+      <label className="block">
+        <span className={labelCls}>Input variable</span>
+        <input
+          className={inputCls}
+          value={data.inputVariable ?? ''}
+          onChange={(e) => update({ inputVariable: e.target.value })}
+          placeholder="file_input"
+        />
+      </label>
+      <label className="block">
+        <span className={labelCls}>Text prompt</span>
+        <textarea
+          className={`${inputCls} h-16 resize-none`}
+          value={data.textPrompt ?? ''}
+          onChange={(e) => update({ textPrompt: e.target.value })}
+        />
+      </label>
+      <label className="block">
+        <span className={labelCls}>Encoding</span>
+        <select
+          className={inputCls}
+          value={data.encoding ?? 'url'}
+          onChange={(e) =>
+            update({ encoding: e.target.value as 'base64' | 'url' })
+          }
+        >
+          <option value="url">url</option>
+          <option value="base64">base64</option>
+        </select>
+      </label>
+      <p className="text-[10px] text-gray-600">
+        Entry point for vision pipelines. Audio input requires an OpenAI or
+        Gemini model — not all providers support it.
+      </p>
+    </>
+  )
+}
+
+function A2AAgentFields({ data, update }: FieldsProps) {
+  return (
+    <>
+      <label className="block">
+        <span className={labelCls}>Agent name</span>
+        <input
+          className={inputCls}
+          value={data.agentName ?? ''}
+          onChange={(e) => update({ agentName: e.target.value })}
+          placeholder="Remote Agent"
+        />
+      </label>
+      <label className="block">
+        <span className={labelCls}>Agent A2A URL</span>
+        <input
+          className={inputCls}
+          value={data.agentUrl ?? ''}
+          onChange={(e) => update({ agentUrl: e.target.value })}
+          placeholder="http://localhost:8000/a2a"
+        />
+      </label>
+      <label className="block">
+        <span className={labelCls}>Task description</span>
+        <textarea
+          className={`${inputCls} h-16 resize-none`}
+          value={data.taskDescription ?? ''}
+          onChange={(e) => update({ taskDescription: e.target.value })}
+        />
+      </label>
+      <label className="block">
+        <span className={labelCls}>Auth token (optional)</span>
+        <input
+          type="password"
+          className={inputCls}
+          value={data.authToken ?? ''}
+          onChange={(e) => update({ authToken: e.target.value })}
+          placeholder="Bearer token"
+        />
+      </label>
+      <label className="block">
+        <span className={labelCls}>Timeout (seconds)</span>
+        <input
+          type="number"
+          min={1}
+          className={inputCls}
+          value={data.timeoutSeconds ?? 30}
+          onChange={(e) =>
+            update({ timeoutSeconds: Math.max(1, Number(e.target.value) || 1) })
+          }
+        />
+      </label>
+      <p className="text-[10px] text-gray-600">
+        Sim stubs the round-trip. Live execution requires a running A2A server
+        at the URL above — it is not called from the browser.
+      </p>
+    </>
+  )
+}
+
+const COMPUTER_USE_TOOLS = ['screenshot', 'click', 'type', 'scroll', 'keypress']
+
+function ComputerUseFields({ data, update }: FieldsProps) {
+  const allowed = data.allowedTools ?? []
+  const toggle = (tool: string) => {
+    const next = allowed.includes(tool)
+      ? allowed.filter((t) => t !== tool)
+      : [...allowed, tool]
+    update({ allowedTools: next })
+  }
+  return (
+    <>
+      <label className="block">
+        <span className={labelCls}>Task</span>
+        <textarea
+          className={`${inputCls} h-20 resize-none`}
+          value={data.task ?? ''}
+          onChange={(e) => update({ task: e.target.value })}
+        />
+      </label>
+      <label className="block">
+        <span className={labelCls}>Model</span>
+        <select
+          className={inputCls}
+          value={data.model ?? 'claude-sonnet-4-5'}
+          onChange={(e) => update({ model: e.target.value })}
+        >
+          <option value="claude-sonnet-4-5">claude-sonnet-4-5</option>
+          <option value="claude-opus-4">claude-opus-4</option>
+        </select>
+      </label>
+      <label className="block">
+        <span className={labelCls}>Max steps</span>
+        <input
+          type="number"
+          min={1}
+          className={inputCls}
+          value={data.maxSteps ?? 10}
+          onChange={(e) =>
+            update({ maxSteps: Math.max(1, Number(e.target.value) || 1) })
+          }
+        />
+      </label>
+      <div className="block">
+        <span className={labelCls}>Allowed tools</span>
+        <div className="space-y-1">
+          {COMPUTER_USE_TOOLS.map((tool) => (
+            <label
+              key={tool}
+              className="flex items-center gap-2 text-xs text-gray-300"
+            >
+              <input
+                type="checkbox"
+                checked={allowed.includes(tool)}
+                onChange={() => toggle(tool)}
+              />
+              <span>{tool}</span>
+            </label>
+          ))}
+        </div>
+      </div>
+      <p className="text-[10px] text-gray-600">
+        Sim: stubs a screenshot→action loop. Computer-use requires a
+        sandboxed browser environment; export emits the real
+        <code> computer_20241022</code> tool loop.
+      </p>
+    </>
+  )
+}
+
 function PlannerFields({ data, update }: FieldsProps) {
   return (
     <>
@@ -1027,6 +1219,9 @@ function ConfigPanel() {
         {nodeType === 'memoryWriter' && <MemoryWriterFields {...props} />}
         {nodeType === 'planner' && <PlannerFields {...props} />}
         {nodeType === 'subagent' && <SubagentFields {...props} />}
+        {nodeType === 'computerUse' && <ComputerUseFields {...props} />}
+        {nodeType === 'a2aAgent' && <A2AAgentFields {...props} />}
+        {nodeType === 'multimodalInput' && <MultimodalInputFields {...props} />}
         {(nodeType === 'humanInLoop' ||
           nodeType === 'supervisor' ||
           nodeType === 'swarmWorker') && <DescriptionFields {...props} />}

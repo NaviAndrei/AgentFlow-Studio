@@ -37,7 +37,12 @@ export function validateGraph(
   const hasOutgoing = (id: string) => edges.some((e) => e.source === id)
   const hasIncoming = (id: string) => edges.some((e) => e.target === id)
 
-  if (!flowNodes.some((n) => n.type === 'start')) {
+  // A Multimodal Input can act as the entry point in a vision pipeline, so it
+  // satisfies the "needs an entry" requirement in place of a Start node.
+  const hasEntry = flowNodes.some(
+    (n) => n.type === 'start' || n.type === 'multimodalInput',
+  )
+  if (!hasEntry) {
     issues.push({ level: 'error', message: 'Canvas has no Start node' })
   }
 
@@ -227,6 +232,61 @@ export function validateGraph(
       }
     }
 
+    // Multimodal Input should feed an LLM that can actually process it.
+    if (node.type === 'multimodalInput') {
+      const feedsLlm = edges.some((e) => {
+        if (e.source !== node.id) return false
+        const t = nodes.find((n) => n.id === e.target)?.type
+        return t === 'llm' || t === 'agent'
+      })
+      if (hasOutgoing(node.id) && !feedsLlm) {
+        issues.push({
+          nodeId: node.id,
+          level: 'warning',
+          message:
+            'Multimodal Input is not connected to an LLM/Agent that can process it',
+        })
+      }
+    }
+
+    // A2A Remote Agent needs a real endpoint URL.
+    if (node.type === 'a2aAgent') {
+      const url = (node.data.agentUrl ?? '').trim()
+      if (url === '') {
+        issues.push({
+          nodeId: node.id,
+          level: 'error',
+          message: 'A2A Agent has no endpoint URL',
+        })
+      } else if (/localhost|127\.0\.0\.1/.test(url)) {
+        issues.push({
+          nodeId: node.id,
+          level: 'warning',
+          message: 'A2A Agent points at localhost — likely dev only',
+        })
+      }
+    }
+
+    // Computer-Use needs an outgoing edge (its result must flow somewhere) and
+    // a computer-use-capable model.
+    if (node.type === 'computerUse') {
+      if (!hasOutgoing(node.id)) {
+        issues.push({
+          nodeId: node.id,
+          level: 'warning',
+          message: 'Computer-Use result has no outgoing edge',
+        })
+      }
+      const model = node.data.model ?? ''
+      if (model !== 'claude-sonnet-4-5' && model !== 'claude-opus-4') {
+        issues.push({
+          nodeId: node.id,
+          level: 'warning',
+          message: 'Computer-Use requires a computer-use-capable model (Claude 3.5+)',
+        })
+      }
+    }
+
     // Subgraph references an inner canvas — flag if no reference is set.
     if (node.type === 'subgraph') {
       if ((node.data.subgraphRef ?? '').trim() === '') {
@@ -350,9 +410,12 @@ export function validateGraph(
     })
   }
 
-  // Flow nodes unreachable from any Start node never execute. Only meaningful
-  // once a Start exists and is wired; skip the all-disconnected early state.
-  const starts = flowNodes.filter((n) => n.type === 'start').map((n) => n.id)
+  // Flow nodes unreachable from any entry node never execute. Multimodal Input
+  // counts as an entry alongside Start. Only meaningful once an entry exists and
+  // is wired; skip the all-disconnected early state.
+  const starts = flowNodes
+    .filter((n) => n.type === 'start' || n.type === 'multimodalInput')
+    .map((n) => n.id)
   if (starts.length > 0) {
     const flowIds = new Set(flowNodes.map((n) => n.id))
     const reachable = reachableFrom(starts, edges, flowIds)

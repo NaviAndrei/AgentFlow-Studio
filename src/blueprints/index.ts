@@ -10,6 +10,7 @@ import humanInLoop from './human-in-loop.json'
 import longTermMemoryChatbot from './long-term-memory-chatbot.json'
 import mapReduceSummarization from './map-reduce-summarization.json'
 import multiAgentDebate from './multi-agent-debate.json'
+import multiFrameworkOrchestration from './multi-framework-orchestration.json'
 import parallelFanout from './parallel-fanout.json'
 import pipelineSequential from './pipeline-sequential.json'
 import planAndExecute from './plan-and-execute.json'
@@ -22,6 +23,8 @@ import selfRag from './self-rag.json'
 import stormResearch from './storm-research.json'
 import supervisorWorkers from './supervisor-workers.json'
 import swarm from './swarm.json'
+import visionDocumentAnalyzer from './vision-document-analyzer.json'
+import webResearchAgent from './web-research-agent.json'
 
 // Category tags for the original blueprints (their JSON files predate the
 // category field and are kept unchanged).
@@ -59,6 +62,9 @@ const raw: unknown[] = [
   hierarchicalTeams,
   longTermMemoryChatbot,
   deepResearchAgent,
+  webResearchAgent,
+  multiFrameworkOrchestration,
+  visionDocumentAnalyzer,
 ]
 
 export const BLUEPRINTS: Blueprint[] = raw

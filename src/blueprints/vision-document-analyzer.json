@@ -1,0 +1,62 @@
+{
+  "id": "vision-document-analyzer",
+  "schemaVersion": 1,
+  "name": "Vision Document Analyzer",
+  "description": "Feed an image or PDF straight into a vision LLM, extract the fields, and enforce a typed schema on the output — invoice parsing, chart reading, form extraction. The Multimodal Input replaces the Start node.",
+  "category": "Vision",
+  "nodes": [
+    {
+      "id": "note-1",
+      "type": "note",
+      "position": { "x": 300, "y": 20 },
+      "data": {
+        "label": "Image → vision LLM → typed output",
+        "text": "The Multimodal Input is the entry point (no Start node needed). It hands the image to a vision-capable LLM, which extracts the fields; Structured Output enforces a Pydantic schema so the result is machine-usable."
+      }
+    },
+    {
+      "id": "mm-1",
+      "type": "multimodalInput",
+      "position": { "x": 40, "y": 240 },
+      "data": {
+        "label": "Document Image",
+        "inputType": "image",
+        "inputVariable": "document_image",
+        "textPrompt": "Extract every line item, the totals, and the invoice date from this document.",
+        "encoding": "url"
+      }
+    },
+    {
+      "id": "llm-1",
+      "type": "llm",
+      "position": { "x": 320, "y": 240 },
+      "data": {
+        "label": "Vision Extractor",
+        "model": "gemini-2.5-flash",
+        "systemPrompt": "You read documents. Extract the requested fields accurately from the provided image.",
+        "temperature": 0.1
+      }
+    },
+    {
+      "id": "struct-1",
+      "type": "structuredOutput",
+      "position": { "x": 600, "y": 240 },
+      "data": {
+        "label": "Invoice Schema",
+        "pydanticModel": "Invoice",
+        "jsonSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"invoice_date\": { \"type\": \"string\" },\n    \"total\": { \"type\": \"number\" },\n    \"line_items\": { \"type\": \"array\" }\n  },\n  \"required\": [\"invoice_date\", \"total\"]\n}"
+      }
+    },
+    {
+      "id": "output-1",
+      "type": "output",
+      "position": { "x": 880, "y": 240 },
+      "data": { "label": "Parsed Invoice" }
+    }
+  ],
+  "edges": [
+    { "id": "e1", "source": "mm-1", "target": "llm-1" },
+    { "id": "e2", "source": "llm-1", "target": "struct-1" },
+    { "id": "e3", "source": "struct-1", "target": "output-1" }
+  ]
+}

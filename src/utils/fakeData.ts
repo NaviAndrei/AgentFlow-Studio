@@ -34,6 +34,12 @@ export function nodeStepDurationMs(type: AgentFlowNodeType | undefined): number 
       return 2000
     case 'subagent':
       return 2400
+    case 'computerUse':
+      return 2600
+    case 'a2aAgent':
+      return 1800
+    case 'multimodalInput':
+      return 800
     case 'tool':
     case 'retriever':
     case 'mcpServer':
@@ -108,6 +114,12 @@ export function fakeStreamTextFor(node: AgentFlowNode): string {
       return 'Decomposing goal into todos…'
     case 'subagent':
       return `Subagent (${node.data.role ?? 'worker'}) working on assigned task…`
+    case 'computerUse':
+      return 'screenshot → act → screenshot…'
+    case 'a2aAgent':
+      return `Calling ${node.data.agentName ?? 'remote agent'} via A2A…`
+    case 'multimodalInput':
+      return `Encoding ${node.data.inputType ?? 'image'} input…`
     case 'supervisor':
       return 'Routing: scoring workers against the task…'
     case 'swarmWorker':
@@ -277,6 +289,34 @@ export function fakeOutputFor(node: AgentFlowNode, userInput: string): unknown {
         tools_used: (node.data.tools ?? []).filter(Boolean).slice(0, 2),
         result: `(simulated) compressed result from ${node.data.role ?? 'subagent'}`,
       }
+    case 'computerUse':
+      return {
+        result: 'Task completed: navigated to target and extracted data',
+        model: node.data.model ?? 'claude-sonnet-4-5',
+        steps_taken: 4,
+        actions: [
+          'screenshot',
+          'click(245,312)',
+          "type('search query')",
+          'screenshot',
+        ],
+        success: true,
+      }
+    case 'a2aAgent':
+      return {
+        response: `(simulated) ${node.data.agentName ?? 'Remote Agent'} completed task`,
+        agent_url: node.data.agentUrl ?? '',
+        status: 'completed',
+        round_trips: 1,
+      }
+    case 'multimodalInput':
+      return {
+        content_type: node.data.inputType ?? 'image',
+        description: `(simulated) ${node.data.inputType ?? 'image'} input has been provided`,
+        text_prompt: node.data.textPrompt ?? 'Describe what you see',
+        encoding: node.data.encoding ?? 'url',
+        ready_for_llm: true,
+      }
     case 'evaluator': {
       const branches = (node.data.evalBranches ?? ['pass', 'fail']).filter(
         Boolean,
@@ -361,6 +401,12 @@ export function fakeTokensFor(node: AgentFlowNode): number {
       return 130
     case 'subagent':
       return 200
+    case 'computerUse':
+      return 180
+    case 'a2aAgent':
+      return 90
+    case 'multimodalInput':
+      return 10
     case 'evaluator':
       return 60
     case 'structuredOutput':

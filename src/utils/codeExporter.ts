@@ -74,6 +74,9 @@ const GRAPH_NODE_TYPES: AgentFlowNodeType[] = [
   'memoryWriter',
   'planner',
   'subagent',
+  'computerUse',
+  'a2aAgent',
+  'multimodalInput',
 ]
 
 const PYTHON_KEYWORDS = new Set([
@@ -276,6 +279,12 @@ export function exportRequirements(nodes: AgentFlowNode[]): string {
   if (nodes.some((n) => n.type === 'memoryWriter')) {
     lines.push('langmem')
   }
+  if (nodes.some((n) => n.type === 'computerUse')) {
+    lines.push('anthropic')
+  }
+  if (nodes.some((n) => n.type === 'a2aAgent')) {
+    lines.push('httpx')
+  }
   lines.push('python-dotenv')
   return lines.join('\n') + '\n'
 }
@@ -330,8 +339,13 @@ export function exportPython(
   const envVars = [
     ...new Set(modelSetups.map((s) => s.envVar).filter((v): v is string => !!v)),
   ]
+  // A2A nodes with an auth token read os.environ["A2A_TOKEN"] at runtime.
+  const a2aNeedsAuth = graphNodes.some(
+    (n) => n.type === 'a2aAgent' && (n.data.authToken ?? '').trim() !== '',
+  )
   const needsOs =
     envVars.length > 0 ||
+    a2aNeedsAuth ||
     modelSetups.some((s) => s.pythonLine('m', 0).includes('os.environ'))
   const hasTools = nodes.some((n) => n.type === 'tool')
   // Only checkpointer / short-term memory becomes a LangGraph checkpointer;
@@ -408,6 +422,15 @@ export function exportPython(
   if (hasStore) emit('from langgraph.store.memory import InMemoryStore')
   if (memoryWriterNodes.length > 0) {
     emit('from langmem import create_memory_manager')
+  }
+  if (graphNodes.some((n) => n.type === 'computerUse')) {
+    emit('from anthropic import Anthropic')
+  }
+  if (graphNodes.some((n) => n.type === 'a2aAgent')) {
+    emit('import httpx')
+  }
+  if (graphNodes.some((n) => n.type === 'multimodalInput')) {
+    emit('from langchain_core.messages import HumanMessage')
   }
   for (const setup of modelSetups) emit(setup.importLine)
   if (hasTools) emit('from langchain_core.tools import tool')
@@ -875,6 +898,118 @@ export function exportPython(
         )
         break
       }
+      case 'multimodalInput': {
+        const inputType = node.data.inputType ?? 'image'
+        const textPrompt = node.data.textPrompt ?? 'Describe what you see'
+        const encoding = node.data.encoding ?? 'url'
+        const inputVar = node.data.inputVariable ?? 'file_input'
+        emit(
+          `${defKeyword} ${name}(state: State) -> dict:`,
+          `    """Multimodal Input: ${pyDoc(node.data.label)} (${inputType}, ${encoding})."""`,
+          `    # Provide the ${inputType} payload via state["${pyDoc(inputVar)}"] at invoke time.`,
+          `    payload = state.get("${inputVar}", "")`,
+        )
+        if (inputType === 'audio') {
+          emit(
+            '    # Audio requires an OpenAI/Gemini model that supports input_audio.',
+            '    content = [',
+            `        {"type": "text", "text": ${pyStr(textPrompt)}},`,
+            '        {"type": "input_audio", "input_audio": {"data": payload, "format": "wav"}},',
+            '    ]',
+          )
+        } else {
+          const urlValue =
+            encoding === 'base64'
+              ? `f"data:image/png;base64,{payload}"`
+              : 'payload'
+          emit(
+            '    content = [',
+            `        {"type": "text", "text": ${pyStr(textPrompt)}},`,
+            `        {"type": "image_url", "image_url": {"url": ${urlValue}}},`,
+            '    ]',
+          )
+        }
+        emit(
+          '    return {"messages": [HumanMessage(content=content)]}',
+          '',
+        )
+        break
+      }
+      case 'a2aAgent': {
+        const url = node.data.agentUrl ?? 'http://localhost:8000/a2a'
+        const agentName = node.data.agentName ?? 'Remote Agent'
+        const task = node.data.taskDescription ?? 'Delegate this task.'
+        const timeout = node.data.timeoutSeconds ?? 30
+        const hasAuth = (node.data.authToken ?? '').trim() !== ''
+        emit(
+          `${defKeyword} ${name}(state: State) -> dict:`,
+          `    """A2A call to ${pyDoc(agentName)} at ${pyDoc(url)}."""`,
+          `    task = ${pyStr(task)}`,
+          '    payload = {',
+          '        "jsonrpc": "2.0",',
+          '        "id": "1",',
+          '        "method": "tasks/send",',
+          '        "params": {"message": {"role": "user", "parts": [{"type": "text", "text": task}]}},',
+          '    }',
+          hasAuth
+            ? '    headers = {"Authorization": f"Bearer {os.environ[\'A2A_TOKEN\']}"}'
+            : '    headers = {}',
+        )
+        if (options.asyncMode) {
+          emit(
+            `    async with httpx.AsyncClient(timeout=${timeout}) as client:`,
+            `        resp = await client.post(${pyStr(url)}, json=payload, headers=headers)`,
+            '    data = resp.json()',
+          )
+        } else {
+          emit(
+            `    resp = httpx.post(${pyStr(url)}, json=payload, headers=headers, timeout=${timeout})`,
+            '    data = resp.json()',
+          )
+        }
+        emit(
+          '    text = str(data.get("result", data))',
+          '    return {"messages": [{"role": "user", "content": f"[a2a] {text}"}]}',
+          '',
+        )
+        break
+      }
+      case 'computerUse': {
+        const model = node.data.model ?? 'claude-sonnet-4-5'
+        const maxSteps = node.data.maxSteps ?? 10
+        const task = node.data.task ?? 'Complete the assigned task.'
+        emit(
+          `${defKeyword} ${name}(state: State) -> dict:`,
+          `    """Computer Use: ${pyDoc(node.data.label)} — screenshot→action loop (max ${maxSteps} steps)."""`,
+          '    client = Anthropic()',
+          `    task = ${pyStr(task)}`,
+          '    messages = [{"role": "user", "content": task}]',
+          '    tools = [{',
+          '        "type": "computer_20241022",',
+          '        "name": "computer",',
+          '        "display_width_px": 1280,',
+          '        "display_height_px": 800,',
+          '    }]',
+          `    for _ in range(${maxSteps}):`,
+          '        response = client.beta.messages.create(',
+          `            model=${pyStr(model)},`,
+          '            max_tokens=1024,',
+          '            tools=tools,',
+          '            messages=messages,',
+          '            betas=["computer-use-2024-10-22"],',
+          '        )',
+          '        if response.stop_reason != "tool_use":',
+          '            break',
+          '        # TODO: execute each tool_use block against a sandboxed browser,',
+          '        #       then append a tool_result with the new screenshot.',
+          '        messages.append({"role": "assistant", "content": response.content})',
+          '        messages.append({"role": "user", "content": "[tool_result: TODO screenshot]"})',
+          '    summary = "".join(b.text for b in response.content if getattr(b, "type", "") == "text")',
+          '    return {"messages": [{"role": "assistant", "content": summary or "computer-use done"}]}',
+          '',
+        )
+        break
+      }
       case 'planner': {
         const modelVar = inferredModelVar.get(node.id)
         const maxTasks = node.data.maxTasks ?? 5
@@ -1062,6 +1197,17 @@ export function exportPython(
       (e) => e.source === start.id && graphIds.has(e.target),
     )) {
       emit(`builder.add_edge(START, "${names.get(edge.target)}")`)
+    }
+  }
+
+  // Multimodal Input nodes can replace the Start node. When one has no
+  // incoming graph edge it is an entry point, so wire START straight into it.
+  for (const node of orderedNodes.filter((n) => n.type === 'multimodalInput')) {
+    const hasIncoming = wiredEdges.some(
+      (e) => e.target === node.id && graphIds.has(e.source),
+    )
+    if (!hasIncoming) {
+      emit(`builder.add_edge(START, "${names.get(node.id)}")`)
     }
   }
 

@@ -103,6 +103,31 @@ export function createDefaultNodeData(type: AgentFlowNodeType): AgentFlowNodeDat
         tools: [],
         maxIterations: 5,
       }
+    case 'computerUse':
+      return {
+        label: 'Computer Use',
+        task: 'Navigate to the URL and extract the table',
+        model: 'claude-sonnet-4-5',
+        maxSteps: 10,
+        allowedTools: ['screenshot', 'click', 'type', 'scroll'],
+      }
+    case 'a2aAgent':
+      return {
+        label: 'A2A Agent',
+        agentUrl: 'http://localhost:8000/a2a',
+        agentName: 'Remote Agent',
+        taskDescription: 'Delegate this task to the remote agent.',
+        authToken: '',
+        timeoutSeconds: 30,
+      }
+    case 'multimodalInput':
+      return {
+        label: 'Multimodal Input',
+        inputType: 'image',
+        inputVariable: 'file_input',
+        textPrompt: 'Describe what you see',
+        encoding: 'url',
+      }
     case 'humanInLoop':
       return { label: 'Human Review', description: 'Pause for human approval.' }
     case 'supervisor':

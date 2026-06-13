@@ -55,6 +55,9 @@ const SIMULATED_TYPES: AgentFlowNodeType[] = [
   'memoryWriter',
   'planner',
   'subagent',
+  'computerUse',
+  'a2aAgent',
+  'multimodalInput',
 ]
 
 /** Pause between node executions in the continuous run loop. */

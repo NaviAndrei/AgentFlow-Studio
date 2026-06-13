@@ -1,0 +1,70 @@
+{
+  "id": "web-research-agent",
+  "schemaVersion": 1,
+  "name": "Web Research Agent",
+  "description": "An LLM plans a research task, a Computer-Use agent drives a real browser to navigate and extract data, and a synthesizer turns the captured findings into an answer.",
+  "category": "Research",
+  "nodes": [
+    {
+      "id": "note-1",
+      "type": "note",
+      "position": { "x": 320, "y": 20 },
+      "data": {
+        "label": "Plan → operate → synthesize",
+        "text": "The Planner decides what to look for, the Computer-Use node drives a sandboxed browser (screenshot → click → type → screenshot) to gather it, and the Synthesizer writes the answer from what was captured."
+      }
+    },
+    {
+      "id": "start-1",
+      "type": "start",
+      "position": { "x": 40, "y": 260 },
+      "data": { "label": "Start", "inputVariables": ["goal"] }
+    },
+    {
+      "id": "llm-1",
+      "type": "llm",
+      "position": { "x": 280, "y": 260 },
+      "data": {
+        "label": "Planner",
+        "model": "gemini-2.5-flash",
+        "systemPrompt": "Turn the goal into a concrete browser task: which site to open and what to extract.",
+        "temperature": 0.3
+      }
+    },
+    {
+      "id": "computer-1",
+      "type": "computerUse",
+      "position": { "x": 560, "y": 260 },
+      "data": {
+        "label": "Browser Operator",
+        "task": "Open the planned URL, navigate to the data, and extract the relevant table or text.",
+        "model": "claude-sonnet-4-5",
+        "maxSteps": 12,
+        "allowedTools": ["screenshot", "click", "type", "scroll"]
+      }
+    },
+    {
+      "id": "llm-2",
+      "type": "llm",
+      "position": { "x": 840, "y": 260 },
+      "data": {
+        "label": "Synthesizer",
+        "model": "gemini-2.5-flash",
+        "systemPrompt": "Summarize the extracted data into a clear answer to the original goal.",
+        "temperature": 0.4
+      }
+    },
+    {
+      "id": "output-1",
+      "type": "output",
+      "position": { "x": 1120, "y": 260 },
+      "data": { "label": "Answer" }
+    }
+  ],
+  "edges": [
+    { "id": "e1", "source": "start-1", "target": "llm-1" },
+    { "id": "e2", "source": "llm-1", "target": "computer-1" },
+    { "id": "e3", "source": "computer-1", "target": "llm-2" },
+    { "id": "e4", "source": "llm-2", "target": "output-1" }
+  ]
+}

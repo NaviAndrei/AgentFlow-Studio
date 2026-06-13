@@ -28,6 +28,9 @@ export type AgentFlowNodeType =
   | 'memoryWriter'
   | 'planner'
   | 'subagent'
+  | 'computerUse'
+  | 'a2aAgent'
+  | 'multimodalInput'
   | 'note'
   | 'group'
 
@@ -111,6 +114,21 @@ export type AgentFlowNodeData = {
   /** Subagent — isolated-context delegate. */
   taskInput?: string
   role?: string
+  /** Computer-Use — screenshot→action→screenshot browser-automation loop. */
+  task?: string
+  maxSteps?: number
+  allowedTools?: string[]
+  /** A2A Remote Agent — call an external agent over the A2A protocol. */
+  agentUrl?: string
+  agentName?: string
+  taskDescription?: string
+  authToken?: string
+  timeoutSeconds?: number
+  /** Multimodal Input — image/audio/document entry for vision-capable LLMs. */
+  inputType?: 'image' | 'audio' | 'document' | 'mixed'
+  inputVariable?: string
+  textPrompt?: string
+  encoding?: 'base64' | 'url'
   /** Note */
   text?: string
   /** Appearance overrides (any node) */

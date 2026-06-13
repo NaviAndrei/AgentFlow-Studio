@@ -1,6 +1,8 @@
 import type { NodeTypes } from '@xyflow/react'
+import { A2AAgentNode } from './A2AAgentNode'
 import { AgentNode } from './AgentNode'
 import { CodeExecutorNode } from './CodeExecutorNode'
+import { ComputerUseNode } from './ComputerUseNode'
 import { ConditionNode } from './ConditionNode'
 import { EvaluatorNode } from './EvaluatorNode'
 import { GroupNode } from './GroupNode'
@@ -15,6 +17,7 @@ import { RouterNode } from './RouterNode'
 import { MCPServerNode } from './MCPServerNode'
 import { MemoryNode } from './MemoryNode'
 import { MemoryWriterNode } from './MemoryWriterNode'
+import { MultimodalInputNode } from './MultimodalInputNode'
 import { NoteNode } from './NoteNode'
 import { OutputNode } from './OutputNode'
 import { PlannerNode } from './PlannerNode'
@@ -53,6 +56,9 @@ export const nodeTypes: NodeTypes = {
   memoryWriter: MemoryWriterNode,
   planner: PlannerNode,
   subagent: SubagentNode,
+  computerUse: ComputerUseNode,
+  a2aAgent: A2AAgentNode,
+  multimodalInput: MultimodalInputNode,
   note: NoteNode,
   group: GroupNode,
 }
