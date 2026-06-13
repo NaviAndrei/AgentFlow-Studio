@@ -1,0 +1,87 @@
+{
+  "id": "long-term-memory-chatbot",
+  "schemaVersion": 1,
+  "name": "Long-Term Memory Chatbot",
+  "description": "Read cross-session memories before replying, then extract new memories from the conversation and write them back to the Store — a chatbot that actually remembers across sessions.",
+  "category": "Memory",
+  "nodes": [
+    {
+      "id": "note-1",
+      "type": "note",
+      "position": { "x": 320, "y": 20 },
+      "data": {
+        "label": "Two-tier memory",
+        "text": "Store (Long-Term Store) is cross-thread, namespaced — what the user told the bot last week. Memory (checkpointer) is thread-scoped — this conversation's history. Read the Store BEFORE replying, write to it AFTER."
+      }
+    },
+    {
+      "id": "start-1",
+      "type": "start",
+      "position": { "x": 40, "y": 280 },
+      "data": { "label": "Start", "inputVariables": ["message"] }
+    },
+    {
+      "id": "store-read",
+      "type": "longTermStore",
+      "position": { "x": 280, "y": 280 },
+      "data": {
+        "label": "Recall Memories",
+        "namespace": "user_memories",
+        "storeOperation": "search",
+        "searchQuery": ""
+      }
+    },
+    {
+      "id": "llm-1",
+      "type": "llm",
+      "position": { "x": 540, "y": 280 },
+      "data": {
+        "label": "Assistant",
+        "model": "gemini-2.5-flash",
+        "systemPrompt": "You're a personal assistant. Use the recalled memories above (prefixed with [store]) to personalize your reply.",
+        "temperature": 0.6
+      }
+    },
+    {
+      "id": "writer-1",
+      "type": "memoryWriter",
+      "position": { "x": 800, "y": 280 },
+      "data": {
+        "label": "Extract Memories",
+        "memoryKind": "semantic",
+        "extractionPrompt": "Extract user facts, preferences, and goals worth remembering across sessions.",
+        "writeNamespace": "user_memories"
+      }
+    },
+    {
+      "id": "store-write",
+      "type": "longTermStore",
+      "position": { "x": 1060, "y": 280 },
+      "data": {
+        "label": "Persist Memories",
+        "namespace": "user_memories",
+        "storeOperation": "write"
+      }
+    },
+    {
+      "id": "memory-1",
+      "type": "memory",
+      "position": { "x": 540, "y": 460 },
+      "data": { "label": "Thread Memory", "memoryType": "short-term" }
+    },
+    {
+      "id": "output-1",
+      "type": "output",
+      "position": { "x": 1320, "y": 280 },
+      "data": { "label": "Reply" }
+    }
+  ],
+  "edges": [
+    { "id": "e1", "source": "start-1", "target": "store-read" },
+    { "id": "e2", "source": "store-read", "target": "llm-1" },
+    { "id": "e3", "source": "llm-1", "target": "writer-1" },
+    { "id": "e4", "source": "writer-1", "target": "store-write" },
+    { "id": "e5", "source": "store-write", "target": "output-1" },
+    { "id": "e6", "source": "memory-1", "target": "llm-1" }
+  ]
+}

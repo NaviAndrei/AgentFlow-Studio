@@ -21,7 +21,7 @@ import {
   downloadCanvas,
   readCanvasFile,
 } from '../utils/canvasSerializer'
-import { listOllamaModels } from '../utils/llmClient'
+import { PROVIDERS, listOllamaModels } from '../llm'
 import { ConfirmDialog } from './Modal'
 
 export function Navbar() {
@@ -54,20 +54,30 @@ export function Navbar() {
       setLiveMode(false)
       return
     }
-    const config = useLLMConfigStore.getState()
-    if (config.provider === 'gemini') {
-      if (config.geminiApiKey.trim() === '') {
-        setLiveError('Set a Gemini API key in settings')
-        return
-      }
+    const { activeProvider, settings } = useLLMConfigStore.getState()
+    const descriptor = PROVIDERS[activeProvider]
+    const active = settings[activeProvider]
+    if (descriptor.apiKey === 'required' && active.apiKey.trim() === '') {
+      setLiveError(`Set a ${descriptor.label} API key in settings`)
+      return
+    }
+    if (active.baseUrl.trim() === '') {
+      setLiveError(`Set a ${descriptor.label} base URL in settings`)
+      return
+    }
+    if (descriptor.transport !== 'ollama') {
       setLiveMode(true)
       return
     }
-    void listOllamaModels(config.ollamaUrl)
+    // Local servers are pinged before enabling Live so a dead endpoint
+    // surfaces immediately rather than mid-run.
+    void listOllamaModels(active.baseUrl, descriptor.label)
       .then(() => setLiveMode(true))
       .catch((error: unknown) =>
         setLiveError(
-          error instanceof Error ? error.message : 'Ollama not reachable',
+          error instanceof Error
+            ? error.message
+            : `${descriptor.label} not reachable`,
         ),
       )
   }

@@ -19,8 +19,11 @@ function nodeShape(type: AgentFlowNodeType, label: string): string {
   switch (type) {
     case 'start':
     case 'output':
+    case 'join':
       return `([${quoted}])`
     case 'condition':
+    case 'router':
+    case 'guardrail':
       return `{${quoted}}`
     default:
       return `[${quoted}]`

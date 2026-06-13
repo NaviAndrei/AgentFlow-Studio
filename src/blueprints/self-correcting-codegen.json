@@ -1,0 +1,89 @@
+{
+  "id": "self-correcting-codegen",
+  "schemaVersion": 1,
+  "name": "Self-Correcting Code Generation",
+  "description": "Generate code, run it in a sandbox, branch on the exit code, and feed the error back to a debugger LLM that fixes and re-runs — a closed loop grounded in real execution output.",
+  "category": "Single Agent",
+  "nodes": [
+    {
+      "id": "note-1",
+      "type": "note",
+      "position": { "x": 320, "y": 20 },
+      "data": {
+        "label": "Generate → run → fix",
+        "text": "The Generator drafts code; the Code Executor runs it. The Condition branches on the exit_code: 0 returns the result, anything else routes to the Debugger which reads the stderr, fixes the code, and re-runs it. MAX_NODE_VISITS bounds the loop."
+      }
+    },
+    {
+      "id": "start-1",
+      "type": "start",
+      "position": { "x": 40, "y": 280 },
+      "data": { "label": "Start", "inputVariables": ["spec"] }
+    },
+    {
+      "id": "llm-1",
+      "type": "llm",
+      "position": { "x": 280, "y": 280 },
+      "data": {
+        "label": "Generator",
+        "model": "gemini-2.5-flash",
+        "systemPrompt": "Write Python code that satisfies the spec. Output ONLY the code, no prose.",
+        "temperature": 0.3
+      }
+    },
+    {
+      "id": "codeexec-1",
+      "type": "codeExecutor",
+      "position": { "x": 560, "y": 280 },
+      "data": {
+        "label": "Run Code",
+        "language": "python",
+        "timeout": 15,
+        "allowNetworkAccess": false
+      }
+    },
+    {
+      "id": "condition-1",
+      "type": "condition",
+      "position": { "x": 840, "y": 280 },
+      "data": {
+        "label": "exit_code?",
+        "branches": ["exit_code\": 0", "fail"]
+      }
+    },
+    {
+      "id": "llm-2",
+      "type": "llm",
+      "position": { "x": 840, "y": 460 },
+      "data": {
+        "label": "Debugger",
+        "model": "gemini-2.5-flash",
+        "systemPrompt": "Read the stderr above. Diagnose the failure and rewrite the code to fix it. Output ONLY the corrected code.",
+        "temperature": 0.4
+      }
+    },
+    {
+      "id": "output-1",
+      "type": "output",
+      "position": { "x": 1120, "y": 280 },
+      "data": { "label": "Working Code" }
+    },
+    {
+      "id": "note-2",
+      "type": "note",
+      "position": { "x": 560, "y": 460 },
+      "data": {
+        "label": "The fix loop",
+        "text": "First Code Executor run is simulated as a NameError. The Condition's first branch matches when 'exit_code\": 0' appears in the output (a passing run); otherwise it loops to the Debugger and re-executes."
+      }
+    }
+  ],
+  "edges": [
+    { "id": "e1", "source": "start-1", "target": "llm-1" },
+    { "id": "e2", "source": "llm-1", "target": "codeexec-1" },
+    { "id": "e3", "source": "codeexec-1", "target": "condition-1" },
+    { "id": "e4", "source": "condition-1", "target": "output-1", "label": "exit_code\": 0" },
+    { "id": "e5", "source": "condition-1", "target": "llm-2", "label": "fail" },
+    { "id": "e6", "source": "llm-2", "target": "codeexec-1", "label": "retry" }
+  ]
+}

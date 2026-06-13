@@ -10,7 +10,7 @@
       "position": { "x": 300, "y": 20 },
       "data": {
         "label": "How it works",
-        "text": "RAG: retrieve the most relevant document chunks, stuff them into the prompt, and let the LLM generate a grounded answer."
+        "text": "RAG: retrieve the most relevant document chunks, stuff them into the prompt, and let the LLM generate a grounded answer. Swap the Vector Store memory for a checkpointer to add cross-turn conversation persistence."
       }
     },
     {

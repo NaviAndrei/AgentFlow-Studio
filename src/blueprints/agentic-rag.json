@@ -1,0 +1,76 @@
+{
+  "id": "agentic-rag",
+  "schemaVersion": 1,
+  "name": "Agentic RAG",
+  "description": "Retrieval as a tool the agent chooses to call — the agent decides whether it needs more context, retrieves, and loops until it can answer, instead of running a fixed retrieve-then-generate pipeline.",
+  "category": "RAG",
+  "nodes": [
+    {
+      "id": "note-1",
+      "type": "note",
+      "position": { "x": 300, "y": 20 },
+      "data": {
+        "label": "How it works",
+        "text": "Here retrieval is a TOOL the Agent invokes on demand, not a fixed stage. The Agent reasons, decides if it needs documents, retrieves, and a Condition loops it back until it has enough to answer."
+      }
+    },
+    {
+      "id": "start-1",
+      "type": "start",
+      "position": { "x": 40, "y": 240 },
+      "data": { "label": "Start", "inputVariables": ["question"] }
+    },
+    {
+      "id": "agent-1",
+      "type": "agent",
+      "position": { "x": 280, "y": 240 },
+      "data": {
+        "label": "RAG Agent",
+        "tools": ["retrieve_docs"],
+        "maxIterations": 5
+      }
+    },
+    {
+      "id": "condition-1",
+      "type": "condition",
+      "position": { "x": 560, "y": 240 },
+      "data": {
+        "label": "Need context?",
+        "branches": ["retrieve", "done"]
+      }
+    },
+    {
+      "id": "retriever-1",
+      "type": "retriever",
+      "position": { "x": 560, "y": 440 },
+      "data": {
+        "label": "Retriever",
+        "knowledgeBase": "docs",
+        "topK": 4,
+        "similarityThreshold": 0.75
+      }
+    },
+    {
+      "id": "output-1",
+      "type": "output",
+      "position": { "x": 860, "y": 240 },
+      "data": { "label": "Answer" }
+    },
+    {
+      "id": "note-2",
+      "type": "note",
+      "position": { "x": 860, "y": 420 },
+      "data": {
+        "label": "The loop",
+        "text": "Condition 'retrieve' sends the Agent to the Retriever, whose output flows back into the Agent. The last allowed visit forces the 'done' branch, so the loop always terminates."
+      }
+    }
+  ],
+  "edges": [
+    { "id": "e1", "source": "start-1", "target": "agent-1" },
+    { "id": "e2", "source": "agent-1", "target": "condition-1" },
+    { "id": "e3", "source": "condition-1", "target": "retriever-1", "label": "retrieve" },
+    { "id": "e4", "source": "condition-1", "target": "output-1", "label": "done" },
+    { "id": "e5", "source": "retriever-1", "target": "agent-1", "label": "loop" }
+  ]
+}

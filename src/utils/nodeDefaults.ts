@@ -7,7 +7,7 @@ export function createDefaultNodeData(type: AgentFlowNodeType): AgentFlowNodeDat
     case 'llm':
       return {
         label: 'LLM',
-        model: 'gemini-flash',
+        model: 'gemini-2.5-flash',
         systemPrompt: 'You are a helpful assistant.',
         temperature: 0.7,
       }
@@ -27,8 +27,82 @@ export function createDefaultNodeData(type: AgentFlowNodeType): AgentFlowNodeDat
       return { label: 'Output' }
     case 'condition':
       return { label: 'Condition', branches: ['if: condition', 'else'] }
+    case 'router':
+      return {
+        label: 'Router',
+        routes: ['billing', 'tech', 'other'],
+        routingPrompt: 'Classify the request into one of the routes.',
+      }
+    case 'guardrail':
+      return {
+        label: 'Guardrail',
+        checkType: 'keyword',
+        criteria: 'safe, approved',
+      }
+    case 'join':
+      return { label: 'Join', mergeStrategy: 'concat' }
     case 'loop':
       return { label: 'Loop', loopCondition: 'iterations < 5' }
+    case 'map':
+      return {
+        label: 'Map',
+        inputExpression: 'items',
+        maxParallel: 10,
+      }
+    case 'codeExecutor':
+      return {
+        label: 'Code Executor',
+        language: 'python',
+        timeout: 30,
+        allowNetworkAccess: false,
+      }
+    case 'evaluator':
+      return {
+        label: 'Evaluator',
+        scoringPrompt:
+          'Score the previous response. Reply with one of the branch names.',
+        scoreType: 'pass_fail',
+        threshold: 7,
+        evalBranches: ['pass', 'fail'],
+      }
+    case 'subgraph':
+      return {
+        label: 'Subgraph',
+        subgraphRef: '',
+        subgraphSummary: 'Describe what this inner graph does.',
+        inputMapping: '{}',
+        outputMapping: '{}',
+      }
+    case 'longTermStore':
+      return {
+        label: 'Long-Term Store',
+        namespace: 'user_memories',
+        storeOperation: 'read',
+        searchQuery: '',
+      }
+    case 'memoryWriter':
+      return {
+        label: 'Memory Writer',
+        memoryKind: 'episodic',
+        extractionPrompt:
+          'Extract important facts and preferences from the conversation.',
+        writeNamespace: 'user_memories',
+      }
+    case 'planner':
+      return {
+        label: 'Planner',
+        decompositionPrompt:
+          'Break the goal into 3-5 independent subtasks. Output them as a list.',
+        maxTasks: 5,
+      }
+    case 'subagent':
+      return {
+        label: 'Subagent',
+        role: 'Researcher',
+        taskInput: 'task',
+        tools: [],
+        maxIterations: 5,
+      }
     case 'humanInLoop':
       return { label: 'Human Review', description: 'Pause for human approval.' }
     case 'supervisor':

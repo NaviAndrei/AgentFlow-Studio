@@ -1,10 +1,12 @@
 import {
+  Check,
   Pause,
   Play,
   RotateCcw,
   SkipForward,
   Square,
   Terminal,
+  X,
 } from 'lucide-react'
 import { useSimulationMetricsStore } from '../store/simulationMetricsStore'
 import { useSimulationStore } from '../store/simulationStore'
@@ -34,6 +36,9 @@ export function MetricsBar() {
   const liveMode = useSimulationStore((s) => s.liveMode)
   const userInput = useSimulationStore((s) => s.userInput)
   const setUserInput = useSimulationStore((s) => s.setUserInput)
+  const pendingApproval = useSimulationStore((s) => s.pendingApproval)
+  const approve = useSimulationStore((s) => s.approve)
+  const reject = useSimulationStore((s) => s.reject)
 
   const stepIndex = useSimulationMetricsStore((s) => s.stepIndex)
   const stepTotal = useSimulationMetricsStore((s) => s.stepTotal)
@@ -75,6 +80,27 @@ export function MetricsBar() {
       </div>
 
       <div className="flex items-center gap-1.5">
+        {pendingApproval && (
+          <div className="mr-1 flex items-center gap-1.5">
+            <span className="whitespace-nowrap text-[11px] font-medium text-amber-400">
+              Awaiting approval
+            </span>
+            <button
+              onClick={approve}
+              className={`${btnCls} border-green-500/50 text-green-400 hover:border-green-500 hover:text-green-300`}
+            >
+              <Check size={11} />
+              Approve
+            </button>
+            <button
+              onClick={reject}
+              className={`${btnCls} border-red-500/50 text-red-400 hover:border-red-500 hover:text-red-300`}
+            >
+              <X size={11} />
+              Reject
+            </button>
+          </div>
+        )}
         {liveMode && (
           <input
             value={userInput}
@@ -89,12 +115,20 @@ export function MetricsBar() {
             Pause
           </button>
         ) : (
-          <button onClick={play} disabled={finished} className={btnCls}>
+          <button
+            onClick={play}
+            disabled={finished || !!pendingApproval}
+            className={btnCls}
+          >
             <Play size={11} />
             Play
           </button>
         )}
-        <button onClick={step} disabled={finished || isRunning} className={btnCls}>
+        <button
+          onClick={step}
+          disabled={finished || isRunning || !!pendingApproval}
+          className={btnCls}
+        >
           <SkipForward size={11} />
           Step
         </button>

@@ -1,20 +1,52 @@
-import type { AgentFlowEdge, AgentFlowNode, AgentFlowNodeType, LLMModel } from '../types'
+import type { AgentFlowEdge, AgentFlowNode, AgentFlowNodeType } from '../types'
 import { topologicalSort } from './topologicalSort'
+import { inferExportModel, resolveModelSetup } from './exportModels'
+import type { ModelSetup } from './exportModels'
 
 export interface ExportOptions {
   /** Emit `async def` node functions and an async invoke example. */
   asyncMode: boolean
 }
 
-// UI "flash"/"pro" are capability tiers mapped to the current concrete
-// Gemini model ids (2.5 GA line).
-const MODEL_SETUP: Record<LLMModel, (varName: string, temp: number) => string> = {
-  'gemini-flash': (v, t) =>
-    `${v} = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=${t})`,
-  'gemini-pro': (v, t) =>
-    `${v} = ChatGoogleGenerativeAI(model="gemini-2.5-pro", temperature=${t})`,
-  'ollama/llama3': (v, t) => `${v} = ChatOllama(model="llama3", temperature=${t})`,
-  'ollama/mistral': (v, t) => `${v} = ChatOllama(model="mistral", temperature=${t})`,
+const DEFAULT_LLM_MODEL = 'gemini-2.5-flash'
+
+/** Nodes that emit an LLM call needing a resolved model (besides plain LLM nodes). */
+function needsInferredModel(node: AgentFlowNode): boolean {
+  return (
+    node.type === 'router' ||
+    node.type === 'structuredOutput' ||
+    node.type === 'evaluator' ||
+    node.type === 'planner' ||
+    node.type === 'subagent' ||
+    (node.type === 'guardrail' && node.data.checkType === 'llm-judge')
+  )
+}
+
+/** Every model id the exporter will instantiate, in node order. */
+function collectModelIds(nodes: AgentFlowNode[]): string[] {
+  const ids: string[] = []
+  for (const node of nodes) {
+    if (node.type === 'llm') {
+      ids.push(node.data.model ?? DEFAULT_LLM_MODEL)
+    } else if (needsInferredModel(node)) {
+      const inferred = inferExportModel(nodes, node)
+      if (inferred) ids.push(inferred)
+    }
+  }
+  return ids
+}
+
+/** Setups for every model the canvas instantiates, deduped by import line. */
+function modelSetupsFor(nodes: AgentFlowNode[]): ModelSetup[] {
+  const seen = new Set<string>()
+  const setups: ModelSetup[] = []
+  for (const id of collectModelIds(nodes)) {
+    const setup = resolveModelSetup(id)
+    if (seen.has(setup.importLine)) continue
+    seen.add(setup.importLine)
+    setups.push(setup)
+  }
+  return setups
 }
 
 /** Node types that become graph nodes (memory and notes are handled separately). */
@@ -24,6 +56,9 @@ const GRAPH_NODE_TYPES: AgentFlowNodeType[] = [
   'tool',
   'output',
   'condition',
+  'router',
+  'guardrail',
+  'join',
   'loop',
   'humanInLoop',
   'supervisor',
@@ -31,6 +66,14 @@ const GRAPH_NODE_TYPES: AgentFlowNodeType[] = [
   'retriever',
   'mcpServer',
   'structuredOutput',
+  'map',
+  'codeExecutor',
+  'evaluator',
+  'subgraph',
+  'longTermStore',
+  'memoryWriter',
+  'planner',
+  'subagent',
 ]
 
 const PYTHON_KEYWORDS = new Set([
@@ -150,6 +193,63 @@ function pyClassName(name: string, used: Set<string>): string {
   return result
 }
 
+const JSON_TO_PY_TYPE: Record<string, string> = {
+  string: 'str',
+  number: 'float',
+  integer: 'int',
+  boolean: 'bool',
+  array: 'list',
+  object: 'dict',
+}
+
+export interface PydanticField {
+  name: string
+  /** The bare Python type, e.g. "str". */
+  type: string
+  /** True when the field is not in the schema's `required` list. */
+  optional: boolean
+}
+
+/**
+ * Parse a JSON-Schema object into Pydantic field descriptors. Returns null
+ * when the schema can't be parsed or declares no object properties, so the
+ * caller falls back to a single `answer: str` field.
+ */
+export function pydanticFieldsFromSchema(schema: string): PydanticField[] | null {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(schema)
+  } catch {
+    return null
+  }
+  if (typeof parsed !== 'object' || parsed === null) return null
+  const obj = parsed as {
+    properties?: Record<string, { type?: unknown }>
+    required?: unknown
+  }
+  const props = obj.properties
+  if (typeof props !== 'object' || props === null) return null
+  const entries = Object.entries(props)
+  if (entries.length === 0) return null
+  const required = new Set(
+    Array.isArray(obj.required)
+      ? obj.required.filter((r): r is string => typeof r === 'string')
+      : [],
+  )
+  const used = new Set<string>()
+  const fields: PydanticField[] = []
+  for (const [rawName, spec] of entries) {
+    const name = pyIdent(rawName, used)
+    const jsonType = typeof spec?.type === 'string' ? spec.type : 'string'
+    fields.push({
+      name,
+      type: JSON_TO_PY_TYPE[jsonType] ?? 'str',
+      optional: !required.has(rawName),
+    })
+  }
+  return fields
+}
+
 /** State fields declared on Start nodes (sanitized, deduped, sans messages). */
 function stateFields(nodes: AgentFlowNode[]): string[] {
   const used = new Set<string>(['messages'])
@@ -162,18 +262,19 @@ function stateFields(nodes: AgentFlowNode[]): string[] {
 }
 
 export function exportRequirements(nodes: AgentFlowNode[]): string {
-  const hasGemini = nodes.some(
-    (n) => n.type === 'llm' && (n.data.model ?? 'gemini-flash').startsWith('gemini'),
-  )
-  const hasOllama = nodes.some(
-    (n) => n.type === 'llm' && (n.data.model ?? '').startsWith('ollama'),
-  )
   const lines = ['langgraph']
-  if (hasGemini) lines.push('langchain-google-genai')
-  if (hasOllama) lines.push('langchain-ollama')
+  for (const setup of modelSetupsFor(nodes)) {
+    lines.push(setup.requirement)
+  }
   if (nodes.some((n) => n.type === 'structuredOutput')) lines.push('pydantic')
   if (nodes.some((n) => n.type === 'mcpServer')) {
     lines.push('langchain-mcp-adapters')
+  }
+  if (nodes.some((n) => n.type === 'codeExecutor')) {
+    lines.push('langchain-experimental')
+  }
+  if (nodes.some((n) => n.type === 'memoryWriter')) {
+    lines.push('langmem')
   }
   lines.push('python-dotenv')
   return lines.join('\n') + '\n'
@@ -224,14 +325,24 @@ export function exportPython(
   const outgoing = (id: string) =>
     wiredEdges.filter((e) => e.source === id && graphIds.has(e.target))
 
-  const hasGemini = nodes.some(
-    (n) => n.type === 'llm' && (n.data.model ?? 'gemini-flash').startsWith('gemini'),
-  )
-  const hasOllama = nodes.some(
-    (n) => n.type === 'llm' && (n.data.model ?? '').startsWith('ollama'),
-  )
+  const modelSetups = modelSetupsFor(nodes)
+  // os is needed both for env guards and any setup reading os.environ.
+  const envVars = [
+    ...new Set(modelSetups.map((s) => s.envVar).filter((v): v is string => !!v)),
+  ]
+  const needsOs =
+    envVars.length > 0 ||
+    modelSetups.some((s) => s.pythonLine('m', 0).includes('os.environ'))
   const hasTools = nodes.some((n) => n.type === 'tool')
-  const hasMemory = memoryNodes.length > 0
+  // Only checkpointer / short-term memory becomes a LangGraph checkpointer;
+  // a vector-store memory belongs to a Retriever, not the graph compile.
+  const checkpointerNodes = memoryNodes.filter(
+    (n) => (n.data.memoryType ?? 'short-term') !== 'vector-store',
+  )
+  const vectorStoreNodes = memoryNodes.filter(
+    (n) => n.data.memoryType === 'vector-store',
+  )
+  const hasCheckpointer = checkpointerNodes.length > 0
   const hilNames = graphNodes
     .filter((n) => n.type === 'humanInLoop')
     .map((n) => names.get(n.id))
@@ -241,20 +352,64 @@ export function exportPython(
   const lines: string[] = []
   const emit = (...added: string[]) => lines.push(...added)
 
-  emit('"""Generated by AgentFlow Studio."""', '')
-  if (options.asyncMode) emit('import asyncio')
-  if (hasGemini) emit('import os')
-  emit('from typing import Annotated, TypedDict')
-  emit('')
   const structuredNodes = graphNodes.filter(
     (n) => n.type === 'structuredOutput',
   )
+  const routerNodes = graphNodes.filter((n) => n.type === 'router')
+  const llmJudgeNodes = graphNodes.filter(
+    (n) => n.type === 'guardrail' && n.data.checkType === 'llm-judge',
+  )
+  const evaluatorNodes = graphNodes.filter((n) => n.type === 'evaluator')
+  const plannerNodes = graphNodes.filter((n) => n.type === 'planner')
+  // Parse each structured-output schema once; null means fall back to answer:str.
+  const structuredFields = new Map<string, ReturnType<typeof pydanticFieldsFromSchema>>()
+  for (const n of structuredNodes) {
+    structuredFields.set(n.id, pydanticFieldsFromSchema(n.data.jsonSchema ?? ''))
+  }
+  // Routers, llm-judge guardrails, and evaluators emit a Literal classifier schema.
+  const needsLiteral =
+    routerNodes.length > 0 || llmJudgeNodes.length > 0 || evaluatorNodes.length > 0
+  // Optional[...] is needed when any parsed schema has a non-required field.
+  const needsOptional = [...structuredFields.values()].some(
+    (fields) => fields !== null && fields.some((f) => f.optional),
+  )
+  const needsPydantic =
+    structuredNodes.length > 0 ||
+    routerNodes.length > 0 ||
+    llmJudgeNodes.length > 0 ||
+    evaluatorNodes.length > 0 ||
+    plannerNodes.length > 0
+  // pass/fail target names resolved per guardrail node, consumed by wiring.
+  const guardrailTargets = new Map<string, { pass: string; fail: string }>()
+  // Concat joins accumulate branch outputs in a reduced state key.
+  const concatJoins = graphNodes.filter(
+    (n) => n.type === 'join' && (n.data.mergeStrategy ?? 'concat') === 'concat',
+  )
+  const mapNodes = graphNodes.filter((n) => n.type === 'map')
+  const needsOperator = concatJoins.length > 0 || mapNodes.length > 0
+  const needsSend = mapNodes.length > 0
+
+  emit('"""Generated by AgentFlow Studio."""', '')
+  if (options.asyncMode) emit('import asyncio')
+  if (needsOs) emit('import os')
+  if (needsOperator) emit('import operator')
+  emit(
+    `from typing import Annotated, TypedDict${needsLiteral ? ', Literal' : ''}${needsOptional ? ', Optional' : ''}`,
+  )
+  emit('')
   emit('from langgraph.graph import StateGraph, START, END')
   emit('from langgraph.graph.message import add_messages')
-  if (structuredNodes.length > 0) emit('from pydantic import BaseModel')
-  if (hasMemory) emit('from langgraph.checkpoint.memory import MemorySaver')
-  if (hasGemini) emit('from langchain_google_genai import ChatGoogleGenerativeAI')
-  if (hasOllama) emit('from langchain_ollama import ChatOllama')
+  if (needsSend) emit('from langgraph.types import Send')
+  if (needsPydantic) emit('from pydantic import BaseModel')
+  if (hasCheckpointer) emit('from langgraph.checkpoint.memory import MemorySaver')
+  const longTermStoreNodes = graphNodes.filter((n) => n.type === 'longTermStore')
+  const memoryWriterNodes = graphNodes.filter((n) => n.type === 'memoryWriter')
+  const hasStore = longTermStoreNodes.length > 0
+  if (hasStore) emit('from langgraph.store.memory import InMemoryStore')
+  if (memoryWriterNodes.length > 0) {
+    emit('from langmem import create_memory_manager')
+  }
+  for (const setup of modelSetups) emit(setup.importLine)
   if (hasTools) emit('from langchain_core.tools import tool')
   emit('')
 
@@ -264,6 +419,29 @@ export function exportPython(
   emit('    messages: Annotated[list, add_messages]')
   for (const field of fields) {
     emit(`    ${field}: str`)
+  }
+  // Each Map node fans out over a list living under state[inputExpression].
+  // Declare every distinct source key as a list field; also declare 'item'
+  // since each Send dispatches {"item": ...} into the per-branch state.
+  const mapSources = new Set<string>()
+  for (const n of mapNodes) {
+    const src = (n.data.inputExpression ?? 'items').trim() || 'items'
+    if (src !== 'messages') mapSources.add(src)
+  }
+  for (const src of mapSources) {
+    emit(`    ${src}: list`)
+  }
+  if (mapNodes.length > 0) {
+    emit('    item: str')
+  }
+  const hasPlanner = orderedNodes.some((n) => n.type === 'planner')
+  // Don't double-declare if a Map already declared "todos" as a source list.
+  if (hasPlanner && !mapSources.has('todos')) {
+    emit('    todos: list')
+  }
+  if (needsOperator) {
+    // Parallel branches feeding a concat join append to this reduced list.
+    emit('    branch_results: Annotated[list, operator.add]')
   }
   emit('')
 
@@ -278,23 +456,47 @@ export function exportPython(
         usedClassNames,
       )
       structuredClassNames.set(node.id, className)
-      const schema = (node.data.jsonSchema ?? '').trim().replace(/\s+/g, ' ')
       emit(`class ${className}(BaseModel):`)
-      emit('    """TODO: derive fields from the JSON schema below."""')
-      emit(`    # schema: ${schema.slice(0, 160)}`)
-      emit('    answer: str')
+      emit(`    """Structured output for ${pyDoc(node.data.label)}."""`)
+      const fields = structuredFields.get(node.id)
+      if (fields && fields.length > 0) {
+        for (const f of fields) {
+          emit(
+            f.optional
+              ? `    ${f.name}: Optional[${f.type}] = None`
+              : `    ${f.name}: ${f.type}`,
+          )
+        }
+      } else {
+        // Schema absent or unparseable — emit a single safe default field.
+        const schema = (node.data.jsonSchema ?? '').trim().replace(/\s+/g, ' ')
+        if (schema) emit(`    # schema: ${schema.slice(0, 160)}`)
+        emit('    answer: str')
+      }
       emit('')
     }
   }
 
   // --- Models ---
   const llmNodes = orderedNodes.filter((n) => n.type === 'llm')
-  if (llmNodes.length > 0) {
+  // Router (and llm-judge guardrail) nodes get their own classifier model var,
+  // resolved via the shared model-source policy. Null = no model on canvas, so
+  // the node emits an honest TODO instead.
+  const inferredModelNodes = orderedNodes.filter(needsInferredModel)
+  const inferredModelVar = new Map<string, string>()
+  if (llmNodes.length > 0 || inferredModelNodes.length > 0) {
     emit('# --- Models ---')
     for (const node of llmNodes) {
-      const model = node.data.model ?? 'gemini-flash'
+      const model = node.data.model ?? DEFAULT_LLM_MODEL
       const temp = node.data.temperature ?? 0.7
-      emit(MODEL_SETUP[model](`${names.get(node.id)}_model`, temp))
+      emit(resolveModelSetup(model).pythonLine(`${names.get(node.id)}_model`, temp))
+    }
+    for (const node of inferredModelNodes) {
+      const model = inferExportModel(nodes, node)
+      if (model === null) continue
+      const varName = `${names.get(node.id)}_model`
+      inferredModelVar.set(node.id, varName)
+      emit(resolveModelSetup(model).pythonLine(varName, node.data.temperature ?? 0))
     }
     emit('')
   }
@@ -404,11 +606,365 @@ export function exportPython(
         )
         break
       }
+      case 'router': {
+        const routes = (node.data.routes ?? []).filter(Boolean)
+        const outs = outgoing(node.id)
+        // Map each route name to the node its labeled edge points at.
+        const routeTarget = new Map<string, string>()
+        for (const e of outs) {
+          const label =
+            typeof e.label === 'string' && e.label !== ''
+              ? e.label
+              : (names.get(e.target) ?? '')
+          const target = names.get(e.target)
+          if (target) routeTarget.set(label, target)
+        }
+        const defaultTargetId = pickDefaultTarget(
+          node.id,
+          outs.map((e) => e.target),
+          wiredEdges,
+          graphIds,
+        )
+        const defaultTarget =
+          (defaultTargetId ? names.get(defaultTargetId) : undefined) ??
+          [...routeTarget.values()][0] ??
+          'END'
+        emit(
+          `${defKeyword} ${name}(state: State) -> dict:`,
+          `    """Router node: ${pyDoc(node.data.label)} — classifies into ${pyDoc(JSON.stringify(routes))}."""`,
+          '    return {}',
+          '',
+        )
+        const modelVar = inferredModelVar.get(node.id)
+        const mapEntries = routes
+          .map((r) => `"${r}": "${routeTarget.get(r) ?? defaultTarget}"`)
+          .join(', ')
+        if (modelVar && routes.length > 0) {
+          const literal = routes.map((r) => pyStr(r)).join(', ')
+          const prompt = `${node.data.routingPrompt ?? 'Classify the request.'} Respond with one of: ${routes.join(', ')}.`
+          emit(
+            `def route_${name}(state: State) -> str:`,
+            `    """Routing for '${pyDoc(node.data.label)}'."""`,
+            `    class _Route(BaseModel):`,
+            `        route: Literal[${literal}]`,
+            `    decision = ${modelVar}.with_structured_output(_Route).invoke(`,
+            `        [{"role": "system", "content": ${pyStr(prompt)}}, *state["messages"]]`,
+            '    )',
+            `    targets = {${mapEntries}}`,
+            `    return targets.get(decision.route, "${defaultTarget}")`,
+            '',
+          )
+        } else {
+          emit(
+            `def route_${name}(state: State) -> str:`,
+            `    """Routing for '${pyDoc(node.data.label)}'."""`,
+            '    # TODO: no model on canvas — add an LLM node or set Override model.',
+            `    return "${defaultTarget}"`,
+            '',
+          )
+        }
+        break
+      }
+      case 'guardrail': {
+        const outs = outgoing(node.id)
+        const targetOf = (label: string): string | undefined => {
+          const e = outs.find(
+            (o) =>
+              (typeof o.label === 'string' && o.label !== ''
+                ? o.label
+                : names.get(o.target)) === label,
+          )
+          return e ? names.get(e.target) : undefined
+        }
+        const passTarget = targetOf('pass') ?? 'END'
+        const failTarget = targetOf('fail') ?? 'END'
+        emit(
+          `${defKeyword} ${name}(state: State) -> dict:`,
+          `    """Guardrail node: ${pyDoc(node.data.label)} (${node.data.checkType ?? 'keyword'})."""`,
+          '    return {}',
+          '',
+        )
+        if ((node.data.checkType ?? 'keyword') === 'keyword') {
+          const terms = (node.data.criteria ?? '')
+            .split(/[\n,]/)
+            .map((t) => t.trim())
+            .filter(Boolean)
+          emit(
+            `def route_${name}(state: State) -> str:`,
+            `    """Keyword guardrail for '${pyDoc(node.data.label)}'."""`,
+            '    content = str(state["messages"][-1].content).lower()',
+            `    terms = ${JSON.stringify(terms)}`,
+            '    return "pass" if any(t.lower() in content for t in terms) else "fail"',
+            '',
+          )
+        } else {
+          const modelVar = inferredModelVar.get(node.id)
+          if (modelVar) {
+            const rubric = node.data.criteria ?? 'Judge whether the response is acceptable.'
+            emit(
+              `def route_${name}(state: State) -> str:`,
+              `    """LLM-judge guardrail for '${pyDoc(node.data.label)}'."""`,
+              '    class _Verdict(BaseModel):',
+              '        verdict: Literal["pass", "fail"]',
+              `    decision = ${modelVar}.with_structured_output(_Verdict).invoke(`,
+              `        [{"role": "system", "content": ${pyStr(`${rubric} Reply pass or fail.`)}}, *state["messages"]]`,
+              '    )',
+              '    return decision.verdict',
+              '',
+            )
+          } else {
+            emit(
+              `def route_${name}(state: State) -> str:`,
+              `    """LLM-judge guardrail for '${pyDoc(node.data.label)}'."""`,
+              '    # TODO: no model on canvas — add an LLM node or set Override model.',
+              '    return "pass"',
+              '',
+            )
+          }
+        }
+        // Expose the resolved targets so the wiring section maps them.
+        guardrailTargets.set(node.id, { pass: passTarget, fail: failTarget })
+        break
+      }
+      case 'evaluator': {
+        const branches = (node.data.evalBranches ?? ['pass', 'fail']).filter(
+          Boolean,
+        )
+        const outs = outgoing(node.id)
+        const targetByLabel = new Map<string, string>()
+        for (const e of outs) {
+          const label =
+            typeof e.label === 'string' && e.label !== ''
+              ? e.label
+              : (names.get(e.target) ?? '')
+          const target = names.get(e.target)
+          if (target) targetByLabel.set(label, target)
+        }
+        const defaultTargetId = pickDefaultTarget(
+          node.id,
+          outs.map((e) => e.target),
+          wiredEdges,
+          graphIds,
+        )
+        const defaultTarget =
+          (defaultTargetId ? names.get(defaultTargetId) : undefined) ??
+          [...targetByLabel.values()][0] ??
+          'END'
+        emit(
+          `${defKeyword} ${name}(state: State) -> dict:`,
+          `    """Evaluator node: ${pyDoc(node.data.label)} (${node.data.scoreType ?? 'pass_fail'})."""`,
+          '    return {}',
+          '',
+        )
+        const modelVar = inferredModelVar.get(node.id)
+        const mapEntries = branches
+          .map((b) => `"${b}": "${targetByLabel.get(b) ?? defaultTarget}"`)
+          .join(', ')
+        if (modelVar && branches.length > 0) {
+          const literal = branches.map((b) => pyStr(b)).join(', ')
+          const rubric = node.data.scoringPrompt ?? 'Score the response.'
+          emit(
+            `def route_${name}(state: State) -> str:`,
+            `    """LLM-as-judge for '${pyDoc(node.data.label)}'."""`,
+            `    class _Grade(BaseModel):`,
+            `        verdict: Literal[${literal}]`,
+            `    decision = ${modelVar}.with_structured_output(_Grade).invoke(`,
+            `        [{"role": "system", "content": ${pyStr(`${rubric} Reply with one of: ${branches.join(', ')}.`)}}, *state["messages"]]`,
+            '    )',
+            `    targets = {${mapEntries}}`,
+            `    return targets.get(decision.verdict, "${defaultTarget}")`,
+            '',
+          )
+        } else {
+          emit(
+            `def route_${name}(state: State) -> str:`,
+            `    """LLM-as-judge for '${pyDoc(node.data.label)}'."""`,
+            '    # TODO: no model on canvas — add an LLM node or set Override model.',
+            `    return "${defaultTarget}"`,
+            '',
+          )
+        }
+        break
+      }
+      case 'join': {
+        const strategy = node.data.mergeStrategy ?? 'concat'
+        emit(
+          `${defKeyword} ${name}(state: State) -> dict:`,
+          `    """Join node: ${pyDoc(node.data.label)} — synchronization barrier (merge: ${strategy})."""`,
+          '    # LangGraph runs this once every incoming branch has completed.',
+          strategy === 'concat'
+            ? '    # Branch outputs are accumulated in state["branch_results"].'
+            : '    # Keep the most recent branch result.',
+          '    return {}',
+          '',
+        )
+        break
+      }
       case 'loop': {
         emit(
           `${defKeyword} ${name}(state: State) -> dict:`,
           `    """Loop node: ${pyDoc(node.data.label)} — iterate until: ${pyDoc(node.data.loopCondition ?? '')}."""`,
           '    return {}',
+          '',
+        )
+        break
+      }
+      case 'subgraph': {
+        const ref = (node.data.subgraphRef ?? '').trim() || name
+        emit(
+          `# --- Subgraph: ${pyDoc(node.data.label)} (${pyDoc(ref)}) ---`,
+          `def build_${name}_subgraph():`,
+          `    """${pyDoc(node.data.subgraphSummary ?? `Inner graph for ${node.data.label}.`)}"""`,
+          '    inner = StateGraph(State)',
+          '    # TODO: define inner nodes and edges for this subgraph,',
+          `    #       referencing the saved canvas "${pyDoc(ref)}".`,
+          '    return inner.compile()',
+          '',
+          `${name} = build_${name}_subgraph()`,
+          '',
+        )
+        break
+      }
+      case 'longTermStore': {
+        const namespace = node.data.namespace ?? 'user_memories'
+        const op = node.data.storeOperation ?? 'read'
+        emit(
+          `${defKeyword} ${name}(state: State, *, store) -> dict:`,
+          `    """Long-Term Store ${op} on namespace "${pyDoc(namespace)}"."""`,
+          `    namespace = (${pyStr(namespace)},)`,
+        )
+        if (op === 'write') {
+          emit(
+            '    last = str(state["messages"][-1].content)',
+            '    import uuid',
+            '    store.put(namespace, str(uuid.uuid4()), {"data": last})',
+            '    return {"messages": [{"role": "user", "content": "[store] wrote 1 memory"}]}',
+            '',
+          )
+        } else if (op === 'search') {
+          const q = node.data.searchQuery ?? 'state["messages"][-1].content'
+          emit(
+            '    last = str(state["messages"][-1].content)',
+            `    hits = store.search(namespace, query=${pyStr(q)} or last, limit=5)`,
+            '    recalled = "; ".join(h.value.get("data", "") for h in hits)',
+            '    return {"messages": [{"role": "user", "content": f"[store search] {recalled}"}]}',
+            '',
+          )
+        } else {
+          emit(
+            '    last = str(state["messages"][-1].content)',
+            '    hits = store.search(namespace, query=last, limit=5)',
+            '    recalled = "; ".join(h.value.get("data", "") for h in hits)',
+            '    return {"messages": [{"role": "user", "content": f"[store] {recalled}"}]}',
+            '',
+          )
+        }
+        break
+      }
+      case 'memoryWriter': {
+        const kind = node.data.memoryKind ?? 'episodic'
+        const ns = node.data.writeNamespace ?? 'user_memories'
+        emit(
+          `${defKeyword} ${name}(state: State, *, store) -> dict:`,
+          `    """Memory Writer (LangMem): extract ${kind} memories into "${pyDoc(ns)}"."""`,
+          `    # manager = create_memory_manager(model, kinds=["${kind}"])`,
+          '    # extracted = manager.invoke({"messages": state["messages"]})',
+          '    # for item in extracted: store.put((' + pyStr(ns) + ',), item.id, item.value)',
+          '    return {}',
+          '',
+        )
+        break
+      }
+      case 'planner': {
+        const modelVar = inferredModelVar.get(node.id)
+        const maxTasks = node.data.maxTasks ?? 5
+        const prompt = node.data.decompositionPrompt ?? 'Decompose the task.'
+        if (modelVar) {
+          emit(
+            `${defKeyword} ${name}(state: State) -> dict:`,
+            `    """Planner: decompose the goal into todos (Deep Agents write_todos, max ${maxTasks})."""`,
+            `    class _Plan(BaseModel):`,
+            `        todos: list[str]`,
+            `    plan = ${modelVar}.with_structured_output(_Plan).invoke(`,
+            `        [{"role": "system", "content": ${pyStr(`${prompt} Output at most ${maxTasks} subtasks.`)}}, *state["messages"]]`,
+            '    )',
+            `    return {"todos": plan.todos[:${maxTasks}]}`,
+            '',
+          )
+        } else {
+          emit(
+            `${defKeyword} ${name}(state: State) -> dict:`,
+            `    """Planner: decompose the goal into todos."""`,
+            '    # TODO: no model on canvas — add an LLM node or set Override model.',
+            '    return {"todos": ["subtask 1", "subtask 2"]}',
+            '',
+          )
+        }
+        break
+      }
+      case 'subagent': {
+        const role = node.data.role ?? 'Worker'
+        const tools = (node.data.tools ?? []).filter(Boolean)
+        const taskInput = node.data.taskInput ?? 'task'
+        emit(
+          `${defKeyword} ${name}(state: State) -> dict:`,
+          `    """Subagent (${pyDoc(role)}): isolated-context delegate (Deep Agents)."""`,
+          `    task = state.get("item") or state.get("${taskInput}", "")`,
+          '    # Isolated context: a fresh message list, then merge a compressed result',
+          '    # back into the parent. Replace this stub with create_react_agent.',
+          '    # from langgraph.prebuilt import create_react_agent',
+          `    # agent = create_react_agent(model, tools=${JSON.stringify(tools)})`,
+          '    # result = agent.invoke({"messages": [{"role": "user", "content": task}]})',
+          `    return {"messages": [{"role": "assistant", "content": f"[${pyDoc(role)}] handled: {task}"}]}`,
+          '',
+        )
+        break
+      }
+      case 'codeExecutor': {
+        const lang = node.data.language ?? 'python'
+        const timeout = node.data.timeout ?? 30
+        emit(
+          `${defKeyword} ${name}(state: State) -> dict:`,
+          `    """Code Executor: ${pyDoc(node.data.label)} (${lang}, timeout=${timeout}s)."""`,
+          '    # The previous message is expected to contain a code block from an upstream LLM.',
+          '    code = str(state["messages"][-1].content)',
+          lang === 'python'
+            ? '    # TODO: wire a sandbox, e.g. langchain_experimental.utilities.PythonREPL'
+            : `    # TODO: wire a sandbox runtime for ${lang}`,
+          '    # repl = PythonREPL()',
+          '    # result = repl.run(code)',
+          '    result = "(stub) exit_code=0"',
+          '    return {"messages": [{"role": "user", "content": f"[exec] {result}"}]}',
+          '',
+        )
+        break
+      }
+      case 'map': {
+        const source = (node.data.inputExpression ?? 'items').trim() || 'items'
+        emit(
+          `${defKeyword} ${name}(state: State) -> dict:`,
+          `    """Map node: ${pyDoc(node.data.label)} — fan out one Send per item in state["${pyDoc(source)}"]."""`,
+          '    # Body is a no-op; the fan-out happens in the conditional edge below.',
+          '    return {}',
+          '',
+        )
+        // Resolve the downstream target(s) the Send will dispatch to.
+        const outs = outgoing(node.id)
+        const targets = outs
+          .map((e) => names.get(e.target))
+          .filter((t): t is string => t !== undefined)
+        const sendLines = targets.length > 0
+          ? targets.map(
+              (t) =>
+                `        Send("${t}", {"item": item}) for item in state.get("${source}", [])`,
+            )
+          : [`        # TODO: wire an outgoing edge so Send has a target`]
+        emit(
+          `def route_${name}(state: State):`,
+          `    """Send fan-out for '${pyDoc(node.data.label)}' over state["${pyDoc(source)}"]."""`,
+          '    return [',
+          ...sendLines.map((l, i) => (i < sendLines.length - 1 ? `${l},` : l)),
+          '    ]',
           '',
         )
         break
@@ -469,13 +1025,25 @@ export function exportPython(
       }
       case 'structuredOutput': {
         const className = structuredClassNames.get(node.id) ?? 'OutputModel'
-        emit(
-          `${defKeyword} ${name}(state: State) -> dict:`,
-          `    """Structured output node: ${pyDoc(node.data.label)} — enforces ${className}."""`,
-          `    # TODO: structured = llm.with_structured_output(${className}).invoke(state["messages"])`,
-          '    return {}',
-          '',
-        )
+        const modelVar = inferredModelVar.get(node.id)
+        if (modelVar) {
+          emit(
+            `${defKeyword} ${name}(state: State) -> dict:`,
+            `    """Structured output node: ${pyDoc(node.data.label)} — enforces ${className}."""`,
+            `    result = ${modelVar}.with_structured_output(${className}).invoke(state["messages"])`,
+            '    return {"messages": [{"role": "assistant", "content": result.model_dump_json()}]}',
+            '',
+          )
+        } else {
+          emit(
+            `${defKeyword} ${name}(state: State) -> dict:`,
+            `    """Structured output node: ${pyDoc(node.data.label)} — enforces ${className}."""`,
+            '    # TODO: no model on canvas — add an LLM node or set Override model.',
+            `    # result = model.with_structured_output(${className}).invoke(state["messages"])`,
+            '    return {}',
+            '',
+          )
+        }
         break
       }
     }
@@ -500,7 +1068,15 @@ export function exportPython(
   // Nodes with multiple outgoing edges get conditional routing; the rest
   // get plain edges. Condition routers were emitted above, so generate
   // generic routers for other fan-outs.
-  const routedTypes: AgentFlowNodeType[] = ['condition']
+  // Routers and guardrails emit their route_ function in the node switch
+  // above (with real bodies); condition keeps its existing one. The rest get
+  // a generic TODO router only when they fan out.
+  const routedTypes: AgentFlowNodeType[] = [
+    'condition',
+    'router',
+    'guardrail',
+    'evaluator',
+  ]
   for (const node of orderedNodes) {
     const name = names.get(node.id)
     if (!name) continue
@@ -509,29 +1085,50 @@ export function exportPython(
     const targets = outs
       .map((e) => names.get(e.target))
       .filter((t): t is string => t !== undefined)
-    if (outs.length === 1) {
+    // Map wires through a conditional edge whose router returns a list of
+    // Send objects — list of target node names, no label mapping.
+    if (node.type === 'map') {
+      const targetList = targets.map((t) => `"${t}"`).join(', ')
+      emit(`builder.add_conditional_edges("${name}", route_${name}, [${targetList}])`)
+      continue
+    }
+    // Guardrails always route (even with a single pass/fail edge wired).
+    const singlePlainEdge = outs.length === 1 && node.type !== 'guardrail'
+    if (singlePlainEdge) {
       emit(`builder.add_edge("${name}", "${targets[0]}")`)
     } else if (node.type && routedTypes.includes(node.type)) {
-      const mapping = targets.map((t) => `"${t}": "${t}"`).join(', ')
+      const guard = guardrailTargets.get(node.id)
+      let mapping: string
+      if (guard) {
+        mapping = `"pass": "${guard.pass}", "fail": "${guard.fail}"`
+      } else if (node.type === 'evaluator') {
+        // Map each evaluator branch to the node its labeled edge points at.
+        const branches = (node.data.evalBranches ?? ['pass', 'fail']).filter(
+          Boolean,
+        )
+        const pairs: string[] = []
+        for (const b of branches) {
+          const edgeForBranch = outs.find(
+            (e) =>
+              (typeof e.label === 'string' && e.label !== ''
+                ? e.label
+                : (names.get(e.target) ?? '')) === b,
+          )
+          const target = edgeForBranch ? names.get(edgeForBranch.target) : undefined
+          pairs.push(`"${b}": "${target ?? targets[0] ?? 'END'}"`)
+        }
+        mapping = pairs.join(', ')
+      } else {
+        mapping = targets.map((t) => `"${t}": "${t}"`).join(', ')
+      }
       emit(`builder.add_conditional_edges("${name}", route_${name}, {${mapping}})`)
     } else {
-      const mapping = targets.map((t) => `"${t}": "${t}"`).join(', ')
-      const defaultTargetId = pickDefaultTarget(
-        node.id,
-        outs.map((e) => e.target),
-        wiredEdges,
-        graphIds,
-      )
-      const defaultTarget = defaultTargetId ? names.get(defaultTargetId) : undefined
-      emit(
-        '',
-        `def route_${name}(state: State) -> str:`,
-        `    """Routing for '${pyDoc(node.data.label)}'."""`,
-        '    # TODO: pick the next node',
-        `    return "${defaultTarget ?? targets[0]}"`,
-        '',
-        `builder.add_conditional_edges("${name}", route_${name}, {${mapping}})`,
-      )
+      // Plain node fanning out to several targets: parallel edges. LangGraph
+      // runs them as one superstep — branching is explicit via Router/Condition,
+      // so an unrouted fan-out is genuine parallelism (e.g. into a Join).
+      for (const target of targets) {
+        emit(`builder.add_edge("${name}", "${target}")`)
+      }
     }
   }
 
@@ -540,15 +1137,27 @@ export function exportPython(
   }
   emit('')
 
-  if (hasMemory) {
-    const kinds = memoryNodes
+  for (const node of vectorStoreNodes) {
+    // A vector store is the Retriever's backing store, not a graph concern.
+    emit(
+      `# Vector store "${pyDoc(node.data.label)}" — wire it into the Retriever`,
+      '# node above (e.g. Chroma/FAISS .as_retriever()), not the graph compile.',
+    )
+  }
+  if (hasCheckpointer) {
+    const kinds = checkpointerNodes
       .map((n) => n.data.memoryType ?? 'short-term')
       .join(', ')
     emit(`# Memory nodes on canvas: ${kinds}`)
     emit('checkpointer = MemorySaver()')
   }
+  if (hasStore) {
+    emit('# Long-Term Store (cross-thread, namespaced memory)')
+    emit('store = InMemoryStore()')
+  }
   const compileArgs: string[] = []
-  if (hasMemory) compileArgs.push('checkpointer=checkpointer')
+  if (hasCheckpointer) compileArgs.push('checkpointer=checkpointer')
+  if (hasStore) compileArgs.push('store=store')
   if (hilNames.length > 0) {
     compileArgs.push(
       `interrupt_before=[${hilNames.map((n) => `"${n}"`).join(', ')}]`,
@@ -557,18 +1166,26 @@ export function exportPython(
   emit(`graph = builder.compile(${compileArgs.join(', ')})`)
   emit('')
 
-  const needsConfig = hasMemory || hilNames.length > 0
+  const needsConfig = hasCheckpointer || hilNames.length > 0
   const initialState =
     '{"messages": [{"role": "user", "content": "Hello!"}]' +
     fields.map((f) => `, "${f}": ""`).join('') +
+    [...mapSources].map((src) => `, "${src}": []`).join('') +
+    (hasPlanner && !mapSources.has('todos') ? ', "todos": []' : '') +
     '}'
+
+  const emitEnvGuards = () => {
+    for (const envVar of envVars) {
+      emit(`    if not os.environ.get("${envVar}"):`)
+      emit(
+        `        raise SystemExit("${envVar} is not set — add it to your .env file.")`,
+      )
+    }
+  }
 
   if (options.asyncMode) {
     emit('async def main() -> None:')
-    if (hasGemini) {
-      emit('    if not os.environ.get("GOOGLE_API_KEY"):')
-      emit('        raise SystemExit("GOOGLE_API_KEY is not set — add it to your .env file.")')
-    }
+    emitEnvGuards()
     if (needsConfig) emit('    config = {"configurable": {"thread_id": "demo"}}')
     emit(`    state = ${initialState}`)
     emit(
@@ -582,10 +1199,7 @@ export function exportPython(
     emit('    asyncio.run(main())')
   } else {
     emit('if __name__ == "__main__":')
-    if (hasGemini) {
-      emit('    if not os.environ.get("GOOGLE_API_KEY"):')
-      emit('        raise SystemExit("GOOGLE_API_KEY is not set — add it to your .env file.")')
-    }
+    emitEnvGuards()
     if (needsConfig) emit('    config = {"configurable": {"thread_id": "demo"}}')
     emit(`    state = ${initialState}`)
     emit(

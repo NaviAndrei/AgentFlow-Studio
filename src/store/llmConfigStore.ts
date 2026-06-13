@@ -1,57 +1,57 @@
 import { create } from 'zustand'
-import { listOllamaModels } from '../utils/llmClient'
-import type { GeminiModel, LLMConfig, LLMProvider } from '../utils/llmClient'
+import { defaultProviderSettings, listOllamaModels } from '../llm'
+import type { ProviderId, ProviderSettings, ResolvedLLMConfig } from '../llm'
 
 interface LLMConfigState {
-  provider: LLMProvider
-  ollamaUrl: string
-  ollamaModel: string
+  activeProvider: ProviderId
+  /** Per-provider connection settings; edits to one provider never touch another. */
+  settings: Record<ProviderId, ProviderSettings>
+  /** Models discovered from the Ollama `/api/tags` endpoint. */
   ollamaModels: string[]
-  geminiApiKey: string
-  geminiModel: GeminiModel
   settingsOpen: boolean
   /** Transient error surfaced as a tooltip near the Live toggle. */
   liveError: string | null
-  setProvider: (provider: LLMProvider) => void
-  setOllamaUrl: (url: string) => void
-  setOllamaModel: (model: string) => void
-  setGeminiApiKey: (key: string) => void
-  setGeminiModel: (model: GeminiModel) => void
+  setActiveProvider: (provider: ProviderId) => void
+  updateProviderSettings: (
+    provider: ProviderId,
+    patch: Partial<ProviderSettings>,
+  ) => void
   setSettingsOpen: (open: boolean) => void
   setLiveError: (error: string | null) => void
   refreshOllamaModels: () => Promise<void>
-  getConfig: () => LLMConfig
+  getConfig: () => ResolvedLLMConfig
 }
 
 export const useLLMConfigStore = create<LLMConfigState>((set, get) => ({
-  provider: 'ollama',
-  ollamaUrl: 'http://localhost:11434',
-  ollamaModel: '',
+  activeProvider: 'ollama',
+  settings: defaultProviderSettings(),
   ollamaModels: [],
-  geminiApiKey: '',
-  geminiModel: 'gemini-flash',
   settingsOpen: false,
   liveError: null,
 
-  setProvider: (provider) => set({ provider }),
-  setOllamaUrl: (ollamaUrl) => set({ ollamaUrl }),
-  setOllamaModel: (ollamaModel) => set({ ollamaModel }),
-  setGeminiApiKey: (geminiApiKey) => set({ geminiApiKey }),
-  setGeminiModel: (geminiModel) => set({ geminiModel }),
+  setActiveProvider: (activeProvider) => set({ activeProvider }),
+
+  updateProviderSettings: (provider, patch) =>
+    set((state) => ({
+      settings: {
+        ...state.settings,
+        [provider]: { ...state.settings[provider], ...patch },
+      },
+    })),
+
   setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
   setLiveError: (liveError) => set({ liveError }),
 
   refreshOllamaModels: async () => {
-    const ollamaModels = await listOllamaModels(get().ollamaUrl)
+    const ollamaModels = await listOllamaModels(get().settings.ollama.baseUrl)
     set({ ollamaModels })
-    if (!get().ollamaModel && ollamaModels.length > 0) {
-      set({ ollamaModel: ollamaModels[0] })
+    if (!get().settings.ollama.model && ollamaModels.length > 0) {
+      get().updateProviderSettings('ollama', { model: ollamaModels[0] })
     }
   },
 
   getConfig: () => {
-    const { provider, ollamaUrl, ollamaModel, geminiApiKey, geminiModel } =
-      get()
-    return { provider, ollamaUrl, ollamaModel, geminiApiKey, geminiModel }
+    const { activeProvider, settings } = get()
+    return { provider: activeProvider, settings: { ...settings[activeProvider] } }
   },
 }))

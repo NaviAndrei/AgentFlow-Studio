@@ -18,7 +18,7 @@ Rules:
 
 Colors:
 Core: Start#16a34a LLM#7c3aed Agent#4f46e5 Tool#ea580c Memory#0891b2 Output#dc2626
-Flow: Condition#ca8a04 Loop#475569 Human-in-Loop#db2777
+Flow: Condition#ca8a04 Router#65a30d Guardrail#be123c Loop#475569 Human-in-Loop#db2777
 Multi: Supervisor#b45309 Swarm Worker#0d9488
 
 npm run dev | npm run build | npm run typecheck

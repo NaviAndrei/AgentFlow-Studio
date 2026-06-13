@@ -26,7 +26,11 @@ export const useSimulationMetricsStore = create<SimulationMetricsState>(
     elapsedMs: 0,
     tokens: 0,
 
-    setStep: (stepIndex, stepTotal) => set({ stepIndex, stepTotal }),
+    // stepTotal never shrinks within a run: the queue grows as targets are
+    // discovered and joins re-queue while waiting, so a monotonic denominator
+    // keeps the progress readout from jumping backwards.
+    setStep: (stepIndex, stepTotal) =>
+      set({ stepIndex, stepTotal: Math.max(get().stepTotal, stepTotal) }),
     setActiveNodeCount: (activeNodeCount) => set({ activeNodeCount }),
     addTokens: (count) => set({ tokens: get().tokens + count }),
 

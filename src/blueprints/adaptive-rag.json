@@ -1,0 +1,92 @@
+{
+  "id": "adaptive-rag",
+  "schemaVersion": 1,
+  "name": "Adaptive RAG",
+  "description": "Route the query before retrieving: answer simple questions directly, search the local knowledge base for grounded ones, or fall back to the web — so not every request pays the retrieval cost.",
+  "category": "RAG",
+  "nodes": [
+    {
+      "id": "note-1",
+      "type": "note",
+      "position": { "x": 300, "y": 20 },
+      "data": {
+        "label": "How it works",
+        "text": "Adaptive RAG decides up front HOW to answer. A Router classifies the question into 'vectorstore', 'websearch', or 'direct', so only questions that need grounding trigger retrieval. Contrast with Corrective RAG, which grades AFTER retrieving."
+      }
+    },
+    {
+      "id": "start-1",
+      "type": "start",
+      "position": { "x": 40, "y": 260 },
+      "data": { "label": "Start", "inputVariables": ["question"] }
+    },
+    {
+      "id": "router-1",
+      "type": "router",
+      "position": { "x": 280, "y": 260 },
+      "data": {
+        "label": "Route Query",
+        "routes": ["vectorstore", "websearch", "direct"],
+        "routingPrompt": "Decide how to answer: 'vectorstore' for questions about our documented knowledge, 'websearch' for current/external facts, 'direct' for general questions needing no retrieval."
+      }
+    },
+    {
+      "id": "retriever-1",
+      "type": "retriever",
+      "position": { "x": 560, "y": 120 },
+      "data": {
+        "label": "Vector Store",
+        "knowledgeBase": "docs",
+        "topK": 4,
+        "similarityThreshold": 0.75
+      }
+    },
+    {
+      "id": "tool-1",
+      "type": "tool",
+      "position": { "x": 560, "y": 280 },
+      "data": {
+        "label": "Web Search",
+        "toolName": "web_search",
+        "description": "Search the web for current or external information.",
+        "inputSchema": "query: str",
+        "outputSchema": "result: str"
+      }
+    },
+    {
+      "id": "llm-1",
+      "type": "llm",
+      "position": { "x": 860, "y": 240 },
+      "data": {
+        "label": "Generator",
+        "model": "gemini-2.5-flash",
+        "systemPrompt": "Answer the question. If retrieved context is present, ground your answer in it; otherwise answer directly.",
+        "temperature": 0.4
+      }
+    },
+    {
+      "id": "output-1",
+      "type": "output",
+      "position": { "x": 1140, "y": 240 },
+      "data": { "label": "Answer" }
+    },
+    {
+      "id": "note-2",
+      "type": "note",
+      "position": { "x": 560, "y": 440 },
+      "data": {
+        "label": "Try it",
+        "text": "Simulate with an input containing the word 'vectorstore', 'websearch', or 'direct' to take that path — the Router matches a route name in the text."
+      }
+    }
+  ],
+  "edges": [
+    { "id": "e1", "source": "start-1", "target": "router-1" },
+    { "id": "e2", "source": "router-1", "target": "retriever-1", "label": "vectorstore" },
+    { "id": "e3", "source": "router-1", "target": "tool-1", "label": "websearch" },
+    { "id": "e4", "source": "router-1", "target": "llm-1", "label": "direct" },
+    { "id": "e5", "source": "retriever-1", "target": "llm-1" },
+    { "id": "e6", "source": "tool-1", "target": "llm-1" },
+    { "id": "e7", "source": "llm-1", "target": "output-1" }
+  ]
+}

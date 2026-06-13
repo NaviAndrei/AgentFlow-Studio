@@ -15,7 +15,7 @@ const FILTERS: { key: TraceFilter; label: string }[] = [
   { key: 'tools', label: 'Tool Calls' },
 ]
 
-const LLM_TYPES = ['llm', 'agent', 'supervisor', 'swarmWorker']
+const LLM_TYPES = ['llm', 'agent', 'supervisor', 'swarmWorker', 'router', 'guardrail']
 const TOOL_TYPES = ['tool', 'retriever', 'mcpServer']
 
 function matchesFilter(entry: TraceEntry, filter: TraceFilter): boolean {

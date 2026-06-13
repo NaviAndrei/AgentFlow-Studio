@@ -8,7 +8,10 @@
     {
       "id": "note-1",
       "type": "note",
-      "position": { "x": 320, "y": 20 },
+      "position": {
+        "x": 320,
+        "y": 20
+      },
       "data": {
         "label": "How it works",
         "text": "Reflection is self-critique: the Reflector examines the Generator's reasoning for gaps, errors, and unsupported claims, then either approves or sends it back with notes."
@@ -17,40 +20,78 @@
     {
       "id": "start-1",
       "type": "start",
-      "position": { "x": 40, "y": 220 },
-      "data": { "label": "Start", "inputVariables": ["question"] }
+      "position": {
+        "x": 40,
+        "y": 220
+      },
+      "data": {
+        "label": "Start",
+        "inputVariables": [
+          "question"
+        ]
+      }
     },
     {
       "id": "agent-1",
       "type": "agent",
-      "position": { "x": 300, "y": 220 },
-      "data": { "label": "Generator", "tools": ["web_search"], "maxIterations": 5 }
+      "position": {
+        "x": 300,
+        "y": 220
+      },
+      "data": {
+        "label": "Generator",
+        "tools": [
+          "web_search"
+        ],
+        "maxIterations": 5
+      }
     },
     {
       "id": "agent-2",
       "type": "agent",
-      "position": { "x": 560, "y": 220 },
-      "data": { "label": "Reflector", "tools": [], "maxIterations": 3 }
+      "position": {
+        "x": 560,
+        "y": 220
+      },
+      "data": {
+        "label": "Reflector",
+        "tools": [],
+        "maxIterations": 3
+      }
     },
     {
       "id": "condition-1",
       "type": "condition",
-      "position": { "x": 820, "y": 220 },
+      "position": {
+        "x": 820,
+        "y": 220
+      },
       "data": {
         "label": "Good enough?",
-        "branches": ["critique found issues", "no issues found"]
+        "branches": [
+          "retry",
+          "approve"
+        ]
       }
     },
     {
       "id": "output-1",
       "type": "output",
-      "position": { "x": 1080, "y": 220 },
-      "data": { "label": "Final Answer" }
+      "position": {
+        "x": 1080,
+        "y": 220
+      },
+      "data": {
+        "label": "Final Answer"
+      }
     },
     {
       "id": "note-2",
       "type": "note",
-      "position": { "x": 480, "y": 420 },
+      "position": {
+        "x": 480,
+        "y": 420
+      },
       "data": {
         "label": "Why it helps",
         "text": "A second pass over its own output catches hallucinations and logic gaps the first pass missed — at the cost of extra LLM calls per loop."
@@ -58,10 +99,32 @@
     }
   ],
   "edges": [
-    { "id": "e1", "source": "start-1", "target": "agent-1" },
-    { "id": "e2", "source": "agent-1", "target": "agent-2" },
-    { "id": "e3", "source": "agent-2", "target": "condition-1" },
-    { "id": "e4", "source": "condition-1", "target": "agent-1", "label": "retry" },
-    { "id": "e5", "source": "condition-1", "target": "output-1", "label": "approve" }
+    {
+      "id": "e1",
+      "source": "start-1",
+      "target": "agent-1"
+    },
+    {
+      "id": "e2",
+      "source": "agent-1",
+      "target": "agent-2"
+    },
+    {
+      "id": "e3",
+      "source": "agent-2",
+      "target": "condition-1"
+    },
+    {
+      "id": "e4",
+      "source": "condition-1",
+      "target": "agent-1",
+      "label": "retry"
+    },
+    {
+      "id": "e5",
+      "source": "condition-1",
+      "target": "output-1",
+      "label": "approve"
+    }
   ]
 }

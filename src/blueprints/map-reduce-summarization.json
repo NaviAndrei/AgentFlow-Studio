@@ -1,0 +1,87 @@
+{
+  "id": "map-reduce-summarization",
+  "schemaVersion": 1,
+  "name": "Map-Reduce Summarization",
+  "description": "Split a long document into chunks, summarize every chunk in parallel via the Send map-reduce primitive, then reduce the summaries into a final overview.",
+  "category": "Parallel",
+  "nodes": [
+    {
+      "id": "note-1",
+      "type": "note",
+      "position": { "x": 320, "y": 20 },
+      "data": {
+        "label": "Map-Reduce with Send",
+        "text": "Chunker produces a list of chunks. The Map node fans one parallel branch per chunk (LangGraph Send). Each branch summarizes its chunk, the Join concatenates summaries, and Reducer writes the final overview."
+      }
+    },
+    {
+      "id": "start-1",
+      "type": "start",
+      "position": { "x": 40, "y": 260 },
+      "data": { "label": "Start", "inputVariables": ["document"] }
+    },
+    {
+      "id": "llm-1",
+      "type": "llm",
+      "position": { "x": 280, "y": 260 },
+      "data": {
+        "label": "Chunker",
+        "model": "gemini-2.5-flash",
+        "systemPrompt": "Split the document into self-contained sections and output them as a list under the state key 'chunks'.",
+        "temperature": 0.2
+      }
+    },
+    {
+      "id": "map-1",
+      "type": "map",
+      "position": { "x": 540, "y": 260 },
+      "data": {
+        "label": "Fan-out Chunks",
+        "inputExpression": "chunks",
+        "maxParallel": 8
+      }
+    },
+    {
+      "id": "llm-2",
+      "type": "llm",
+      "position": { "x": 800, "y": 260 },
+      "data": {
+        "label": "Summarize Chunk",
+        "model": "gemini-2.5-flash",
+        "systemPrompt": "Summarize the assigned chunk in 3-5 bullet points.",
+        "temperature": 0.3
+      }
+    },
+    {
+      "id": "join-1",
+      "type": "join",
+      "position": { "x": 1060, "y": 260 },
+      "data": { "label": "Collect Summaries", "mergeStrategy": "concat" }
+    },
+    {
+      "id": "llm-3",
+      "type": "llm",
+      "position": { "x": 1320, "y": 260 },
+      "data": {
+        "label": "Reducer",
+        "model": "gemini-2.5-flash",
+        "systemPrompt": "Combine the per-chunk summaries into one coherent overview.",
+        "temperature": 0.3
+      }
+    },
+    {
+      "id": "output-1",
+      "type": "output",
+      "position": { "x": 1580, "y": 260 },
+      "data": { "label": "Overview" }
+    }
+  ],
+  "edges": [
+    { "id": "e1", "source": "start-1", "target": "llm-1" },
+    { "id": "e2", "source": "llm-1", "target": "map-1" },
+    { "id": "e3", "source": "map-1", "target": "llm-2" },
+    { "id": "e4", "source": "llm-2", "target": "join-1" },
+    { "id": "e5", "source": "join-1", "target": "llm-3" },
+    { "id": "e6", "source": "llm-3", "target": "output-1" }
+  ]
+}

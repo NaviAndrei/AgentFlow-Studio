@@ -1,0 +1,115 @@
+{
+  "id": "corrective-rag",
+  "schemaVersion": 1,
+  "name": "Corrective RAG",
+  "description": "Retrieve, grade the documents, and self-correct: relevant context goes straight to generation; weak retrieval is rewritten or routed to a fallback before answering.",
+  "category": "RAG",
+  "nodes": [
+    {
+      "id": "note-1",
+      "type": "note",
+      "position": { "x": 320, "y": 20 },
+      "data": {
+        "label": "How it works",
+        "text": "Corrective RAG grades retrieved docs before trusting them. A Guardrail passes relevant context to the generator; on a weak match a Router decides whether to rewrite the query or fall back to a broad search."
+      }
+    },
+    {
+      "id": "start-1",
+      "type": "start",
+      "position": { "x": 40, "y": 240 },
+      "data": { "label": "Start", "inputVariables": ["question"] }
+    },
+    {
+      "id": "retriever-1",
+      "type": "retriever",
+      "position": { "x": 280, "y": 240 },
+      "data": {
+        "label": "Retriever",
+        "knowledgeBase": "docs",
+        "topK": 4,
+        "similarityThreshold": 0.75
+      }
+    },
+    {
+      "id": "guardrail-1",
+      "type": "guardrail",
+      "position": { "x": 520, "y": 240 },
+      "data": {
+        "label": "Grade Docs",
+        "checkType": "keyword",
+        "criteria": "context, relevant, found"
+      }
+    },
+    {
+      "id": "llm-1",
+      "type": "llm",
+      "position": { "x": 780, "y": 140 },
+      "data": {
+        "label": "Generator",
+        "model": "gemini-2.5-flash",
+        "systemPrompt": "Answer the question using ONLY the retrieved context. If the context is insufficient, say so.",
+        "temperature": 0.3
+      }
+    },
+    {
+      "id": "router-1",
+      "type": "router",
+      "position": { "x": 780, "y": 360 },
+      "data": {
+        "label": "Correct",
+        "routes": ["rewrite", "fallback"],
+        "routingPrompt": "The retrieved context was weak. Decide whether to rewrite the query for a better search or fall back to a broad web search."
+      }
+    },
+    {
+      "id": "llm-2",
+      "type": "llm",
+      "position": { "x": 1040, "y": 300 },
+      "data": {
+        "label": "Rewrite Query",
+        "model": "gemini-2.5-flash",
+        "systemPrompt": "Rewrite the user's question to retrieve better documents. Output only the rewritten query.",
+        "temperature": 0.5
+      }
+    },
+    {
+      "id": "tool-1",
+      "type": "tool",
+      "position": { "x": 1040, "y": 460 },
+      "data": {
+        "label": "Web Fallback",
+        "toolName": "web_search",
+        "description": "Broad web search when the local knowledge base is insufficient.",
+        "inputSchema": "query: str",
+        "outputSchema": "result: str"
+      }
+    },
+    {
+      "id": "output-1",
+      "type": "output",
+      "position": { "x": 1300, "y": 140 },
+      "data": { "label": "Answer" }
+    },
+    {
+      "id": "note-2",
+      "type": "note",
+      "position": { "x": 520, "y": 460 },
+      "data": {
+        "label": "Watch the grade",
+        "text": "Simulate with an input containing 'context' to take the pass path; anything else fails the Guardrail and exercises the corrective Router."
+      }
+    }
+  ],
+  "edges": [
+    { "id": "e1", "source": "start-1", "target": "retriever-1" },
+    { "id": "e2", "source": "retriever-1", "target": "guardrail-1" },
+    { "id": "e3", "source": "guardrail-1", "target": "llm-1", "label": "pass" },
+    { "id": "e4", "source": "guardrail-1", "target": "router-1", "label": "fail" },
+    { "id": "e5", "source": "router-1", "target": "llm-2", "label": "rewrite" },
+    { "id": "e6", "source": "router-1", "target": "tool-1", "label": "fallback" },
+    { "id": "e7", "source": "llm-2", "target": "retriever-1", "label": "retry" },
+    { "id": "e8", "source": "tool-1", "target": "llm-1", "label": "context" },
+    { "id": "e9", "source": "llm-1", "target": "output-1" }
+  ]
+}

@@ -1,0 +1,97 @@
+{
+  "id": "multi-agent-debate",
+  "schemaVersion": 1,
+  "name": "Multi-Agent Debate",
+  "description": "Two debaters argue opposite sides of a motion in parallel, a judge weighs both arguments, and the debate either reaches a verdict or runs another round — consensus through structured disagreement.",
+  "category": "Multi-Agent",
+  "nodes": [
+    {
+      "id": "note-1",
+      "type": "note",
+      "position": { "x": 320, "y": 20 },
+      "data": {
+        "label": "How it works",
+        "text": "Two Debaters run in parallel (one superstep) and feed a Join. The Judge weighs both sides; a Condition either declares a 'verdict' or sends 'continue' for another round. Adversarial parallelism + a judge-driven convergence loop."
+      }
+    },
+    {
+      "id": "start-1",
+      "type": "start",
+      "position": { "x": 40, "y": 280 },
+      "data": { "label": "Start", "inputVariables": ["motion"] }
+    },
+    {
+      "id": "llm-1",
+      "type": "llm",
+      "position": { "x": 300, "y": 160 },
+      "data": {
+        "label": "Debater Pro",
+        "model": "gemini-2.5-flash",
+        "systemPrompt": "Argue IN FAVOR of the motion. Make your strongest case and rebut the opposing view.",
+        "temperature": 0.8
+      }
+    },
+    {
+      "id": "llm-2",
+      "type": "llm",
+      "position": { "x": 300, "y": 400 },
+      "data": {
+        "label": "Debater Con",
+        "model": "gemini-2.5-flash",
+        "systemPrompt": "Argue AGAINST the motion. Make your strongest case and rebut the opposing view.",
+        "temperature": 0.8
+      }
+    },
+    {
+      "id": "join-1",
+      "type": "join",
+      "position": { "x": 560, "y": 280 },
+      "data": { "label": "Collect Arguments", "mergeStrategy": "concat" }
+    },
+    {
+      "id": "llm-3",
+      "type": "llm",
+      "position": { "x": 800, "y": 280 },
+      "data": {
+        "label": "Judge",
+        "model": "gemini-2.5-flash",
+        "systemPrompt": "Weigh both arguments. If one side is clearly stronger, give a verdict. If the debate is close, reply 'continue' for another round.",
+        "temperature": 0.2
+      }
+    },
+    {
+      "id": "condition-1",
+      "type": "condition",
+      "position": { "x": 1060, "y": 280 },
+      "data": {
+        "label": "Decided?",
+        "branches": ["continue", "verdict"]
+      }
+    },
+    {
+      "id": "output-1",
+      "type": "output",
+      "position": { "x": 1320, "y": 180 },
+      "data": { "label": "Verdict" }
+    },
+    {
+      "id": "note-2",
+      "type": "note",
+      "position": { "x": 1060, "y": 460 },
+      "data": {
+        "label": "The round loop",
+        "text": "The 'continue' branch loops back to Debater Pro for another round (Con already argued this round and re-joins). The final allowed visit forces 'verdict' so the debate always concludes."
+      }
+    }
+  ],
+  "edges": [
+    { "id": "e1", "source": "start-1", "target": "llm-1" },
+    { "id": "e2", "source": "start-1", "target": "llm-2" },
+    { "id": "e3", "source": "llm-1", "target": "join-1" },
+    { "id": "e4", "source": "llm-2", "target": "join-1" },
+    { "id": "e5", "source": "join-1", "target": "llm-3" },
+    { "id": "e6", "source": "llm-3", "target": "condition-1" },
+    { "id": "e7", "source": "condition-1", "target": "llm-1", "label": "continue" },
+    { "id": "e8", "source": "condition-1", "target": "output-1", "label": "verdict" }
+  ]
+}

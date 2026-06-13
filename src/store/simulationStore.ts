@@ -8,7 +8,15 @@ import {
   nodeStepDurationMs,
   truncate,
 } from '../utils/fakeData'
-import { streamChat } from '../utils/llmClient'
+import { streamChat } from '../llm'
+import {
+  evaluateConditionBranches,
+  evaluateKeywordGuardrail,
+  isRoutingType,
+  joinReadiness,
+  mergeJoinInputs,
+  pickRouteByKeyword,
+} from '../utils/flowSemantics'
 import { useCanvasStore } from './canvasStore'
 import { useLLMConfigStore } from './llmConfigStore'
 import { useSimulationMetricsStore } from './simulationMetricsStore'
@@ -29,6 +37,9 @@ const SIMULATED_TYPES: AgentFlowNodeType[] = [
   'memory',
   'output',
   'condition',
+  'router',
+  'guardrail',
+  'join',
   'loop',
   'humanInLoop',
   'supervisor',
@@ -36,6 +47,14 @@ const SIMULATED_TYPES: AgentFlowNodeType[] = [
   'retriever',
   'mcpServer',
   'structuredOutput',
+  'map',
+  'codeExecutor',
+  'evaluator',
+  'subgraph',
+  'longTermStore',
+  'memoryWriter',
+  'planner',
+  'subagent',
 ]
 
 /** Pause between node executions in the continuous run loop. */
@@ -56,6 +75,10 @@ const LIVE_EXECUTED_TYPES: AgentFlowNodeType[] = [
   'start',
   'llm',
   'condition',
+  'router',
+  'guardrail',
+  'evaluator',
+  'join',
   'output',
 ]
 
@@ -80,6 +103,8 @@ interface SimulationState {
   erroredNodeIds: string[]
   trace: TraceEntry[]
   traceOpen: boolean
+  /** Set when a Human-in-Loop node has executed and is awaiting approval. */
+  pendingApproval: { nodeId: string } | null
   setLiveMode: (on: boolean) => void
   setUserInput: (value: string) => void
   setTraceOpen: (open: boolean) => void
@@ -90,6 +115,10 @@ interface SimulationState {
   pause: () => void
   step: () => void
   restart: () => void
+  /** Resume past a Human-in-Loop gate. */
+  approve: () => void
+  /** Reject at a Human-in-Loop gate: skip the downstream and end the run. */
+  reject: () => void
 }
 
 // Invalidates in-flight run loops AND in-flight node executions whenever
@@ -105,6 +134,9 @@ let streamBuffer: Record<string, string> = {}
 let streamFlushFrame: number | null = null
 // Times each node has been enqueued this run; bounds loop iterations.
 let visitCounts = new Map<string, number>()
+// Times each join has been deferred (re-queued waiting for branches); bounds
+// the wait so an unreachable source can't livelock the run.
+let joinDeferCounts = new Map<string, number>()
 
 function abortInFlight() {
   abortController?.abort()
@@ -208,15 +240,6 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
     streamFlushFrame ??= window.requestAnimationFrame(flushStreams)
   }
 
-  /** Outgoing edge identifiers of a node: the label when set, else the target id. */
-  const outgoingIdentifiers = (nodeId: string): string[] =>
-    useCanvasStore
-      .getState()
-      .edges.filter((e) => e.source === nodeId)
-      .map((e) =>
-        typeof e.label === 'string' && e.label !== '' ? e.label : e.target,
-      )
-
   /** Ids of nodes that participate in the simulated flow. */
   const flowNodeIds = (): Set<string> =>
     new Set(
@@ -235,6 +258,56 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
       .getState()
       .edges.filter((e) => e.source === nodeId && ids.has(e.target))
       .map((e) => e.target)
+  }
+
+  /** Flow-node predecessors of a node (the branches a join waits on). */
+  const flowSources = (nodeId: string): string[] => {
+    const ids = flowNodeIds()
+    return useCanvasStore
+      .getState()
+      .edges.filter((e) => e.target === nodeId && ids.has(e.source))
+      .map((e) => e.source)
+  }
+
+  /**
+   * Resolve a condition's taken branch from its configured predicates against
+   * the latest content. Shared by the simulated and live engines so both
+   * behave identically. The node's final allowed visit forces the else branch
+   * so cycles terminate regardless of what the content says.
+   */
+  const conditionOutput = (
+    nodeId: string,
+    branches: string[] | undefined,
+    content: string,
+  ): { evaluated: string[]; taken: string; matched: boolean; forced_else: boolean } => {
+    const list = branches ?? []
+    const forceElse = (visitCounts.get(nodeId) ?? 1) >= MAX_NODE_VISITS
+    const decision = evaluateConditionBranches(list, content, forceElse)
+    return {
+      evaluated: list,
+      taken: decision.taken,
+      matched: decision.matched,
+      forced_else: forceElse,
+    }
+  }
+
+  /** Most recent transcript content, falling back to the user input. */
+  const latestContent = (): string => {
+    const last = [...get().messages].reverse()[0]
+    return last?.content ?? get().userInput
+  }
+
+  /** Merge the outputs of a join's executed sources (skipped ones excluded). */
+  const mergeJoinForNode = (
+    nodeId: string,
+    strategy: 'concat' | 'last',
+  ): ReturnType<typeof mergeJoinInputs> => {
+    const executed = get().executedIds
+    const outputs = get().nodeOutputs
+    const inputs = flowSources(nodeId)
+      .filter((s) => executed.has(s))
+      .map((s) => ({ source: s, output: outputs[s] }))
+    return mergeJoinInputs(inputs, strategy)
   }
 
   /**
@@ -327,7 +400,14 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
         return { inputs: { message: content } }
       }
       case 'llm': {
-        const config = useLLMConfigStore.getState().getConfig()
+        const base = useLLMConfigStore.getState().getConfig()
+        // Per-node override: a non-empty value replaces the global model for
+        // this node only; the provider/transport stays the global one.
+        const override = (node.data.modelOverride ?? '').trim()
+        const config =
+          override === ''
+            ? base
+            : { ...base, settings: { ...base.settings, model: override } }
         const chat: ChatMessage[] = [
           {
             role: 'system',
@@ -352,7 +432,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
         return {
           role: 'assistant',
           content: truncate(full, 400),
-          model: node.data.model ?? 'gemini-flash',
+          model: node.data.model ?? '—',
           temperature: node.data.temperature ?? 0.7,
         }
       }
@@ -372,23 +452,151 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
         return output
       }
       case 'condition': {
-        const lastAssistant = [...get().messages]
-          .reverse()
-          .find((m) => m.role === 'assistant')
-        const content = lastAssistant?.content ?? ''
-        const targets = outgoingIdentifiers(nodeId)
-        // Heuristic: a substantive response takes the last (usually "done")
-        // branch; an empty one takes the first.
-        const taken =
-          content.trim() !== ''
-            ? (targets[targets.length - 1] ?? 'default')
-            : (targets[0] ?? 'default')
+        // Same predicate evaluation as the simulated engine, against the real
+        // transcript content.
         await delay(400)
+        return conditionOutput(nodeId, node.data.branches, latestContent())
+      }
+      case 'router': {
+        const routes = (node.data.routes ?? []).filter(Boolean)
+        if (routes.length === 0) return { taken: 'default', matched_on: null }
+        const base = useLLMConfigStore.getState().getConfig()
+        const override = (node.data.modelOverride ?? '').trim()
+        const config =
+          override === ''
+            ? base
+            : { ...base, settings: { ...base.settings, model: override } }
+        const chat: ChatMessage[] = [
+          {
+            role: 'system',
+            content: `${node.data.routingPrompt ?? 'Classify the request.'}\nRespond with exactly one of: ${routes.join(', ')}. Reply with the route name only.`,
+          },
+          ...get().messages,
+        ]
+        set({ nodeStreams: { ...get().nodeStreams, [nodeId]: '' } })
+        abortController?.abort()
+        abortController = new AbortController()
+        const reply = await streamChat(
+          config,
+          chat,
+          (chunk) => appendStream(nodeId, chunk),
+          abortController.signal,
+        )
+        flushStreams()
+        metrics.addTokens(estimateTokens(reply))
+        // Match the model's reply to a route (models often add prose);
+        // fall back to the first route so a path is always taken.
+        const lower = reply.toLowerCase()
+        const matched = routes.find((r) => lower.includes(r.toLowerCase()))
         return {
-          evaluated_on: truncate(content, 100),
-          content_length: content.length,
-          taken,
+          taken: matched ?? routes[0],
+          matched_on: matched ?? null,
+          reply: truncate(reply, 120),
         }
+      }
+      case 'guardrail': {
+        const last = [...get().messages].reverse()[0]
+        const content = last?.content ?? get().userInput
+        if ((node.data.checkType ?? 'keyword') === 'keyword') {
+          // Deterministic check — honest to run locally even in Live mode.
+          const decision = evaluateKeywordGuardrail(
+            node.data.criteria ?? '',
+            content,
+          )
+          await delay(400)
+          return { taken: decision.taken, matched: decision.matched }
+        }
+        // llm-judge: one real pass/fail classification call.
+        const base = useLLMConfigStore.getState().getConfig()
+        const override = (node.data.modelOverride ?? '').trim()
+        const config =
+          override === ''
+            ? base
+            : { ...base, settings: { ...base.settings, model: override } }
+        const chat: ChatMessage[] = [
+          {
+            role: 'system',
+            content: `${node.data.criteria ?? 'Judge whether the response is acceptable.'}\nReply with exactly PASS or FAIL.`,
+          },
+          ...get().messages,
+        ]
+        set({ nodeStreams: { ...get().nodeStreams, [nodeId]: '' } })
+        abortController?.abort()
+        abortController = new AbortController()
+        const reply = await streamChat(
+          config,
+          chat,
+          (chunk) => appendStream(nodeId, chunk),
+          abortController.signal,
+        )
+        flushStreams()
+        metrics.addTokens(estimateTokens(reply))
+        const taken = reply.toLowerCase().includes('fail') ? 'fail' : 'pass'
+        return { taken, verdict: truncate(reply, 80) }
+      }
+      case 'evaluator': {
+        const branches = (node.data.evalBranches ?? ['pass', 'fail']).filter(
+          Boolean,
+        )
+        if (branches.length === 0) {
+          await delay(400)
+          return { taken: 'pass', note: 'no branches configured' }
+        }
+        const base = useLLMConfigStore.getState().getConfig()
+        const override = (node.data.modelOverride ?? '').trim()
+        const config =
+          override === ''
+            ? base
+            : { ...base, settings: { ...base.settings, model: override } }
+        const rubric = node.data.scoringPrompt ?? 'Score the response.'
+        const chat: ChatMessage[] = [
+          {
+            role: 'system',
+            content: `${rubric}\nReply with exactly one of: ${branches.join(', ')}. Reply with the branch name only.`,
+          },
+          ...get().messages,
+        ]
+        set({ nodeStreams: { ...get().nodeStreams, [nodeId]: '' } })
+        abortController?.abort()
+        abortController = new AbortController()
+        const reply = await streamChat(
+          config,
+          chat,
+          (chunk) => appendStream(nodeId, chunk),
+          abortController.signal,
+        )
+        flushStreams()
+        metrics.addTokens(estimateTokens(reply))
+        const lower = reply.toLowerCase()
+        const matched = branches.find((b) => lower.includes(b.toLowerCase()))
+        // Final allowed visit forces the else (last branch) so loops end.
+        const forceElse = (visitCounts.get(nodeId) ?? 1) >= MAX_NODE_VISITS
+        const taken = forceElse
+          ? branches[branches.length - 1]
+          : (matched ?? branches[branches.length - 1])
+        return {
+          score_type: node.data.scoreType ?? 'pass_fail',
+          evaluated: branches,
+          taken,
+          matched: !forceElse && matched !== undefined,
+          forced_else: forceElse,
+          verdict: truncate(reply, 120),
+        }
+      }
+      case 'join': {
+        // Deterministic merge — identical to the simulated engine. A summary
+        // message is appended so downstream LLM calls see the joined context.
+        const merged = mergeJoinForNode(
+          nodeId,
+          node.data.mergeStrategy ?? 'concat',
+        )
+        const summary = `[${node.data.label}] merged ${merged.waited_for} branch result(s)`
+        appendStream(nodeId, JSON.stringify(merged.merged, null, 2))
+        set({
+          messages: [...get().messages, { role: 'user', content: summary }],
+        })
+        await delay(400)
+        return merged
       }
       case 'output': {
         const lastAssistant = [...get().messages]
@@ -443,6 +651,36 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
         if (finished()) finishRun()
         return
       }
+
+      // Join barrier: wait until every incoming branch has executed or been
+      // skip-marked. If not ready, move the join to the queue tail (without
+      // consuming its visit budget) so the remaining branches run first.
+      // Readiness is recomputed here every time the join resurfaces, so a
+      // skip-mark that lands after a defer is seen. A per-join defer counter
+      // bounds the wait: once it reaches the pending-queue length, the join is
+      // forced (an unreachable source can't livelock the run).
+      if (node.type === 'join') {
+        const sources = flowSources(nodeId)
+        const ready = joinReadiness(
+          sources,
+          get().executedIds,
+          get().skippedNodeIds,
+        )
+        const pending = get().executionQueue.length - currentNodeIndex
+        const deferred = joinDeferCounts.get(nodeId) ?? 0
+        if (!ready && deferred < pending) {
+          joinDeferCounts.set(nodeId, deferred + 1)
+          const queue = [...get().executionQueue]
+          queue.splice(currentNodeIndex, 1)
+          queue.push(nodeId)
+          set({
+            executionQueue: queue,
+            activeId: queue[currentNodeIndex] ?? null,
+          })
+          return
+        }
+      }
+
       const fanOut =
         node.type === 'supervisor'
           ? useCanvasStore.getState().edges.filter((e) => e.source === nodeId)
@@ -493,20 +731,57 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
           await delay(nodeStepDurationMs(node.type))
           output = fakeOutputFor(node, get().userInput)
           if (node.type === 'condition') {
-            // Resolve the branch against the actual outgoing edges (instead
-            // of the configured branch names) so the walker can map it to an
-            // edge. First visit follows the first branch (loop-style
-            // "continue"); a revisit takes the last (conventionally "done")
-            // so cycles terminate.
-            const targets = outgoingIdentifiers(nodeId)
-            const visits = visitCounts.get(nodeId) ?? 1
+            // Evaluate the configured branch predicates against the latest
+            // content; the matched branch name is the outgoing edge label the
+            // walker routes to. The final visit forces the else so loops end.
+            output = conditionOutput(nodeId, node.data.branches, latestContent())
+          } else if (node.type === 'router') {
+            // Route by keyword over the user input — configuration drives the
+            // path even in the simulated engine.
+            const decision = pickRouteByKeyword(
+              node.data.routes ?? [],
+              get().userInput,
+            )
             output = {
-              evaluated: targets,
-              taken:
-                visits >= MAX_NODE_VISITS
-                  ? (targets[targets.length - 1] ?? 'default')
-                  : (targets[0] ?? 'default'),
+              routes: node.data.routes ?? [],
+              taken: decision.taken,
+              matched_on: decision.matchedOn,
             }
+          } else if (node.type === 'evaluator') {
+            // Score the latest content against the configured branches:
+            // first matching substring wins; last branch is the else;
+            // the final allowed visit forces the else so loops terminate.
+            const decision = conditionOutput(
+              nodeId,
+              node.data.evalBranches,
+              latestContent(),
+            )
+            output = {
+              score_type: node.data.scoreType ?? 'pass_fail',
+              evaluated: decision.evaluated,
+              taken: decision.taken,
+              matched: decision.matched,
+              forced_else: decision.forced_else,
+              note: '(simulated judge)',
+            }
+          } else if (node.type === 'guardrail') {
+            // Keyword guardrail runs for real against the most recent content
+            // (retriever output, an LLM reply…), falling back to the user
+            // input so the check is meaningful even before any node has run.
+            // llm-judge passes deterministically in the simulated engine.
+            const last = [...get().messages].reverse()[0]
+            const content = last?.content ?? get().userInput
+            if ((node.data.checkType ?? 'keyword') === 'keyword') {
+              const decision = evaluateKeywordGuardrail(
+                node.data.criteria ?? '',
+                content,
+              )
+              output = { taken: decision.taken, matched: decision.matched }
+            } else {
+              output = { taken: 'pass', note: '(simulated judge)' }
+            }
+          } else if (node.type === 'join') {
+            output = mergeJoinForNode(nodeId, node.data.mergeStrategy ?? 'concat')
           }
           metrics.addTokens(fakeTokensFor(node))
         }
@@ -543,12 +818,25 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
         }
       }
 
-      // Walk forward: conditions follow only the taken edge (marking the
-      // rest skipped); every other node fans out to all flow targets.
+      // Code Executor: first attempt fails (default fake), subsequent attempts
+      // (a re-visit caused by a fix loop) "succeed" so the loop can terminate.
+      if (node.type === 'codeExecutor' && (visitCounts.get(nodeId) ?? 1) >= 2) {
+        output = {
+          language: node.data.language ?? 'python',
+          stdout: 'OK\nResult: 42',
+          stderr: '',
+          exit_code: 0,
+          execution_time_ms: 142,
+        }
+      }
+
+      // Walk forward: routing nodes (condition/router/guardrail) follow only
+      // the taken edge (marking the rest skipped); every other node fans out
+      // to all flow targets.
       let skipped = get().skippedNodeIds
       let nextTargets: string[]
       const skipEntries: TraceEntry[] = []
-      if (node.type === 'condition') {
+      if (isRoutingType(node.type)) {
         const taken = (output as { taken?: unknown } | null)?.taken
         const resolution = resolveCondition(nodeId, taken)
         skipped = resolution.skipped
@@ -598,6 +886,15 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
         currentNodeIndex: nextIndex,
         activeId: nextQueue[nextIndex] ?? null,
       })
+      // Human-in-the-loop gate: the node has completed and been recorded;
+      // now halt and wait for the user. No runToken bump — nothing is in
+      // flight (HIL is synchronous), so play()/step() simply resume once
+      // pendingApproval clears.
+      if (node.type === 'humanInLoop' && !finished()) {
+        set({ isRunning: false, pendingApproval: { nodeId } })
+        useSimulationMetricsStore.getState().pauseTimer()
+        return
+      }
       if (finished()) finishRun()
     } finally {
       stepInFlight = false
@@ -620,6 +917,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
   const resetRunState = (executionQueue: string[]) => {
     discardPendingStreams()
     visitCounts = new Map(executionQueue.map((id) => [id, 1]))
+    joinDeferCounts = new Map()
     set({
       currentNodeIndex: 0,
       executionQueue,
@@ -632,6 +930,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
       nodeStreams: {},
       erroredNodeIds: [],
       trace: [],
+      pendingApproval: null,
     })
     const metrics = useSimulationMetricsStore.getState()
     metrics.resetAll()
@@ -655,6 +954,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
     erroredNodeIds: [],
     trace: [],
     traceOpen: false,
+    pendingApproval: null,
 
     setLiveMode: (liveMode) => set({ liveMode }),
     setUserInput: (userInput) => set({ userInput }),
@@ -675,6 +975,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
       abortInFlight()
       discardPendingStreams()
       visitCounts = new Map()
+      joinDeferCounts = new Map()
       set({
         isActive: false,
         isRunning: false,
@@ -689,12 +990,20 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
         nodeStreams: {},
         erroredNodeIds: [],
         trace: [],
+        pendingApproval: null,
       })
       useSimulationMetricsStore.getState().resetAll()
     },
 
     play: () => {
-      if (!get().isActive || get().isRunning || finished()) return
+      // A pending Human-in-Loop gate blocks playback until approve/reject.
+      if (
+        !get().isActive ||
+        get().isRunning ||
+        finished() ||
+        get().pendingApproval
+      )
+        return
       set({ isRunning: true })
       useSimulationMetricsStore.getState().startTimer()
       const token = ++runToken
@@ -710,7 +1019,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
     },
 
     step: () => {
-      if (!get().isActive || finished()) return
+      if (!get().isActive || finished() || get().pendingApproval) return
       const token = ++runToken
       set({ isRunning: false })
       const metrics = useSimulationMetricsStore.getState()
@@ -725,6 +1034,65 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
       abortInFlight()
       resetRunState(buildSeeds())
       get().play()
+    },
+
+    approve: () => {
+      const pending = get().pendingApproval
+      if (!pending) return
+      const prev = get().nodeOutputs[pending.nodeId]
+      set({
+        pendingApproval: null,
+        nodeOutputs: {
+          ...get().nodeOutputs,
+          [pending.nodeId]: { ...(prev as object), approved: true },
+        },
+      })
+      // Resume the walker from where the gate halted it.
+      get().play()
+    },
+
+    reject: () => {
+      const pending = get().pendingApproval
+      if (!pending) return
+      const hilId = pending.nodeId
+      const { edges } = useCanvasStore.getState()
+      // Skip everything downstream of the gate that has not already run.
+      const downstream = reachableFrom(edges, hilId)
+      downstream.delete(hilId)
+      const skipped = new Set(get().skippedNodeIds)
+      const skipEntries: TraceEntry[] = []
+      for (const id of downstream) {
+        if (get().executedIds.has(id) || skipped.has(id)) continue
+        const n = findNode(id)
+        if (!n) continue
+        skipped.add(id)
+        skipEntries.push({
+          id: crypto.randomUUID(),
+          at: Date.now(),
+          nodeId: id,
+          nodeName: n.data.label,
+          nodeType: n.type ?? 'unknown',
+          status: 'skipped',
+          durationMs: 0,
+          input: '—',
+          output: 'rejected at human gate',
+        })
+      }
+      const prev = get().nodeOutputs[hilId]
+      const queue = get().executionQueue
+      set({
+        pendingApproval: null,
+        skippedNodeIds: skipped,
+        nodeOutputs: {
+          ...get().nodeOutputs,
+          [hilId]: { ...(prev as object), approved: false },
+        },
+        trace: [...get().trace, ...skipEntries],
+        // Force the run to a finished state: drop the now-skipped pending tail.
+        currentNodeIndex: queue.length,
+        activeId: null,
+      })
+      finishRun()
     },
   }
 })

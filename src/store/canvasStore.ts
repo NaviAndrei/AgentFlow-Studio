@@ -207,11 +207,20 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
 
     onConnect: (connection) => {
       pushHistory()
+      // Named source handles (router routes, guardrail pass/fail) carry their
+      // name in sourceHandle; adopt it as the edge label so routing config
+      // binds to topology without the user typing labels. Plain handles
+      // (sourceHandle null) are unaffected.
+      const handle = connection.sourceHandle
+      const labeled: Connection & { label?: string } =
+        handle != null && handle !== ''
+          ? { ...connection, label: handle }
+          : connection
       set({
         ...validated(
           get().nodes,
           addEdge(
-            { ...connection, type: 'agentflow', animated: true },
+            { ...labeled, type: 'agentflow', animated: true },
             get().edges,
           ),
         ),

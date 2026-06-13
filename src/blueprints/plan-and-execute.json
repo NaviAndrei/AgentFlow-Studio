@@ -1,0 +1,98 @@
+{
+  "id": "plan-and-execute",
+  "schemaVersion": 1,
+  "name": "Plan & Execute",
+  "description": "A planner decomposes the task, parallel executors work the sub-tasks, a Join gathers their results, and a Guardrail decides whether to replan or answer.",
+  "category": "Single Agent",
+  "nodes": [
+    {
+      "id": "note-1",
+      "type": "note",
+      "position": { "x": 320, "y": 20 },
+      "data": {
+        "label": "How it works",
+        "text": "Plan-and-Execute: the Planner breaks the task into parts, executors run in parallel (one superstep), the Join waits for all of them, and the Guardrail replans on an incomplete result or answers when done."
+      }
+    },
+    {
+      "id": "start-1",
+      "type": "start",
+      "position": { "x": 40, "y": 260 },
+      "data": { "label": "Start", "inputVariables": ["task"] }
+    },
+    {
+      "id": "llm-1",
+      "type": "llm",
+      "position": { "x": 280, "y": 260 },
+      "data": {
+        "label": "Planner",
+        "model": "gemini-2.5-flash",
+        "systemPrompt": "Break the task into independent sub-tasks. List each on its own line.",
+        "temperature": 0.4
+      }
+    },
+    {
+      "id": "llm-2",
+      "type": "llm",
+      "position": { "x": 540, "y": 140 },
+      "data": {
+        "label": "Executor A",
+        "model": "gemini-2.5-flash",
+        "systemPrompt": "Complete your assigned sub-task and return the result.",
+        "temperature": 0.6
+      }
+    },
+    {
+      "id": "llm-3",
+      "type": "llm",
+      "position": { "x": 540, "y": 380 },
+      "data": {
+        "label": "Executor B",
+        "model": "gemini-2.5-flash",
+        "systemPrompt": "Complete your assigned sub-task and return the result.",
+        "temperature": 0.6
+      }
+    },
+    {
+      "id": "join-1",
+      "type": "join",
+      "position": { "x": 800, "y": 260 },
+      "data": { "label": "Gather", "mergeStrategy": "concat" }
+    },
+    {
+      "id": "guardrail-1",
+      "type": "guardrail",
+      "position": { "x": 1040, "y": 260 },
+      "data": {
+        "label": "Complete?",
+        "checkType": "llm-judge",
+        "criteria": "Pass if the gathered results fully answer the task; fail if more work is needed."
+      }
+    },
+    {
+      "id": "output-1",
+      "type": "output",
+      "position": { "x": 1300, "y": 160 },
+      "data": { "label": "Answer" }
+    },
+    {
+      "id": "note-2",
+      "type": "note",
+      "position": { "x": 800, "y": 440 },
+      "data": {
+        "label": "The replan loop",
+        "text": "The Guardrail's 'fail' edge loops back to the Planner — that back-edge is what turns a one-shot pipeline into an iterative plan-and-execute agent."
+      }
+    }
+  ],
+  "edges": [
+    { "id": "e1", "source": "start-1", "target": "llm-1" },
+    { "id": "e2", "source": "llm-1", "target": "llm-2" },
+    { "id": "e3", "source": "llm-1", "target": "llm-3" },
+    { "id": "e4", "source": "llm-2", "target": "join-1" },
+    { "id": "e5", "source": "llm-3", "target": "join-1" },
+    { "id": "e6", "source": "join-1", "target": "guardrail-1" },
+    { "id": "e7", "source": "guardrail-1", "target": "output-1", "label": "pass" },
+    { "id": "e8", "source": "guardrail-1", "target": "llm-1", "label": "fail" }
+  ]
+}

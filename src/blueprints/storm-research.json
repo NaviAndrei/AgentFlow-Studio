@@ -1,0 +1,99 @@
+{
+  "id": "storm-research",
+  "schemaVersion": 1,
+  "name": "STORM Research-to-Article",
+  "description": "Outline a topic, fan out parallel research per section (each section retrieves its own sources and drafts), then synthesize a full article from the gathered sections.",
+  "category": "Research",
+  "nodes": [
+    {
+      "id": "note-1",
+      "type": "note",
+      "position": { "x": 320, "y": 20 },
+      "data": {
+        "label": "STORM pattern",
+        "text": "STORM splits a topic into sections, researches each in parallel, then assembles them. The Map node fans one Send per section; each branch retrieves grounding evidence and drafts that section; the Synthesizer composes the final article."
+      }
+    },
+    {
+      "id": "start-1",
+      "type": "start",
+      "position": { "x": 40, "y": 280 },
+      "data": { "label": "Start", "inputVariables": ["topic"] }
+    },
+    {
+      "id": "llm-1",
+      "type": "llm",
+      "position": { "x": 280, "y": 280 },
+      "data": {
+        "label": "Outline",
+        "model": "gemini-2.5-flash",
+        "systemPrompt": "Produce an article outline for the topic. Output the section titles as a list under the state key 'sections'.",
+        "temperature": 0.4
+      }
+    },
+    {
+      "id": "map-1",
+      "type": "map",
+      "position": { "x": 540, "y": 280 },
+      "data": {
+        "label": "Per-Section Fan-out",
+        "inputExpression": "sections",
+        "maxParallel": 6
+      }
+    },
+    {
+      "id": "retriever-1",
+      "type": "retriever",
+      "position": { "x": 800, "y": 180 },
+      "data": {
+        "label": "Research",
+        "knowledgeBase": "web",
+        "topK": 5,
+        "similarityThreshold": 0.7
+      }
+    },
+    {
+      "id": "llm-2",
+      "type": "llm",
+      "position": { "x": 1060, "y": 280 },
+      "data": {
+        "label": "Section Writer",
+        "model": "gemini-2.5-flash",
+        "systemPrompt": "Using the retrieved sources, draft the assigned section. Cite sources inline.",
+        "temperature": 0.5
+      }
+    },
+    {
+      "id": "join-1",
+      "type": "join",
+      "position": { "x": 1320, "y": 280 },
+      "data": { "label": "Collect Sections", "mergeStrategy": "concat" }
+    },
+    {
+      "id": "llm-3",
+      "type": "llm",
+      "position": { "x": 1580, "y": 280 },
+      "data": {
+        "label": "Synthesizer",
+        "model": "gemini-2.5-flash",
+        "systemPrompt": "Compose the drafted sections into a coherent article with transitions and a conclusion.",
+        "temperature": 0.5
+      }
+    },
+    {
+      "id": "output-1",
+      "type": "output",
+      "position": { "x": 1840, "y": 280 },
+      "data": { "label": "Article" }
+    }
+  ],
+  "edges": [
+    { "id": "e1", "source": "start-1", "target": "llm-1" },
+    { "id": "e2", "source": "llm-1", "target": "map-1" },
+    { "id": "e3", "source": "map-1", "target": "retriever-1" },
+    { "id": "e4", "source": "retriever-1", "target": "llm-2" },
+    { "id": "e5", "source": "llm-2", "target": "join-1" },
+    { "id": "e6", "source": "join-1", "target": "llm-3" },
+    { "id": "e7", "source": "llm-3", "target": "output-1" }
+  ]
+}

@@ -10,6 +10,9 @@ export type AgentFlowNodeType =
   | 'memory'
   | 'output'
   | 'condition'
+  | 'router'
+  | 'guardrail'
+  | 'join'
   | 'loop'
   | 'humanInLoop'
   | 'supervisor'
@@ -17,14 +20,16 @@ export type AgentFlowNodeType =
   | 'retriever'
   | 'mcpServer'
   | 'structuredOutput'
+  | 'map'
+  | 'codeExecutor'
+  | 'evaluator'
+  | 'subgraph'
+  | 'longTermStore'
+  | 'memoryWriter'
+  | 'planner'
+  | 'subagent'
   | 'note'
   | 'group'
-
-export type LLMModel =
-  | 'gemini-flash'
-  | 'gemini-pro'
-  | 'ollama/llama3'
-  | 'ollama/mistral'
 
 export type MemoryType = 'short-term' | 'vector-store' | 'checkpointer'
 
@@ -37,8 +42,10 @@ export type AgentFlowNodeData = {
   label: string
   /** Start */
   inputVariables?: string[]
-  /** LLM */
-  model?: LLMModel
+  /** LLM — free-text model id; legacy tier ids resolve via exportModels aliases. */
+  model?: string
+  /** Live-mode model override; empty/absent = use the global LLM setting. */
+  modelOverride?: string
   systemPrompt?: string
   temperature?: number
   /** Agent */
@@ -53,6 +60,14 @@ export type AgentFlowNodeData = {
   memoryType?: MemoryType
   /** Condition */
   branches?: string[]
+  /** Router — route names become named output handles + edge labels. */
+  routes?: string[]
+  routingPrompt?: string
+  /** Guardrail */
+  checkType?: 'keyword' | 'llm-judge'
+  criteria?: string
+  /** Join — how the waited-on branch outputs are merged. */
+  mergeStrategy?: 'concat' | 'last'
   /** Loop */
   loopCondition?: string
   /** Retriever */
@@ -65,6 +80,37 @@ export type AgentFlowNodeData = {
   /** Structured Output */
   pydanticModel?: string
   jsonSchema?: string
+  /** Map (Send) — dynamic runtime fan-out over a list in state. */
+  inputExpression?: string
+  maxParallel?: number
+  /** Code Executor — sandboxed REPL for generated code. */
+  language?: 'python' | 'javascript' | 'bash'
+  timeout?: number
+  allowNetworkAccess?: boolean
+  /** Evaluator — LLM-as-judge that scores and routes. */
+  scoringPrompt?: string
+  scoreType?: 'pass_fail' | 'numeric' | 'letter_grade'
+  threshold?: number
+  evalBranches?: string[]
+  /** Subgraph — references another saved canvas, executed as a single node. */
+  subgraphRef?: string
+  subgraphSummary?: string
+  inputMapping?: string
+  outputMapping?: string
+  /** Long-Term Store — namespaced cross-thread memory (BaseStore). */
+  namespace?: string
+  storeOperation?: 'read' | 'write' | 'search'
+  searchQuery?: string
+  /** Memory Writer — LangMem background extractor. */
+  memoryKind?: 'episodic' | 'semantic' | 'procedural'
+  extractionPrompt?: string
+  writeNamespace?: string
+  /** Planner — Deep-Agents-style task decomposition (write_todos). */
+  decompositionPrompt?: string
+  maxTasks?: number
+  /** Subagent — isolated-context delegate. */
+  taskInput?: string
+  role?: string
   /** Note */
   text?: string
   /** Appearance overrides (any node) */

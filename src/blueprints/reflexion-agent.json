@@ -1,0 +1,73 @@
+{
+  "id": "reflexion-agent",
+  "schemaVersion": 1,
+  "name": "Reflexion Agent",
+  "description": "Act, self-grade the attempt, write the lesson to memory, and retry with that reflection in context — self-correction that remembers its failed attempts, unlike one-shot Reflection.",
+  "category": "Single Agent",
+  "nodes": [
+    {
+      "id": "note-1",
+      "type": "note",
+      "position": { "x": 300, "y": 20 },
+      "data": {
+        "label": "How it works",
+        "text": "Reflexion ≠ Reflection. The Actor attempts the task, an llm-judge grades it, and on failure the lesson is written to Memory before retrying — so the next attempt reads WHY the last one failed. Memory turns blind retries into learning."
+      }
+    },
+    {
+      "id": "start-1",
+      "type": "start",
+      "position": { "x": 40, "y": 240 },
+      "data": { "label": "Start", "inputVariables": ["task"] }
+    },
+    {
+      "id": "agent-1",
+      "type": "agent",
+      "position": { "x": 280, "y": 240 },
+      "data": {
+        "label": "Actor",
+        "tools": [],
+        "maxIterations": 6
+      }
+    },
+    {
+      "id": "evaluator-1",
+      "type": "evaluator",
+      "position": { "x": 560, "y": 240 },
+      "data": {
+        "label": "Self-Grade",
+        "scoringPrompt": "Score the attempt. Pass if it fully and correctly solves the task; fail if it is incomplete or wrong, and say what was missing.",
+        "scoreType": "pass_fail",
+        "evalBranches": ["pass", "fail"]
+      }
+    },
+    {
+      "id": "memory-1",
+      "type": "memory",
+      "position": { "x": 560, "y": 440 },
+      "data": { "label": "Reflection Memory", "memoryType": "short-term" }
+    },
+    {
+      "id": "output-1",
+      "type": "output",
+      "position": { "x": 860, "y": 240 },
+      "data": { "label": "Answer" }
+    },
+    {
+      "id": "note-2",
+      "type": "note",
+      "position": { "x": 860, "y": 420 },
+      "data": {
+        "label": "The reflexion loop",
+        "text": "On 'fail' the lesson goes to Memory, which feeds the Actor on retry. On 'pass' it answers. The final allowed visit forces termination so retries are bounded."
+      }
+    }
+  ],
+  "edges": [
+    { "id": "e1", "source": "start-1", "target": "agent-1" },
+    { "id": "e2", "source": "agent-1", "target": "evaluator-1" },
+    { "id": "e3", "source": "evaluator-1", "target": "output-1", "label": "pass" },
+    { "id": "e4", "source": "evaluator-1", "target": "memory-1", "label": "fail" },
+    { "id": "e5", "source": "memory-1", "target": "agent-1", "label": "retry" }
+  ]
+}

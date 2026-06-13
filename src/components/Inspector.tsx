@@ -5,20 +5,16 @@ import { ICON_OPTIONS } from '../nodes/iconOptions'
 import { useUIStore } from '../store/uiStore'
 import { useCanvasStore } from '../store/canvasStore'
 import { useSimulationStore } from '../store/simulationStore'
-import { discoverMcpTools, isInsecureRemoteUrl } from '../utils/llmClient'
+import { isInsecureRemoteUrl } from '../llm'
+import { discoverMcpTools } from '../utils/mcpClient'
 import { StateInspector } from './StateInspector'
-import type { AgentFlowNodeData, LLMModel, MemoryType } from '../types'
+import { MODEL_PRESETS } from '../utils/exportModels'
+import type { AgentFlowNodeData, MemoryType } from '../types'
 
 const inputCls =
   'w-full rounded-md border border-white/10 bg-surface-2 px-2 py-1.5 text-xs text-gray-200 focus:border-accent focus:outline-none'
 const labelCls = 'mb-1 block text-[10px] uppercase tracking-wider text-gray-500'
 
-const LLM_MODELS: LLMModel[] = [
-  'gemini-flash',
-  'gemini-pro',
-  'ollama/llama3',
-  'ollama/mistral',
-]
 const MEMORY_TYPES: MemoryType[] = ['short-term', 'vector-store', 'checkpointer']
 
 interface FieldsProps {
@@ -45,17 +41,35 @@ function LLMFields({ data, update }: FieldsProps) {
     <>
       <label className="block">
         <span className={labelCls}>Model</span>
-        <select
+        <input
           className={inputCls}
-          value={data.model ?? 'gemini-flash'}
-          onChange={(e) => update({ model: e.target.value as LLMModel })}
-        >
-          {LLM_MODELS.map((m) => (
-            <option key={m} value={m}>
-              {m}
-            </option>
+          list="llm-model-presets"
+          value={data.model ?? ''}
+          onChange={(e) => update({ model: e.target.value })}
+          placeholder="e.g. gemini-2.5-flash"
+        />
+        <datalist id="llm-model-presets">
+          {MODEL_PRESETS.map((m) => (
+            <option key={m} value={m} />
           ))}
-        </select>
+        </datalist>
+        <p className="mt-1 text-[10px] text-gray-600">
+          Used for export; Live mode uses the connection settings unless
+          Override model is set.
+        </p>
+      </label>
+      <label className="block">
+        <span className={labelCls}>Override model</span>
+        <input
+          className={inputCls}
+          value={data.modelOverride ?? ''}
+          onChange={(e) => update({ modelOverride: e.target.value })}
+          placeholder="Use global setting"
+        />
+        <p className="mt-1 text-[10px] text-gray-600">
+          Live mode only — sends this model id to the configured provider
+          instead of the global one.
+        </p>
       </label>
       <label className="block">
         <span className={labelCls}>System prompt</span>
@@ -175,7 +189,124 @@ function ConditionFields({ data, update }: FieldsProps) {
         value={(data.branches ?? []).join('\n')}
         onChange={(e) => update({ branches: e.target.value.split('\n') })}
       />
+      <p className="mt-1 text-[10px] text-gray-600">
+        Each branch is a keyword tested against the latest content and must
+        match an outgoing edge label. The last branch is the else.
+      </p>
     </label>
+  )
+}
+
+function RouterFields({ data, update }: FieldsProps) {
+  return (
+    <>
+      <label className="block">
+        <span className={labelCls}>Routes (one per line)</span>
+        <textarea
+          className={`${inputCls} h-20 resize-none`}
+          value={(data.routes ?? []).join('\n')}
+          onChange={(e) => update({ routes: e.target.value.split('\n') })}
+        />
+        <p className="mt-1 text-[10px] text-gray-600">
+          Each route is an output handle; connect it to a downstream node. Edge
+          labels are set automatically.
+        </p>
+      </label>
+      <label className="block">
+        <span className={labelCls}>Routing instruction</span>
+        <textarea
+          className={`${inputCls} h-20 resize-none`}
+          value={data.routingPrompt ?? ''}
+          onChange={(e) => update({ routingPrompt: e.target.value })}
+        />
+      </label>
+      <label className="block">
+        <span className={labelCls}>Override model</span>
+        <input
+          className={inputCls}
+          value={data.modelOverride ?? ''}
+          onChange={(e) => update({ modelOverride: e.target.value })}
+          placeholder="Use global setting"
+        />
+        <p className="mt-1 text-[10px] text-gray-600">
+          Live mode classifier model; export falls back to the first LLM node.
+        </p>
+      </label>
+    </>
+  )
+}
+
+function GuardrailFields({ data, update }: FieldsProps) {
+  const checkType = data.checkType ?? 'keyword'
+  return (
+    <>
+      <label className="block">
+        <span className={labelCls}>Check type</span>
+        <select
+          className={inputCls}
+          value={checkType}
+          onChange={(e) =>
+            update({ checkType: e.target.value as 'keyword' | 'llm-judge' })
+          }
+        >
+          <option value="keyword">keyword</option>
+          <option value="llm-judge">llm-judge</option>
+        </select>
+      </label>
+      <label className="block">
+        <span className={labelCls}>
+          {checkType === 'keyword' ? 'Required keywords' : 'Judge rubric'}
+        </span>
+        <textarea
+          className={`${inputCls} h-20 resize-none`}
+          value={data.criteria ?? ''}
+          onChange={(e) => update({ criteria: e.target.value })}
+          placeholder={
+            checkType === 'keyword'
+              ? 'comma or newline separated — passes if any appears'
+              : 'describe what a passing response looks like'
+          }
+        />
+      </label>
+      {checkType === 'llm-judge' && (
+        <label className="block">
+          <span className={labelCls}>Override model</span>
+          <input
+            className={inputCls}
+            value={data.modelOverride ?? ''}
+            onChange={(e) => update({ modelOverride: e.target.value })}
+            placeholder="Use global setting"
+          />
+        </label>
+      )}
+      <p className="text-[10px] text-gray-600">
+        Connect the <span className="text-gray-400">pass</span> and{' '}
+        <span className="text-gray-400">fail</span> handles to downstream nodes.
+      </p>
+    </>
+  )
+}
+
+function JoinFields({ data, update }: FieldsProps) {
+  return (
+    <>
+      <p className="text-[10px] text-gray-600">
+        Waits for every incoming branch (executed or skipped) before merging.
+      </p>
+      <label className="block">
+        <span className={labelCls}>Merge strategy</span>
+        <select
+          className={inputCls}
+          value={data.mergeStrategy ?? 'concat'}
+          onChange={(e) =>
+            update({ mergeStrategy: e.target.value as 'concat' | 'last' })
+          }
+        >
+          <option value="concat">concat — collect all branch outputs</option>
+          <option value="last">last — keep the final branch output</option>
+        </select>
+      </label>
+    </>
   )
 }
 
@@ -189,6 +320,406 @@ function LoopFields({ data, update }: FieldsProps) {
         onChange={(e) => update({ loopCondition: e.target.value })}
       />
     </label>
+  )
+}
+
+function CodeExecutorFields({ data, update }: FieldsProps) {
+  const language = data.language ?? 'python'
+  return (
+    <>
+      <label className="block">
+        <span className={labelCls}>Language</span>
+        <select
+          className={inputCls}
+          value={language}
+          onChange={(e) =>
+            update({
+              language: e.target.value as 'python' | 'javascript' | 'bash',
+            })
+          }
+        >
+          <option value="python">python</option>
+          <option value="javascript">javascript</option>
+          <option value="bash">bash</option>
+        </select>
+      </label>
+      <label className="block">
+        <span className={labelCls}>Timeout (seconds)</span>
+        <input
+          type="number"
+          min={1}
+          className={inputCls}
+          value={data.timeout ?? 30}
+          onChange={(e) =>
+            update({ timeout: Math.max(1, Number(e.target.value) || 1) })
+          }
+        />
+      </label>
+      <label className="flex items-center gap-2 text-xs text-gray-300">
+        <input
+          type="checkbox"
+          checked={data.allowNetworkAccess ?? false}
+          onChange={(e) => update({ allowNetworkAccess: e.target.checked })}
+        />
+        <span>Allow network access</span>
+      </label>
+      <p className="text-[10px] text-gray-600">
+        Sandbox the LLM's generated code. Pair with a downstream Condition
+        that branches on <code>exit_code</code> to drive a self-correct loop.
+      </p>
+    </>
+  )
+}
+
+function PlannerFields({ data, update }: FieldsProps) {
+  return (
+    <>
+      <label className="block">
+        <span className={labelCls}>Decomposition prompt</span>
+        <textarea
+          className={`${inputCls} h-20 resize-none`}
+          value={data.decompositionPrompt ?? ''}
+          onChange={(e) => update({ decompositionPrompt: e.target.value })}
+        />
+      </label>
+      <label className="block">
+        <span className={labelCls}>Max tasks</span>
+        <input
+          type="number"
+          min={1}
+          className={inputCls}
+          value={data.maxTasks ?? 5}
+          onChange={(e) =>
+            update({ maxTasks: Math.max(1, Number(e.target.value) || 1) })
+          }
+        />
+      </label>
+      <label className="block">
+        <span className={labelCls}>Override model</span>
+        <input
+          className={inputCls}
+          value={data.modelOverride ?? ''}
+          onChange={(e) => update({ modelOverride: e.target.value })}
+          placeholder="Use global setting"
+        />
+      </label>
+      <p className="text-[10px] text-gray-600">
+        Emits a <code>todos</code> list — feed it to a Map node for parallel
+        execution of each subtask.
+      </p>
+    </>
+  )
+}
+
+function SubagentFields({ data, update }: FieldsProps) {
+  return (
+    <>
+      <label className="block">
+        <span className={labelCls}>Role</span>
+        <input
+          className={inputCls}
+          value={data.role ?? ''}
+          onChange={(e) => update({ role: e.target.value })}
+          placeholder="Researcher"
+        />
+      </label>
+      <label className="block">
+        <span className={labelCls}>Task input variable</span>
+        <input
+          className={inputCls}
+          value={data.taskInput ?? ''}
+          onChange={(e) => update({ taskInput: e.target.value })}
+          placeholder="task"
+        />
+      </label>
+      <label className="block">
+        <span className={labelCls}>Tools (one per line)</span>
+        <textarea
+          className={`${inputCls} h-16 resize-none`}
+          value={(data.tools ?? []).join('\n')}
+          onChange={(e) =>
+            update({
+              tools: e.target.value.split('\n').filter((t) => t.trim()),
+            })
+          }
+        />
+      </label>
+      <label className="block">
+        <span className={labelCls}>Max iterations</span>
+        <input
+          type="number"
+          min={1}
+          className={inputCls}
+          value={data.maxIterations ?? 5}
+          onChange={(e) =>
+            update({
+              maxIterations: Math.max(1, Number(e.target.value) || 1),
+            })
+          }
+        />
+      </label>
+      <p className="text-[10px] text-gray-600">
+        Runs in isolated context (clean message history). Pair with Map to
+        spawn one subagent per todo.
+      </p>
+    </>
+  )
+}
+
+function LongTermStoreFields({ data, update }: FieldsProps) {
+  const op = data.storeOperation ?? 'read'
+  return (
+    <>
+      <label className="block">
+        <span className={labelCls}>Namespace</span>
+        <input
+          className={inputCls}
+          value={data.namespace ?? ''}
+          onChange={(e) => update({ namespace: e.target.value })}
+          placeholder="user_memories"
+        />
+        <p className="mt-1 text-[10px] text-gray-600">
+          Partition key, e.g. <code>user_memories</code> or{' '}
+          <code>(user_id, 'memories')</code>.
+        </p>
+      </label>
+      <label className="block">
+        <span className={labelCls}>Operation</span>
+        <select
+          className={inputCls}
+          value={op}
+          onChange={(e) =>
+            update({
+              storeOperation: e.target.value as 'read' | 'write' | 'search',
+            })
+          }
+        >
+          <option value="read">read</option>
+          <option value="write">write</option>
+          <option value="search">search (semantic)</option>
+        </select>
+      </label>
+      {op === 'search' && (
+        <label className="block">
+          <span className={labelCls}>Search query</span>
+          <input
+            className={inputCls}
+            value={data.searchQuery ?? ''}
+            onChange={(e) => update({ searchQuery: e.target.value })}
+            placeholder="latest user message"
+          />
+        </label>
+      )}
+      <p className="text-[10px] text-gray-600">
+        Cross-thread memory (LangGraph Store). Distinct from the short-term
+        Memory checkpointer; export emits <code>compile(store=...)</code>.
+      </p>
+    </>
+  )
+}
+
+function MemoryWriterFields({ data, update }: FieldsProps) {
+  return (
+    <>
+      <label className="block">
+        <span className={labelCls}>Memory kind</span>
+        <select
+          className={inputCls}
+          value={data.memoryKind ?? 'episodic'}
+          onChange={(e) =>
+            update({
+              memoryKind: e.target.value as
+                | 'episodic'
+                | 'semantic'
+                | 'procedural',
+            })
+          }
+        >
+          <option value="episodic">episodic (events)</option>
+          <option value="semantic">semantic (facts)</option>
+          <option value="procedural">procedural (rules)</option>
+        </select>
+      </label>
+      <label className="block">
+        <span className={labelCls}>Extraction prompt</span>
+        <textarea
+          className={`${inputCls} h-20 resize-none`}
+          value={data.extractionPrompt ?? ''}
+          onChange={(e) => update({ extractionPrompt: e.target.value })}
+        />
+      </label>
+      <label className="block">
+        <span className={labelCls}>Write to namespace</span>
+        <input
+          className={inputCls}
+          value={data.writeNamespace ?? ''}
+          onChange={(e) => update({ writeNamespace: e.target.value })}
+          placeholder="user_memories"
+        />
+      </label>
+      <p className="text-[10px] text-gray-600">
+        Background memory extraction (LangMem). Pairs with a Long-Term Store
+        on the canvas.
+      </p>
+    </>
+  )
+}
+
+function SubgraphFields({ data, update }: FieldsProps) {
+  return (
+    <>
+      <label className="block">
+        <span className={labelCls}>Subgraph reference</span>
+        <input
+          className={inputCls}
+          value={data.subgraphRef ?? ''}
+          onChange={(e) => update({ subgraphRef: e.target.value })}
+          placeholder="research-team"
+        />
+        <p className="mt-1 text-[10px] text-gray-600">
+          Identifier of another canvas/blueprint compiled and added as one node.
+        </p>
+      </label>
+      <label className="block">
+        <span className={labelCls}>Summary</span>
+        <textarea
+          className={`${inputCls} h-16 resize-none`}
+          value={data.subgraphSummary ?? ''}
+          onChange={(e) => update({ subgraphSummary: e.target.value })}
+          placeholder="What does this inner graph do?"
+        />
+      </label>
+      <label className="block">
+        <span className={labelCls}>Input mapping (JSON)</span>
+        <textarea
+          className={`${inputCls} h-16 resize-none font-mono`}
+          value={data.inputMapping ?? '{}'}
+          onChange={(e) => update({ inputMapping: e.target.value })}
+        />
+      </label>
+      <label className="block">
+        <span className={labelCls}>Output mapping (JSON)</span>
+        <textarea
+          className={`${inputCls} h-16 resize-none font-mono`}
+          value={data.outputMapping ?? '{}'}
+          onChange={(e) => update({ outputMapping: e.target.value })}
+        />
+      </label>
+      <p className="text-[10px] text-gray-600">
+        Sim: executes as one opaque step. Export emits a real compiled
+        subgraph added via <code>builder.add_node</code>.
+      </p>
+    </>
+  )
+}
+
+function EvaluatorFields({ data, update }: FieldsProps) {
+  const scoreType = data.scoreType ?? 'pass_fail'
+  return (
+    <>
+      <label className="block">
+        <span className={labelCls}>Scoring prompt</span>
+        <textarea
+          className={`${inputCls} h-20 resize-none`}
+          value={data.scoringPrompt ?? ''}
+          onChange={(e) => update({ scoringPrompt: e.target.value })}
+          placeholder="Describe what passes vs fails."
+        />
+      </label>
+      <label className="block">
+        <span className={labelCls}>Score type</span>
+        <select
+          className={inputCls}
+          value={scoreType}
+          onChange={(e) => {
+            const next = e.target.value as
+              | 'pass_fail'
+              | 'numeric'
+              | 'letter_grade'
+            const defaults: Record<typeof next, string[]> = {
+              pass_fail: ['pass', 'fail'],
+              numeric: ['high', 'medium', 'low'],
+              letter_grade: ['A', 'B', 'C', 'F'],
+            }
+            update({ scoreType: next, evalBranches: defaults[next] })
+          }}
+        >
+          <option value="pass_fail">pass / fail</option>
+          <option value="numeric">numeric (high / medium / low)</option>
+          <option value="letter_grade">letter grade</option>
+        </select>
+      </label>
+      {scoreType === 'numeric' && (
+        <label className="block">
+          <span className={labelCls}>Threshold (pass if score ≥)</span>
+          <input
+            type="number"
+            className={inputCls}
+            value={data.threshold ?? 7}
+            onChange={(e) =>
+              update({ threshold: Number(e.target.value) || 0 })
+            }
+          />
+        </label>
+      )}
+      <label className="block">
+        <span className={labelCls}>Branches (one per line, last = else)</span>
+        <textarea
+          className={`${inputCls} h-20 resize-none`}
+          value={(data.evalBranches ?? []).join('\n')}
+          onChange={(e) =>
+            update({ evalBranches: e.target.value.split('\n') })
+          }
+        />
+        <p className="mt-1 text-[10px] text-gray-600">
+          Each branch is an output handle and must match an outgoing edge label.
+        </p>
+      </label>
+      <label className="block">
+        <span className={labelCls}>Override model</span>
+        <input
+          className={inputCls}
+          value={data.modelOverride ?? ''}
+          onChange={(e) => update({ modelOverride: e.target.value })}
+          placeholder="Use global setting"
+        />
+      </label>
+    </>
+  )
+}
+
+function MapFields({ data, update }: FieldsProps) {
+  return (
+    <>
+      <label className="block">
+        <span className={labelCls}>List source (state key)</span>
+        <input
+          className={inputCls}
+          value={data.inputExpression ?? ''}
+          onChange={(e) => update({ inputExpression: e.target.value })}
+          placeholder="items"
+        />
+        <p className="mt-1 text-[10px] text-gray-600">
+          The list in state to fan out over (LangGraph Send).
+        </p>
+      </label>
+      <label className="block">
+        <span className={labelCls}>Max parallel</span>
+        <input
+          type="number"
+          min={1}
+          className={inputCls}
+          value={data.maxParallel ?? 10}
+          onChange={(e) =>
+            update({ maxParallel: Math.max(1, Number(e.target.value) || 1) })
+          }
+        />
+      </label>
+      <p className="text-[10px] text-gray-600">
+        Sim: animates as one fan step reporting the item count. Exported Python
+        emits a real <code>Send</code> per item.
+      </p>
+    </>
   )
 }
 
@@ -484,7 +1015,18 @@ function ConfigPanel() {
         {nodeType === 'tool' && <ToolFields {...props} />}
         {nodeType === 'memory' && <MemoryFields {...props} />}
         {nodeType === 'condition' && <ConditionFields {...props} />}
+        {nodeType === 'router' && <RouterFields {...props} />}
+        {nodeType === 'guardrail' && <GuardrailFields {...props} />}
+        {nodeType === 'join' && <JoinFields {...props} />}
         {nodeType === 'loop' && <LoopFields {...props} />}
+        {nodeType === 'map' && <MapFields {...props} />}
+        {nodeType === 'codeExecutor' && <CodeExecutorFields {...props} />}
+        {nodeType === 'evaluator' && <EvaluatorFields {...props} />}
+        {nodeType === 'subgraph' && <SubgraphFields {...props} />}
+        {nodeType === 'longTermStore' && <LongTermStoreFields {...props} />}
+        {nodeType === 'memoryWriter' && <MemoryWriterFields {...props} />}
+        {nodeType === 'planner' && <PlannerFields {...props} />}
+        {nodeType === 'subagent' && <SubagentFields {...props} />}
         {(nodeType === 'humanInLoop' ||
           nodeType === 'supervisor' ||
           nodeType === 'swarmWorker') && <DescriptionFields {...props} />}

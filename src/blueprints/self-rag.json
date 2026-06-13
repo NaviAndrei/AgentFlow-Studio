@@ -1,0 +1,95 @@
+{
+  "id": "self-rag",
+  "schemaVersion": 1,
+  "name": "Self-RAG",
+  "description": "Retrieve, generate, then run two independent graders — relevance (did we retrieve the right docs?) and groundedness (does the answer cite them?) — looping back to retry or regenerate until both pass.",
+  "category": "RAG",
+  "nodes": [
+    {
+      "id": "note-1",
+      "type": "note",
+      "position": { "x": 320, "y": 20 },
+      "data": {
+        "label": "Two graders in series",
+        "text": "Self-RAG grades the retrieval AND the generation independently. Relevance Grader: are the retrieved docs actually useful? On fail, retry retrieval. Groundedness Grader: does the answer actually cite the docs? On fail, regenerate."
+      }
+    },
+    {
+      "id": "start-1",
+      "type": "start",
+      "position": { "x": 40, "y": 300 },
+      "data": { "label": "Start", "inputVariables": ["question"] }
+    },
+    {
+      "id": "retriever-1",
+      "type": "retriever",
+      "position": { "x": 280, "y": 300 },
+      "data": {
+        "label": "Retriever",
+        "knowledgeBase": "docs",
+        "topK": 4,
+        "similarityThreshold": 0.75
+      }
+    },
+    {
+      "id": "evaluator-1",
+      "type": "evaluator",
+      "position": { "x": 540, "y": 300 },
+      "data": {
+        "label": "Relevance Grader",
+        "scoringPrompt": "Are the retrieved documents relevant to the question? Reply 'pass' if they contain enough information; 'fail' otherwise.",
+        "scoreType": "pass_fail",
+        "evalBranches": ["pass", "fail"]
+      }
+    },
+    {
+      "id": "llm-1",
+      "type": "llm",
+      "position": { "x": 800, "y": 200 },
+      "data": {
+        "label": "Generator",
+        "model": "gemini-2.5-flash",
+        "systemPrompt": "Answer the question using ONLY the retrieved context. Cite the source for each claim.",
+        "temperature": 0.3
+      }
+    },
+    {
+      "id": "evaluator-2",
+      "type": "evaluator",
+      "position": { "x": 1060, "y": 200 },
+      "data": {
+        "label": "Groundedness Grader",
+        "scoringPrompt": "Is every claim in the answer supported by the retrieved context? Reply 'pass' if grounded, 'fail' if it hallucinates.",
+        "scoreType": "pass_fail",
+        "evalBranches": ["pass", "fail"]
+      }
+    },
+    {
+      "id": "llm-2",
+      "type": "llm",
+      "position": { "x": 800, "y": 440 },
+      "data": {
+        "label": "Rewrite Query",
+        "model": "gemini-2.5-flash",
+        "systemPrompt": "The retrieved documents were not relevant. Rewrite the question to retrieve better ones. Output ONLY the rewritten query.",
+        "temperature": 0.5
+      }
+    },
+    {
+      "id": "output-1",
+      "type": "output",
+      "position": { "x": 1320, "y": 200 },
+      "data": { "label": "Answer" }
+    }
+  ],
+  "edges": [
+    { "id": "e1", "source": "start-1", "target": "retriever-1" },
+    { "id": "e2", "source": "retriever-1", "target": "evaluator-1" },
+    { "id": "e3", "source": "evaluator-1", "target": "llm-1", "label": "pass" },
+    { "id": "e4", "source": "evaluator-1", "target": "llm-2", "label": "fail" },
+    { "id": "e5", "source": "llm-2", "target": "retriever-1", "label": "retry" },
+    { "id": "e6", "source": "llm-1", "target": "evaluator-2" },
+    { "id": "e7", "source": "evaluator-2", "target": "output-1", "label": "pass" },
+    { "id": "e8", "source": "evaluator-2", "target": "llm-1", "label": "fail" }
+  ]
+}
