@@ -35,10 +35,10 @@
       "position": { "x": 560, "y": 160 },
       "data": {
         "label": "Research Team",
-        "subgraphRef": "research-team",
+        "subgraphRef": "{\"nodes\":[{\"id\":\"start\",\"type\":\"start\",\"position\":{\"x\":0,\"y\":0},\"data\":{\"label\":\"Start\",\"inputVariables\":[\"input\"]}},{\"id\":\"researcher-1\",\"type\":\"agent\",\"position\":{\"x\":200,\"y\":-80},\"data\":{\"label\":\"Researcher 1\",\"model\":\"gemini-2.5-flash\"}},{\"id\":\"researcher-2\",\"type\":\"agent\",\"position\":{\"x\":200,\"y\":80},\"data\":{\"label\":\"Researcher 2\",\"model\":\"gemini-2.5-flash\"}},{\"id\":\"research-join\",\"type\":\"join\",\"position\":{\"x\":400,\"y\":0},\"data\":{\"label\":\"Join\",\"mergeStrategy\":\"concat\"}},{\"id\":\"research-output\",\"type\":\"output\",\"position\":{\"x\":600,\"y\":0},\"data\":{\"label\":\"Output\"}}],\"edges\":[{\"id\":\"e1\",\"source\":\"start\",\"target\":\"researcher-1\"},{\"id\":\"e2\",\"source\":\"start\",\"target\":\"researcher-2\"},{\"id\":\"e3\",\"source\":\"researcher-1\",\"target\":\"research-join\"},{\"id\":\"e4\",\"source\":\"researcher-2\",\"target\":\"research-join\"},{\"id\":\"e5\",\"source\":\"research-join\",\"target\":\"research-output\"}]}",
         "subgraphSummary": "Supervisor → 2 researcher agents → join",
-        "inputMapping": "{\"task\": \"brief\"}",
-        "outputMapping": "{\"findings\": \"team_output\"}"
+        "inputMapping": "{\"brief\": \"input\"}",
+        "outputMapping": "{\"output\": \"research_findings\"}"
       }
     },
     {
@@ -47,10 +47,10 @@
       "position": { "x": 560, "y": 400 },
       "data": {
         "label": "Writing Team",
-        "subgraphRef": "writing-team",
+        "subgraphRef": "{\"nodes\":[{\"id\":\"start\",\"type\":\"start\",\"position\":{\"x\":0,\"y\":0},\"data\":{\"label\":\"Start\",\"inputVariables\":[\"input\"]}},{\"id\":\"writer\",\"type\":\"agent\",\"position\":{\"x\":200,\"y\":0},\"data\":{\"label\":\"Writer\",\"model\":\"gemini-2.5-flash\"}},{\"id\":\"editor\",\"type\":\"agent\",\"position\":{\"x\":400,\"y\":0},\"data\":{\"label\":\"Editor\",\"model\":\"gemini-2.5-flash\"}},{\"id\":\"writing-output\",\"type\":\"output\",\"position\":{\"x\":600,\"y\":0},\"data\":{\"label\":\"Output\"}}],\"edges\":[{\"id\":\"e1\",\"source\":\"start\",\"target\":\"writer\"},{\"id\":\"e2\",\"source\":\"writer\",\"target\":\"editor\"},{\"id\":\"e3\",\"source\":\"editor\",\"target\":\"writing-output\"}]}",
         "subgraphSummary": "Supervisor → writer agent → editor agent",
-        "inputMapping": "{\"findings\": \"findings\"}",
-        "outputMapping": "{\"draft\": \"team_output\"}"
+        "inputMapping": "{\"research_findings\": \"input\"}",
+        "outputMapping": "{\"output\": \"final_draft\"}"
       }
     },
     {

@@ -21,6 +21,7 @@ import { useCanvasStore } from './canvasStore'
 import { useLLMConfigStore } from './llmConfigStore'
 import { useSimulationMetricsStore } from './simulationMetricsStore'
 import type {
+  AgentFlowEdge,
   AgentFlowNode,
   AgentFlowNodeType,
   ChatMessage,
@@ -202,6 +203,318 @@ function findNode(id: string): AgentFlowNode | undefined {
 
 export function prefersReducedMotion(): boolean {
   return window.matchMedia('(prefers-reduced-motion: reduce)').matches
+}
+
+/** Inner-graph execution result returned by runSubgraph. */
+interface SubgraphResult {
+  output: Record<string, unknown>
+  trace: TraceEntry[]
+  stepCount: number
+  error?: string
+}
+
+/**
+ * Resolve a condition's taken branch within an isolated subgraph: same logic
+ * as resolveCondition in the parent walker, but scoped to the subgraph's own
+ * edges/executed/skipped sets instead of canvas-wide state.
+ */
+function resolveSubgraphCondition(
+  conditionId: string,
+  taken: unknown,
+  edges: AgentFlowEdge[],
+  executedIds: ReadonlySet<string>,
+  skippedIds: ReadonlySet<string>,
+): { targets: string[]; skipped: Set<string>; newlySkipped: string[] } {
+  const outs = edges.filter((e) => e.source === conditionId)
+  const fallback = {
+    targets: outs.map((e) => e.target),
+    skipped: new Set(skippedIds),
+    newlySkipped: [] as string[],
+  }
+  if (typeof taken !== 'string' || outs.length < 2) return fallback
+  const takenEdge = outs.find(
+    (e) =>
+      (typeof e.label === 'string' && e.label !== '' ? e.label : e.target) === taken,
+  )
+  if (!takenEdge) return fallback
+  const takenReach = reachableFrom(edges, takenEdge.target)
+  const skipped = new Set([...skippedIds].filter((id) => !takenReach.has(id)))
+  const newlySkipped: string[] = []
+  for (const out of outs) {
+    if (out === takenEdge) continue
+    for (const id of reachableFrom(edges, out.target)) {
+      if (takenReach.has(id) || id === conditionId) continue
+      if (executedIds.has(id) || skipped.has(id)) continue
+      skipped.add(id)
+      newlySkipped.push(id)
+    }
+  }
+  return { targets: [takenEdge.target], skipped, newlySkipped }
+}
+
+/**
+ * Remap parent node outputs into the inner graph's input namespace.
+ * `inputMapping` is JSON like '{"parentKey": "innerKey"}' — keys are looked
+ * up against a one-level-flattened view of every parent node's output object
+ * (e.g. a Start node's `{ inputs: { brief: "..." } }` exposes `brief`). The
+ * inner state always carries `messages`, seeded from the parent transcript.
+ */
+function buildSubgraphInput(
+  inputMapping: string | undefined,
+  parentOutputs: Record<string, unknown>,
+  messages: ChatMessage[],
+): Record<string, unknown> {
+  const flat: Record<string, unknown> = {}
+  for (const value of Object.values(parentOutputs)) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) continue
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      flat[k] = v
+      if (v && typeof v === 'object' && !Array.isArray(v)) {
+        for (const [ik, iv] of Object.entries(v as Record<string, unknown>)) {
+          if (!(ik in flat)) flat[ik] = iv
+        }
+      }
+    }
+  }
+  const result: Record<string, unknown> = { messages: [...messages] }
+  if (inputMapping) {
+    try {
+      const mapping = JSON.parse(inputMapping) as Record<string, string>
+      for (const [parentKey, innerKey] of Object.entries(mapping)) {
+        if (parentKey in flat) result[innerKey] = flat[parentKey]
+      }
+    } catch {
+      // Invalid mapping JSON — the inner graph still gets `messages`.
+    }
+  }
+  return result
+}
+
+/**
+ * Remap inner-graph output back into the parent's namespace. `outputMapping`
+ * is JSON like '{"innerKey": "parentKey"}'. The inner result's terminal
+ * Output node (if any) is exposed at `innerOutput.output` by runSubgraph, so
+ * a typical mapping is '{"output": "parentFieldName"}'.
+ */
+function mergeSubgraphOutput(
+  innerOutput: Record<string, unknown>,
+  outputMapping: string | undefined,
+): Record<string, unknown> {
+  if (!outputMapping) return innerOutput
+  try {
+    const mapping = JSON.parse(outputMapping) as Record<string, string>
+    const result = { ...innerOutput }
+    for (const [innerKey, parentKey] of Object.entries(mapping)) {
+      if (innerKey in innerOutput) result[parentKey] = innerOutput[innerKey]
+    }
+    return result
+  } catch {
+    return innerOutput
+  }
+}
+
+/**
+ * Isolated sub-walker for a Subgraph node's inner graph. Mirrors the parent
+ * walker's queue/visit/skip/join semantics on its own copies of that state —
+ * the parent's executionQueue, visitCounts, nodeOutputs, messages etc. are
+ * never read or mutated. Always uses fakeOutputFor; there is no live mode for
+ * inner graphs. Aborts if `parentRunToken` no longer matches the module-level
+ * `runToken` (the parent run was stopped/paused/restarted while this was in
+ * flight).
+ */
+async function runSubgraph(
+  subgraphNodes: AgentFlowNode[],
+  subgraphEdges: AgentFlowEdge[],
+  inputState: Record<string, unknown>,
+  parentRunToken: number,
+  parentNodeId: string,
+): Promise<SubgraphResult> {
+  if (subgraphNodes.length === 0) {
+    return { output: {}, trace: [], stepCount: 0 }
+  }
+
+  const ids = new Set(subgraphNodes.map((n) => n.id))
+  const edges = subgraphEdges.filter((e) => ids.has(e.source) && ids.has(e.target))
+  const nodeById = new Map(subgraphNodes.map((n) => [n.id, n]))
+  const targets = (nodeId: string) =>
+    edges.filter((e) => e.source === nodeId).map((e) => e.target)
+  const sources = (nodeId: string) =>
+    edges.filter((e) => e.target === nodeId).map((e) => e.source)
+
+  const hasIncoming = new Set(edges.map((e) => e.target))
+  const starts = subgraphNodes.filter((n) => n.type === 'start').map((n) => n.id)
+  const entries =
+    starts.length > 0
+      ? starts
+      : subgraphNodes.filter((n) => !hasIncoming.has(n.id)).map((n) => n.id)
+  if (entries.length === 0) {
+    return { output: {}, trace: [], stepCount: 0, error: 'subgraph has no entry node' }
+  }
+
+  const visitCounts = new Map<string, number>()
+  const executedIds = new Set<string>()
+  let skippedIds = new Set<string>()
+  const localMessages: ChatMessage[] = Array.isArray(inputState.messages)
+    ? [...(inputState.messages as ChatMessage[])]
+    : []
+  const localOutputs: Record<string, unknown> = { ...inputState }
+  const deferCounts = new Map<string, number>()
+  const trace: TraceEntry[] = []
+
+  const queue = [...entries]
+  for (const id of entries) visitCounts.set(id, 1)
+  let stepCount = 0
+  let i = 0
+
+  while (i < queue.length) {
+    const nodeId = queue[i]
+    i++
+    const node = nodeById.get(nodeId)
+    if (!node || skippedIds.has(nodeId)) continue
+
+    // Join barrier: defer (re-queue) until every incoming branch has run or
+    // been skipped, bounded by the remaining queue length.
+    if (node.type === 'join') {
+      const ready = joinReadiness(sources(nodeId), executedIds, skippedIds)
+      const pending = queue.length - i
+      const deferred = deferCounts.get(nodeId) ?? 0
+      if (!ready && deferred < pending) {
+        deferCounts.set(nodeId, deferred + 1)
+        queue.push(nodeId)
+        continue
+      }
+    }
+
+    if (parentRunToken !== runToken) {
+      return { output: {}, trace: [], stepCount: 0, error: 'aborted' }
+    }
+    const startedAt = Date.now()
+    await delay(nodeStepDurationMs(node.type))
+    if (parentRunToken !== runToken) {
+      return { output: {}, trace: [], stepCount: 0, error: 'aborted' }
+    }
+
+    let output: unknown = fakeOutputFor(node, '')
+    const latest = [...localMessages].reverse()[0]?.content ?? ''
+    const forceElse = (visitCounts.get(nodeId) ?? 1) >= MAX_NODE_VISITS
+
+    if (node.type === 'condition') {
+      const branches = node.data.branches ?? []
+      const decision = evaluateConditionBranches(branches, latest, forceElse)
+      output = {
+        evaluated: branches,
+        taken: decision.taken,
+        matched: decision.matched,
+        forced_else: forceElse,
+      }
+    } else if (node.type === 'router') {
+      const decision = pickRouteByKeyword(node.data.routes ?? [], latest)
+      output = {
+        routes: node.data.routes ?? [],
+        taken: decision.taken,
+        matched_on: decision.matchedOn,
+      }
+    } else if (node.type === 'evaluator') {
+      const branches = node.data.evalBranches ?? ['pass', 'fail']
+      const decision = evaluateConditionBranches(branches, latest, forceElse)
+      output = {
+        score_type: node.data.scoreType ?? 'pass_fail',
+        evaluated: branches,
+        taken: decision.taken,
+        matched: decision.matched,
+        forced_else: forceElse,
+        note: '(simulated judge)',
+      }
+    } else if (node.type === 'guardrail') {
+      if ((node.data.checkType ?? 'keyword') === 'keyword') {
+        const decision = evaluateKeywordGuardrail(node.data.criteria ?? '', latest)
+        output = { taken: decision.taken, matched: decision.matched }
+      } else {
+        output = { taken: 'pass', note: '(simulated judge)' }
+      }
+    } else if (node.type === 'join') {
+      const inputs = sources(nodeId)
+        .filter((s) => executedIds.has(s))
+        .map((s) => ({ source: s, output: localOutputs[s] }))
+      output = mergeJoinInputs(inputs, node.data.mergeStrategy ?? 'concat')
+    }
+
+    if (node.type === 'llm' || node.type === 'agent') {
+      const o = output as { content?: unknown; final_answer?: unknown }
+      const content = o?.content ?? o?.final_answer
+      if (typeof content === 'string' && content !== '') {
+        localMessages.push({ role: 'assistant', content })
+      }
+    }
+
+    localOutputs[nodeId] = output
+    executedIds.add(nodeId)
+    stepCount++
+    trace.push({
+      id: crypto.randomUUID(),
+      at: Date.now(),
+      nodeId,
+      nodeName: node.data.label,
+      nodeType: node.type ?? 'unknown',
+      status: 'ok',
+      engine: 'simulated',
+      durationMs: Date.now() - startedAt,
+      input: '—',
+      output: truncate(JSON.stringify(output), 120),
+      parentNodeId,
+    })
+
+    let nextTargets: string[]
+    if (isRoutingType(node.type)) {
+      const taken = (output as { taken?: unknown } | null)?.taken
+      const resolution = resolveSubgraphCondition(
+        nodeId,
+        taken,
+        edges,
+        executedIds,
+        skippedIds,
+      )
+      skippedIds = resolution.skipped
+      nextTargets = resolution.targets
+      for (const skId of resolution.newlySkipped) {
+        const skNode = nodeById.get(skId)
+        if (!skNode) continue
+        trace.push({
+          id: crypto.randomUUID(),
+          at: Date.now(),
+          nodeId: skId,
+          nodeName: skNode.data.label,
+          nodeType: skNode.type ?? 'unknown',
+          status: 'skipped',
+          durationMs: 0,
+          input: '—',
+          output: 'branch not taken',
+          parentNodeId,
+        })
+      }
+    } else {
+      nextTargets = targets(nodeId)
+    }
+
+    for (const t of nextTargets) {
+      if (skippedIds.has(t)) continue
+      if ((visitCounts.get(t) ?? 0) >= MAX_NODE_VISITS) continue
+      if (queue.slice(i).includes(t)) continue
+      visitCounts.set(t, (visitCounts.get(t) ?? 0) + 1)
+      queue.push(t)
+    }
+  }
+
+  // Expose the inner graph's terminal Output node (if any) under a stable
+  // `output` key so outputMapping can reference it regardless of its id.
+  const outputNode = subgraphNodes.find(
+    (n) => n.type === 'output' && executedIds.has(n.id),
+  )
+  if (outputNode) {
+    localOutputs.output = localOutputs[outputNode.id]
+  }
+
+  return { output: localOutputs, trace, stepCount }
 }
 
 export const useSimulationStore = create<SimulationState>((set, get) => {
@@ -723,6 +1036,9 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
       })
 
       let output: unknown
+      // Trace entries from a Subgraph node's inner sub-walker, appended to
+      // the parent trace alongside this node's own entry.
+      let nestedTrace: TraceEntry[] = []
       try {
         if (get().liveMode) {
           output = await executeLiveNode(node, nodeId)
@@ -785,6 +1101,49 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
             }
           } else if (node.type === 'join') {
             output = mergeJoinForNode(nodeId, node.data.mergeStrategy ?? 'concat')
+          } else if (node.type === 'subgraph') {
+            const ref = (node.data.subgraphRef ?? '').trim()
+            if (ref) {
+              let innerNodes: AgentFlowNode[] = []
+              let innerEdges: AgentFlowEdge[] = []
+              let parseError: string | undefined
+              try {
+                const parsed = JSON.parse(ref) as {
+                  nodes?: AgentFlowNode[]
+                  edges?: AgentFlowEdge[]
+                }
+                innerNodes = parsed.nodes ?? []
+                innerEdges = parsed.edges ?? []
+              } catch {
+                parseError = 'Invalid subgraphRef — not valid JSON'
+              }
+              if (parseError) {
+                output = { subgraph_ran: false, error: parseError }
+              } else {
+                const inputState = buildSubgraphInput(
+                  node.data.inputMapping,
+                  get().nodeOutputs,
+                  get().messages,
+                )
+                const result = await runSubgraph(
+                  innerNodes,
+                  innerEdges,
+                  inputState,
+                  token,
+                  nodeId,
+                )
+                if (result.error === 'aborted') return
+                if (result.error) {
+                  output = { subgraph_ran: false, error: result.error }
+                } else {
+                  output = {
+                    ...mergeSubgraphOutput(result.output, node.data.outputMapping),
+                    _innerStepCount: result.stepCount,
+                  }
+                  nestedTrace = result.trace
+                }
+              }
+            }
           }
           metrics.addTokens(fakeTokensFor(node))
         }
@@ -882,7 +1241,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
           : errored,
         nodeOutputs: { ...get().nodeOutputs, [nodeId]: output },
         nodeEngines: { ...get().nodeEngines, [nodeId]: engine },
-        trace: [...get().trace, makeEntry('ok', output), ...skipEntries],
+        trace: [...get().trace, makeEntry('ok', output), ...skipEntries, ...nestedTrace],
         executedIds: new Set(get().executedIds).add(nodeId),
         skippedNodeIds: skipped,
         executionQueue: nextQueue,

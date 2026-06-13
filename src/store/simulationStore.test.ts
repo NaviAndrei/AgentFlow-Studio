@@ -1,6 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Edge } from '@xyflow/react'
-import type { AgentFlowNode, AgentFlowNodeData, AgentFlowNodeType } from '../types'
+import { BLUEPRINTS } from '../blueprints'
+import type {
+  AgentFlowEdge,
+  AgentFlowNode,
+  AgentFlowNodeData,
+  AgentFlowNodeType,
+} from '../types'
 import { useCanvasStore } from './canvasStore'
 import { useSimulationStore } from './simulationStore'
 import { useSimulationMetricsStore } from './simulationMetricsStore'
@@ -404,5 +410,83 @@ describe('simulation queue walker — MAX_NODE_VISITS budget', () => {
     const s = await runToEnd()
     expect(s.executionQueue).toEqual(['s', 'a', 'b', 'o'])
     expect(s.trace.filter((t) => t.nodeId === 'o')).toHaveLength(1)
+  })
+})
+
+describe('simulation queue walker — Subgraph nested execution', () => {
+  it('runs the inner graph of a configured subgraph (Hierarchical Teams)', async () => {
+    const bp = BLUEPRINTS.find((b) => b.id === 'hierarchical-teams')
+    if (!bp) throw new Error('missing hierarchical-teams blueprint')
+    loadGraph(
+      bp.nodes as unknown as AgentFlowNode[],
+      bp.edges as unknown as AgentFlowEdge[],
+    )
+    useSimulationStore.getState().setUserInput('Write a brief on agent frameworks')
+    const s = await runToEnd()
+
+    for (const subgraphId of ['subgraph-1', 'subgraph-2']) {
+      const out = s.nodeOutputs[subgraphId] as Record<string, unknown>
+      // Not the empty stub: the inner graph actually ran.
+      expect(out).not.toMatchObject({ subgraph_ran: true, summary: expect.any(String) })
+      expect(typeof out._innerStepCount).toBe('number')
+      expect(out._innerStepCount as number).toBeGreaterThan(0)
+
+      const nested = s.trace.filter((t) => t.parentNodeId === subgraphId)
+      expect(nested.length).toBeGreaterThan(0)
+    }
+  })
+
+  it('completes without throwing for an empty subgraphRef', async () => {
+    loadGraph(
+      [
+        node('s', 'start'),
+        node('sg', 'subgraph', { subgraphRef: '' }),
+        node('o', 'output'),
+      ],
+      [edge('s', 'sg'), edge('sg', 'o')],
+    )
+    const s = await runToEnd()
+    expect(s.nodeOutputs.sg).toMatchObject({ ran: true })
+    expect(s.trace.some((t) => t.status === 'error')).toBe(false)
+  })
+
+  it('reports an error output for an invalid subgraphRef', async () => {
+    loadGraph(
+      [
+        node('s', 'start'),
+        node('sg', 'subgraph', { subgraphRef: 'not valid json {' }),
+        node('o', 'output'),
+      ],
+      [edge('s', 'sg'), edge('sg', 'o')],
+    )
+    const s = await runToEnd()
+    expect(s.nodeOutputs.sg).toMatchObject({ subgraph_ran: false })
+    expect((s.nodeOutputs.sg as { error: string }).error).toContain('Invalid subgraphRef')
+  })
+
+  it('discards stale nested trace entries when stopped mid-run', async () => {
+    const innerRef = JSON.stringify({
+      nodes: [
+        { id: 'inner-s', type: 'start', position: { x: 0, y: 0 }, data: { label: 'Inner Start' } },
+        { id: 'inner-o', type: 'output', position: { x: 0, y: 0 }, data: { label: 'Inner Output' } },
+      ],
+      edges: [{ id: 'ie1', source: 'inner-s', target: 'inner-o' }],
+    })
+    loadGraph(
+      [
+        node('s', 'start'),
+        node('sg', 'subgraph', { subgraphRef: innerRef }),
+        node('o', 'output'),
+      ],
+      [edge('s', 'sg'), edge('sg', 'o')],
+    )
+    useSimulationStore.getState().start()
+    useSimulationStore.getState().stop()
+    await vi.waitFor(() => {
+      expect(useSimulationStore.getState().isActive).toBe(false)
+    })
+    const s = useSimulationStore.getState()
+    expect(s.trace.some((t) => t.parentNodeId === 'sg')).toBe(false)
+    expect(s.executionQueue).toEqual([])
   })
 })

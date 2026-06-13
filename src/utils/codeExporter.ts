@@ -417,12 +417,8 @@ export function exportPython(
   if (needsPydantic) emit('from pydantic import BaseModel')
   if (hasCheckpointer) emit('from langgraph.checkpoint.memory import MemorySaver')
   const longTermStoreNodes = graphNodes.filter((n) => n.type === 'longTermStore')
-  const memoryWriterNodes = graphNodes.filter((n) => n.type === 'memoryWriter')
   const hasStore = longTermStoreNodes.length > 0
   if (hasStore) emit('from langgraph.store.memory import InMemoryStore')
-  if (memoryWriterNodes.length > 0) {
-    emit('from langmem import create_memory_manager')
-  }
   if (graphNodes.some((n) => n.type === 'computerUse')) {
     emit('from anthropic import Anthropic')
   }
@@ -467,6 +463,16 @@ export function exportPython(
     emit('    branch_results: Annotated[list, operator.add]')
   }
   emit('')
+
+  // Subgraph stubs use a messages-only schema: reusing the full State would
+  // make sibling subgraphs echo every plain field back as a concurrent write
+  // to the same last_value channel, which LangGraph rejects.
+  const subgraphNodes = orderedNodes.filter((n) => n.type === 'subgraph')
+  if (subgraphNodes.length > 0) {
+    emit('class SubgraphState(TypedDict):')
+    emit('    messages: Annotated[list, add_messages]')
+    emit('')
+  }
 
   // --- Structured output models ---
   const usedClassNames = new Set<string>()
@@ -838,9 +844,12 @@ export function exportPython(
           `# --- Subgraph: ${pyDoc(node.data.label)} (${pyDoc(ref)}) ---`,
           `def build_${name}_subgraph():`,
           `    """${pyDoc(node.data.subgraphSummary ?? `Inner graph for ${node.data.label}.`)}"""`,
-          '    inner = StateGraph(State)',
+          '    inner = StateGraph(SubgraphState)',
           '    # TODO: define inner nodes and edges for this subgraph,',
           `    #       referencing the saved canvas "${pyDoc(ref)}".`,
+          '    inner.add_node("placeholder", lambda state: {})',
+          '    inner.add_edge(START, "placeholder")',
+          '    inner.add_edge("placeholder", END)',
           '    return inner.compile()',
           '',
           `${name} = build_${name}_subgraph()`,

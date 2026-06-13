@@ -167,6 +167,8 @@ export interface TraceEntry {
   durationMs: number
   input: string
   output: string
+  /** Set on trace entries produced by a Subgraph node's inner sub-walker. */
+  parentNodeId?: string
 }
 
 export type ValidationLevel = 'error' | 'warning'

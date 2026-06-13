@@ -118,6 +118,14 @@ export function StateInspector() {
             <div className="rounded-md border border-white/10 bg-canvas p-2">
               <JsonValue value={nodeOutputs[id]} />
             </div>
+            {typeof (nodeOutputs[id] as { _innerStepCount?: unknown })
+              ?._innerStepCount === 'number' && (
+              <p className="mt-1 text-[10px] text-gray-500">
+                Executed{' '}
+                {(nodeOutputs[id] as { _innerStepCount: number })._innerStepCount}{' '}
+                inner steps
+              </p>
+            )}
           </div>
         )
       })}
