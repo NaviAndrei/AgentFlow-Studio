@@ -9,6 +9,7 @@ import {
   truncate,
 } from '../utils/fakeData'
 import { streamChat } from '../llm'
+import { callTool } from '../utils/mcpClient'
 import {
   evaluateConditionBranches,
   evaluateKeywordGuardrail,
@@ -23,12 +24,15 @@ import { useLLMConfigStore } from './llmConfigStore'
 import { useSimulationMetricsStore } from './simulationMetricsStore'
 import { computeQualityScore, scoreTestCase } from '../utils/evalScorer'
 import { getPricing } from '../data/modelPricing'
+import { resolveNodePrompts } from '../utils/resolvePrompts'
+import { useRunHistoryStore } from './runHistoryStore'
 import type {
   AgentFlowEdge,
   AgentFlowNode,
   AgentFlowNodeType,
   ChatMessage,
   EvalResult,
+  EvalRun,
   ExecutionEngine,
   NodeCostEntry,
   RunCostSummary,
@@ -85,6 +89,28 @@ import type {
  * ─────────────────────────────────────────────────────────────────────────
  */
 
+/**
+ * Extract a tool-call request from an upstream LLM node's output. Recognizes
+ * `{ tool_use: { name, input } }` and `{ name, input }` shapes, either as raw
+ * JSON or inside a fenced ```json code block. Returns null for anything else.
+ */
+function parseToolCall(content: string): { name: string; input: Record<string, unknown> } | null {
+  try {
+    const parsed = JSON.parse(content)
+    if (parsed.tool_use?.name) {
+      return { name: parsed.tool_use.name, input: parsed.tool_use.input ?? {} }
+    }
+    if (typeof parsed.name === 'string') {
+      return { name: parsed.name, input: parsed.input ?? {} }
+    }
+    return null
+  } catch {
+    const match = content.match(/```json\s*([\s\S]*?)```/)
+    if (!match) return null
+    return parseToolCall(match[1])
+  }
+}
+
 /** Node types that take part in the simulated execution sequence. */
 const SIMULATED_TYPES: AgentFlowNodeType[] = [
   'start',
@@ -115,6 +141,8 @@ const SIMULATED_TYPES: AgentFlowNodeType[] = [
   'computerUse',
   'a2aAgent',
   'multimodalInput',
+  'tryCatch',
+  'retry',
 ]
 
 /** Pause between node executions in the continuous run loop. */
@@ -165,6 +193,10 @@ interface SimulationState {
   traceOpen: boolean
   /** Set when a Human-in-Loop node has executed and is awaiting approval. */
   pendingApproval: { nodeId: string } | null
+  /** Try/Catch watch state, keyed by the TryCatch node's id. */
+  tryCatchStatus: Record<string, 'watching' | 'success' | 'error'>
+  /** Retry attempt counters, keyed by the Retry node's id. */
+  retryStatus: Record<string, { attempt: number; max: number }>
   setLiveMode: (on: boolean) => void
   setUserInput: (value: string) => void
   setTraceOpen: (open: boolean) => void
@@ -197,6 +229,22 @@ let visitCounts = new Map<string, number>()
 // Times each join has been deferred (re-queued waiting for branches); bounds
 // the wait so an unreachable source can't livelock the run.
 let joinDeferCounts = new Map<string, number>()
+
+// Try/Catch: maps a guarded node id -> the TryCatch node guarding it, and the
+// TryCatch node id -> the set of guarded node ids not yet completed.
+let guardedByMap = new Map<string, string>()
+let guardedRemaining = new Map<string, Set<string>>()
+// Retry: maps the wrapped node id -> its Retry node id, and the Retry node id
+// -> the current attempt number (1-based).
+let retryWrapped = new Map<string, string>()
+let retryAttempts = new Map<string, number>()
+
+function clearFlowControlState() {
+  guardedByMap = new Map()
+  guardedRemaining = new Map()
+  retryWrapped = new Map()
+  retryAttempts = new Map()
+}
 
 /**
  * ── Map virtual-node expansion (per-item simulation) ─────────────────────
@@ -231,6 +279,24 @@ function abortInFlight() {
 
 const delay = (ms: number) =>
   new Promise<void>((resolve) => window.setTimeout(resolve, ms))
+
+/**
+ * Like `delay`, but polls `runToken` so a Stop/Pause/Restart during the wait
+ * (which bumps `runToken`) resolves immediately instead of after the full
+ * duration.
+ */
+const abortableDelay = (ms: number, token: number): Promise<void> =>
+  new Promise<void>((resolve) => {
+    const deadline = Date.now() + ms
+    const tick = () => {
+      if (token !== runToken || Date.now() >= deadline) {
+        resolve()
+        return
+      }
+      window.setTimeout(tick, Math.min(50, deadline - Date.now()))
+    }
+    tick()
+  })
 
 /**
  * Entry points for the dynamic walker: Start nodes, else nodes with no
@@ -408,6 +474,42 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
   const finished = () =>
     get().currentNodeIndex >= get().executionQueue.length
 
+  /**
+   * Append a snapshot of the just-finished run to Run History. `evalRun`, if
+   * provided, is the EvalRun produced for this run (so the qualityScore in
+   * the snapshot matches this run, not a stale prior one).
+   */
+  const recordRunHistory = (
+    status: 'done' | 'error' | 'stopped',
+    costSummary: RunCostSummary,
+    evalRun: EvalRun | null,
+  ) => {
+    const trace = get().trace
+    if (trace.length === 0) return
+    const elapsedMs = useSimulationMetricsStore.getState().elapsedMs
+    const stepIndex = useSimulationMetricsStore.getState().stepIndex
+    useRunHistoryStore.getState().addRun({
+      id: crypto.randomUUID(),
+      startedAt: Date.now() - elapsedMs,
+      finishedAt: Date.now(),
+      durationMs: elapsedMs,
+      mode: get().liveMode ? 'live' : 'simulated',
+      status,
+      nodeCount: useCanvasStore.getState().nodes.length,
+      stepCount: stepIndex,
+      totalTokens: useSimulationMetricsStore.getState().tokens,
+      totalCostUsd: costSummary.totalCostUsd,
+      model: costSummary.model,
+      qualityScore: evalRun?.qualityScore ?? null,
+      evalPassCount: evalRun
+        ? evalRun.results.filter((r) => r.status === 'pass').length
+        : null,
+      evalTotalCount: evalRun ? evalRun.results.length : null,
+      traceSnapshot: structuredClone(trace),
+      costSnapshot: structuredClone(costSummary),
+    })
+  }
+
   const finishRun = () => {
     const metrics = useSimulationMetricsStore.getState()
     metrics.pauseTimer()
@@ -420,6 +522,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
     metrics.setCostSummary(costSummary)
 
     const evalStore = useEvalStore.getState()
+    let evalRun: EvalRun | null = null
     if (evalStore.testCases.length > 0) {
       const outputTrace = [...trace]
         .reverse()
@@ -431,13 +534,16 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
       const results: EvalResult[] = evalStore.testCases.map((tc) =>
         scoreTestCase(tc, actualOutput),
       )
-      evalStore.addRun({
+      evalRun = {
         id: crypto.randomUUID(),
         runAt: Date.now(),
         results,
         qualityScore: computeQualityScore(results),
-      })
+      }
+      evalStore.addRun(evalRun)
     }
+
+    recordRunHistory(get().erroredNodeIds.length > 0 ? 'error' : 'done', costSummary, evalRun)
 
     set({ isRunning: false })
   }
@@ -802,6 +908,111 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
   }
 
   /**
+   * Resolve a TryCatch node's onSuccess/onError targets and the set of nodes
+   * "guarded" by it: everything reachable from the onSuccess edge, stopping
+   * at (and including) the first Join. Mirrors findDownstreamJoin/
+   * findBodyNodes but for the onSuccess-labeled branch specifically.
+   */
+  const findGuardedNodes = (
+    tryCatchId: string,
+  ): { onSuccessTarget?: string; onErrorTarget?: string; guarded: Set<string> } => {
+    const { edges } = useCanvasStore.getState()
+    const ids = flowNodeIds()
+    const outs = edges.filter((e) => e.source === tryCatchId && ids.has(e.target))
+    const onSuccessEdge = outs.find((e) => e.label === 'onSuccess')
+    const onErrorEdge = outs.find((e) => e.label === 'onError')
+    const guarded = new Set<string>()
+    if (onSuccessEdge) {
+      const queue = [onSuccessEdge.target]
+      while (queue.length > 0) {
+        const cur = queue.shift()
+        if (cur === undefined || guarded.has(cur) || cur === tryCatchId) continue
+        guarded.add(cur)
+        // JOIN BARRIER GUARD: confirmed
+        if (findNode(cur)?.type === 'join') continue
+        for (const e of edges) {
+          if (e.source === cur && ids.has(e.target) && !guarded.has(e.target)) {
+            queue.push(e.target)
+          }
+        }
+      }
+    }
+    return { onSuccessTarget: onSuccessEdge?.target, onErrorTarget: onErrorEdge?.target, guarded }
+  }
+
+  /**
+   * Called once a guarded node finishes ok and is removed from its TryCatch's
+   * remaining set. If that was the last one, the success path is confirmed:
+   * mark the TryCatch 'success' and skip-mark the onError branch (it was the
+   * road not taken).
+   */
+  const checkGuardSuccess = (
+    tryCatchId: string,
+    skipped: Set<string>,
+  ): { skipped: Set<string>; skipEntries: TraceEntry[]; success: boolean } => {
+    const remaining = guardedRemaining.get(tryCatchId)
+    if (!remaining || remaining.size > 0) {
+      return { skipped, skipEntries: [], success: false }
+    }
+    const { onErrorTarget } = findGuardedNodes(tryCatchId)
+    if (!onErrorTarget) return { skipped, skipEntries: [], success: true }
+    const newSkipped = new Set(skipped)
+    const skipEntries: TraceEntry[] = []
+    for (const id of reachableFrom(useCanvasStore.getState().edges, onErrorTarget)) {
+      if (id === tryCatchId || newSkipped.has(id) || get().executedIds.has(id)) continue
+      newSkipped.add(id)
+      const n = findNode(id)
+      if (!n) continue
+      skipEntries.push({
+        id: crypto.randomUUID(),
+        at: Date.now(),
+        nodeId: id,
+        nodeName: n.data.label,
+        nodeType: n.type ?? 'unknown',
+        status: 'skipped',
+        durationMs: 0,
+        input: '—',
+        output: 'onError branch not taken',
+      })
+    }
+    return { skipped: newSkipped, skipEntries, success: true }
+  }
+
+  /**
+   * If `nodeId` is wrapped by a Retry node and its config covers `cause`,
+   * advance the attempt counter and wait out the backoff. Returns 'retried'
+   * (caller should re-run the same node — return without advancing the
+   * queue), 'exhausted' (caller should record the error and halt), or 'none'
+   * (not wrapped / not configured for this cause — caller proceeds as usual).
+   */
+  const maybeRetry = async (
+    nodeId: string,
+    token: number,
+    cause: 'error' | 'empty_output',
+  ): Promise<'retried' | 'exhausted' | 'none'> => {
+    const retryId = retryWrapped.get(nodeId)
+    if (!retryId) return 'none'
+    const cfg = findNode(retryId)?.data.retry
+    if (!cfg) return 'none'
+    if (!cfg.retryOn.includes(cause) && !cfg.retryOn.includes('any')) return 'none'
+    const attempt = retryAttempts.get(retryId) ?? 1
+    if (attempt >= cfg.maxAttempts) return 'exhausted'
+    retryAttempts.set(retryId, attempt + 1)
+    set({
+      retryStatus: {
+        ...get().retryStatus,
+        [retryId]: { attempt: attempt + 1, max: cfg.maxAttempts },
+      },
+    })
+    const backoff = cfg.backoffMs * Math.pow(cfg.backoffMultiplier, attempt - 1)
+    // ABORT GUARD: resolve early if Stop/Pause/Restart bumps runToken mid-wait,
+    // instead of always waiting out the full backoff.
+    await abortableDelay(backoff, token)
+    if (token !== runToken) return 'retried'
+    return 'retried'
+  }
+
+  /**
    * Expand a Map node into per-item virtual branches. Populates virtualNodes,
    * virtualSuccessors, virtualJoinSources, virtualParents, virtualMeta. Returns
    * the entry virtual ids to enqueue, the real body ids to skip-mark, the
@@ -904,10 +1115,11 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
           override === ''
             ? base
             : { ...base, settings: { ...base.settings, model: override } }
+        const { systemPrompt } = resolveNodePrompts(node.data)
         const chat: ChatMessage[] = [
           {
             role: 'system',
-            content: node.data.systemPrompt ?? 'You are a helpful assistant.',
+            content: systemPrompt || 'You are a helpful assistant.',
           },
           ...get().messages,
         ]
@@ -933,8 +1145,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
         }
       }
       case 'tool':
-      case 'retriever':
-      case 'mcpServer': {
+      case 'retriever': {
         // Stubbed in Live mode: mock data flows into the message history so
         // downstream LLM calls see a realistic transcript.
         const output = fakeOutputFor(node, get().userInput)
@@ -945,6 +1156,39 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
         })
         metrics.addTokens(estimateTokens(summary))
         await delay(600)
+        return output
+      }
+      case 'mcpServer': {
+        // Parse a tool-call request out of the upstream LLM node's output. If
+        // there isn't one, pass the transcript through unchanged.
+        const inputContent = latestContent()
+        const toolCall = parseToolCall(inputContent)
+        if (!toolCall) {
+          return { output: inputContent, status: 'done' }
+        }
+
+        const { selectedTools } = node.data
+        if (selectedTools?.length && !selectedTools.includes(toolCall.name)) {
+          const output = { output: `Tool "${toolCall.name}" is not enabled on this node.`, status: 'error' }
+          appendStream(nodeId, JSON.stringify(output, null, 2))
+          return output
+        }
+
+        const signal = abortController?.signal
+        if (signal?.aborted) return { output: '', status: 'error' }
+        const result = await callTool(
+          node.data.serverUrl ?? '',
+          node.data.authToken,
+          toolCall.name,
+          toolCall.input,
+          signal,
+        )
+        const output = { output: JSON.stringify(result, null, 2), status: 'done' }
+        appendStream(nodeId, output.output)
+        set({
+          messages: [...get().messages, { role: 'user', content: output.output }],
+        })
+        metrics.addTokens(estimateTokens(output.output))
         return output
       }
       case 'condition': {
@@ -1271,10 +1515,11 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
               override === ''
                 ? base
                 : { ...base, settings: { ...base.settings, model: override } }
+            const { systemPrompt } = resolveNodePrompts(node.data)
             const chat: ChatMessage[] = [
               {
                 role: 'system',
-                content: node.data.systemPrompt ?? 'You are a helpful assistant.',
+                content: systemPrompt || 'You are a helpful assistant.',
               },
               ...localMessages,
             ]
@@ -1624,6 +1869,70 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
         output: truncate(JSON.stringify(output), 120),
       })
 
+      // Try/Catch: does not execute itself. Mark the onSuccess subgraph as
+      // "guarded" and enqueue only the onSuccess target; the onError branch
+      // stays unscheduled unless a guarded node later fails.
+      if (node.type === 'tryCatch') {
+        const { onSuccessTarget, guarded } = findGuardedNodes(nodeId)
+        for (const gId of guarded) guardedByMap.set(gId, nodeId)
+        guardedRemaining.set(nodeId, new Set(guarded))
+        const tcOutput = { guarding: [...guarded] }
+        const guardResult = checkGuardSuccess(nodeId, get().skippedNodeIds)
+        const nextIdxTc = currentNodeIndex + 1
+        const tcTargets =
+          onSuccessTarget && flowNodeIds().has(onSuccessTarget) ? [onSuccessTarget] : []
+        const grownTc = enqueueTargets(executionQueue, nextIdxTc, guardResult.skipped, tcTargets)
+        const nextQueueTc = [
+          ...grownTc.slice(0, nextIdxTc),
+          ...grownTc.slice(nextIdxTc).filter((id) => !guardResult.skipped.has(id)),
+        ]
+        set({
+          tryCatchStatus: {
+            ...get().tryCatchStatus,
+            [nodeId]: guardResult.success ? 'success' : 'watching',
+          },
+          nodeOutputs: { ...get().nodeOutputs, [nodeId]: tcOutput },
+          nodeEngines: { ...get().nodeEngines, [nodeId]: 'simulated' },
+          trace: [...get().trace, makeEntry('ok', tcOutput), ...guardResult.skipEntries],
+          executedIds: new Set(get().executedIds).add(nodeId),
+          skippedNodeIds: guardResult.skipped,
+          executionQueue: nextQueueTc,
+          currentNodeIndex: nextIdxTc,
+          activeId: nextQueueTc[nextIdxTc] ?? null,
+        })
+        if (finished()) finishRun()
+        return
+      }
+
+      // Retry: does not execute itself. Registers the single downstream node
+      // as "wrapped" so its failures/empty outputs are retried with backoff.
+      if (node.type === 'retry') {
+        const target = flowTargets(nodeId)[0]
+        const cfg =
+          node.data.retry ??
+          { maxAttempts: 3, backoffMs: 1000, backoffMultiplier: 2, retryOn: ['error'] as const }
+        if (target) {
+          retryWrapped.set(target, nodeId)
+          retryAttempts.set(nodeId, 1)
+        }
+        const retryOutput = { maxAttempts: cfg.maxAttempts, wrapping: target ?? null }
+        const nextIdxR = currentNodeIndex + 1
+        const rTargets = target && flowNodeIds().has(target) ? [target] : []
+        const grownR = enqueueTargets(executionQueue, nextIdxR, get().skippedNodeIds, rTargets)
+        set({
+          retryStatus: { ...get().retryStatus, [nodeId]: { attempt: 1, max: cfg.maxAttempts } },
+          nodeOutputs: { ...get().nodeOutputs, [nodeId]: retryOutput },
+          nodeEngines: { ...get().nodeEngines, [nodeId]: 'simulated' },
+          trace: [...get().trace, makeEntry('ok', retryOutput)],
+          executedIds: new Set(get().executedIds).add(nodeId),
+          executionQueue: grownR,
+          currentNodeIndex: nextIdxR,
+          activeId: grownR[nextIdxR] ?? null,
+        })
+        if (finished()) finishRun()
+        return
+      }
+
       let output: unknown
       // Trace entries from a Subgraph node's inner sub-walker, appended to
       // the parent trace alongside this node's own entry.
@@ -1757,15 +2066,102 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
             }
           } else if (node.type === 'join') {
             output = mergeJoinForNode(nodeId, node.data.mergeStrategy ?? 'concat')
+          } else if (node.type === 'mcpServer') {
+            // Echo the upstream tool call back with a fake result.
+            const toolCall = parseToolCall(latestContent())
+            const fakeName = toolCall?.name ?? 'unknown_tool'
+            output = {
+              tool: fakeName,
+              result: `[Simulated] Tool "${fakeName}" returned successfully.`,
+              timestamp: new Date().toISOString(),
+            }
           }
           metrics.addTokens(fakeTokensFor(node))
         }
       } catch (error) {
         // Interrupted by stop/pause/restart: not a real failure — discard.
         if (token !== runToken) return
+        const message = error instanceof Error ? error.message : String(error)
+
+        // Retry: re-attempt this node with backoff instead of halting.
+        const retryDone = await maybeRetry(nodeId, token, 'error')
+        if (retryDone === 'retried') return
+        if (retryDone === 'exhausted') {
+          runToken++
+          set({
+            isRunning: false,
+            erroredNodeIds: [...get().erroredNodeIds, nodeId],
+            nodeOutputs: { ...get().nodeOutputs, [nodeId]: { error: message } },
+            trace: [...get().trace, makeEntry('error', { error: message })],
+          })
+          metrics.pauseTimer()
+          if (get().liveMode) {
+            useLLMConfigStore.getState().setLiveError(message)
+          }
+          return
+        }
+
+        // Try/Catch: reroute to onError instead of halting the run.
+        const tcId = guardedByMap.get(nodeId)
+        if (tcId) {
+          const tcNode = findNode(tcId)
+          const { onErrorTarget } = findGuardedNodes(tcId)
+          const fallback = tcNode?.data.tryCatch?.fallbackOutput ?? ''
+          const remaining = guardedRemaining.get(tcId)
+          const skipped = new Set(get().skippedNodeIds)
+          const skipEntries: TraceEntry[] = []
+          if (remaining) {
+            for (const id of remaining) {
+              if (id === nodeId || skipped.has(id) || get().executedIds.has(id)) continue
+              skipped.add(id)
+              const n = findNode(id)
+              if (!n) continue
+              skipEntries.push({
+                id: crypto.randomUUID(),
+                at: Date.now(),
+                nodeId: id,
+                nodeName: n.data.label,
+                nodeType: n.type ?? 'unknown',
+                status: 'skipped',
+                durationMs: 0,
+                input: '—',
+                output: 'skipped after caught error',
+              })
+            }
+            remaining.clear()
+          }
+          const nextIndexTc = currentNodeIndex + 1
+          const targets = onErrorTarget && flowNodeIds().has(onErrorTarget) ? [onErrorTarget] : []
+          const grown = enqueueTargets(executionQueue, nextIndexTc, skipped, targets)
+          const nextQueueTc = [
+            ...grown.slice(0, nextIndexTc),
+            ...grown.slice(nextIndexTc).filter((id) => !skipped.has(id)),
+          ]
+          const prevTcOutput = get().nodeOutputs[tcId]
+          set({
+            tryCatchStatus: { ...get().tryCatchStatus, [tcId]: 'error' },
+            erroredNodeIds: [...get().erroredNodeIds, nodeId],
+            nodeOutputs: {
+              ...get().nodeOutputs,
+              [nodeId]: { error: message },
+              [tcId]: {
+                ...(prevTcOutput as object),
+                error: message,
+                fallbackOutput: fallback,
+              },
+            },
+            trace: [...get().trace, makeEntry('error', { error: message }), ...skipEntries],
+            skippedNodeIds: skipped,
+            executionQueue: nextQueueTc,
+            currentNodeIndex: nextIndexTc,
+            activeId: nextQueueTc[nextIndexTc] ?? null,
+          })
+          if (finished()) finishRun()
+          return
+        }
+
         // Genuine failure: pause without advancing, so Play retries this
         // node once the user has fixed the problem.
-        const message = error instanceof Error ? error.message : String(error)
         runToken++
         set({
           isRunning: false,
@@ -1885,6 +2281,28 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
         }
       }
 
+      // Retry: an empty output counts as a failure for nodes configured with
+      // retryOn 'empty_output' (or 'any') — retry with backoff, or halt once
+      // attempts are exhausted.
+      if (
+        retryWrapped.has(nodeId) &&
+        (output == null ||
+          (typeof output === 'object' && Object.keys(output as object).length === 0))
+      ) {
+        const retryDone = await maybeRetry(nodeId, token, 'empty_output')
+        if (retryDone === 'retried') return
+        if (retryDone === 'exhausted') {
+          runToken++
+          set({
+            isRunning: false,
+            erroredNodeIds: [...get().erroredNodeIds, nodeId],
+            trace: [...get().trace, makeEntry('error', { error: 'empty output after retries' })],
+          })
+          metrics.pauseTimer()
+          return
+        }
+      }
+
       // Virtual node (a Map per-item branch): inject _mapItem/_mapIndex into
       // the recorded output so the State Inspector and downstream Join see the
       // per-item identity. Trace entry is stamped with parentNodeId = mapId.
@@ -1901,11 +2319,30 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
       // follow only the taken edge (marking the rest skipped); every other
       // node fans out to all flow targets. Successors are discovered now, after
       // this node ran — see scheduleNextNodes (the dynamic walker's core).
-      const { nextIndex, nextQueue, skipped, skipEntries } = scheduleNextNodes(
+      let { nextIndex, nextQueue, skipped, skipEntries } = scheduleNextNodes(
         node,
         nodeId,
         output,
       )
+
+      // Try/Catch: a guarded node finished ok — remove it from its TryCatch's
+      // remaining set. If that was the last one, the success path is
+      // confirmed and the onError branch is skip-marked.
+      const tcId = guardedByMap.get(nodeId)
+      let tryCatchStatusUpdate: Record<string, 'watching' | 'success' | 'error'> | undefined
+      if (tcId) {
+        guardedRemaining.get(tcId)?.delete(nodeId)
+        const guardResult = checkGuardSuccess(tcId, skipped)
+        skipped = guardResult.skipped
+        skipEntries = [...skipEntries, ...guardResult.skipEntries]
+        if (guardResult.success) {
+          tryCatchStatusUpdate = { ...get().tryCatchStatus, [tcId]: 'success' }
+          nextQueue = [
+            ...nextQueue.slice(0, nextIndex),
+            ...nextQueue.slice(nextIndex).filter((id) => !skipped.has(id)),
+          ]
+        }
+      }
 
       const errored = get().erroredNodeIds
       // Stamp parentNodeId on a virtual node's trace entry (Map per-item
@@ -1927,6 +2364,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
         executionQueue: nextQueue,
         currentNodeIndex: nextIndex,
         activeId: nextQueue[nextIndex] ?? null,
+        ...(tryCatchStatusUpdate ? { tryCatchStatus: tryCatchStatusUpdate } : {}),
       })
       // Human-in-the-loop gate: the node has completed and been recorded;
       // now halt and wait for the user. No runToken bump — nothing is in
@@ -1961,6 +2399,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
     visitCounts = new Map(executionQueue.map((id) => [id, 1]))
     joinDeferCounts = new Map()
     clearVirtualState()
+    clearFlowControlState()
     set({
       currentNodeIndex: 0,
       executionQueue,
@@ -1974,6 +2413,8 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
       erroredNodeIds: [],
       trace: [],
       pendingApproval: null,
+      tryCatchStatus: {},
+      retryStatus: {},
     })
     const metrics = useSimulationMetricsStore.getState()
     metrics.resetAll()
@@ -1998,6 +2439,8 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
     trace: [],
     traceOpen: false,
     pendingApproval: null,
+    tryCatchStatus: {},
+    retryStatus: {},
 
     setLiveMode: (liveMode) => set({ liveMode }),
     setUserInput: (userInput) => set({ userInput }),
@@ -2020,6 +2463,11 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
       visitCounts = new Map()
       joinDeferCounts = new Map()
       clearVirtualState()
+      clearFlowControlState()
+      if (get().isActive && get().trace.length > 0) {
+        useSimulationMetricsStore.getState().pauseTimer()
+        recordRunHistory('stopped', buildCostSummary(get().trace), null)
+      }
       set({
         isActive: false,
         isRunning: false,
@@ -2035,6 +2483,8 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
         erroredNodeIds: [],
         trace: [],
         pendingApproval: null,
+        tryCatchStatus: {},
+        retryStatus: {},
       })
       useSimulationMetricsStore.getState().resetAll()
     },

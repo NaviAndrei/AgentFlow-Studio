@@ -39,6 +39,52 @@ function formatTime(at: number): string {
   return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad(d.getMilliseconds(), 3)}`
 }
 
+/** A single trace row; reused by TraceLog (live) and RunHistoryPanel (read-only snapshot). */
+export function TraceEntryRow({
+  entry,
+  onClick,
+}: {
+  entry: TraceEntry
+  onClick?: (entry: TraceEntry) => void
+}) {
+  const meta = getNodeMeta(entry.nodeType)
+  return (
+    <button
+      onClick={onClick ? () => onClick(entry) : undefined}
+      disabled={!onClick}
+      className={`grid w-full grid-cols-[90px_minmax(90px,140px)_60px_56px_1fr] items-center gap-2 rounded px-2 py-1 text-left text-[10px] transition-colors ${
+        onClick ? 'hover:bg-surface-2' : ''
+      }`}
+    >
+      <span className="tabular-nums text-gray-600">{formatTime(entry.at)}</span>
+      <span className="flex items-center gap-1.5 truncate text-gray-300">
+        <span
+          className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+            entry.status === 'error'
+              ? 'bg-red-500'
+              : entry.status === 'skipped'
+                ? 'bg-gray-600'
+                : 'bg-green-500'
+          }`}
+        />
+        <span className={`truncate ${entry.status === 'skipped' ? 'text-gray-500' : ''}`}>
+          {entry.nodeName}
+        </span>
+        {entry.engine === 'live' && (
+          <Zap size={9} className="shrink-0 text-amber-400" aria-label="Executed live" />
+        )}
+      </span>
+      <span style={{ color: meta?.color }} className="truncate">
+        {entry.nodeType}
+      </span>
+      <span className="tabular-nums text-gray-500">{entry.durationMs}ms</span>
+      <span className="truncate text-gray-500">
+        {entry.input} <span className="text-gray-700">→</span> {entry.output}
+      </span>
+    </button>
+  )
+}
+
 export function TraceLog() {
   const traceOpen = useSimulationStore((s) => s.traceOpen)
   const setTraceOpen = useSimulationStore((s) => s.setTraceOpen)
@@ -118,53 +164,9 @@ export function TraceLog() {
               : 'No entries match this filter.'}
           </p>
         )}
-        {entries.map((entry) => {
-          const meta = getNodeMeta(entry.nodeType)
-          return (
-            <button
-              key={entry.id}
-              onClick={() => focusNode(entry)}
-              className="grid w-full grid-cols-[90px_minmax(90px,140px)_60px_56px_1fr] items-center gap-2 rounded px-2 py-1 text-left text-[10px] transition-colors hover:bg-surface-2"
-            >
-              <span className="tabular-nums text-gray-600">
-                {formatTime(entry.at)}
-              </span>
-              <span className="flex items-center gap-1.5 truncate text-gray-300">
-                <span
-                  className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                    entry.status === 'error'
-                      ? 'bg-red-500'
-                      : entry.status === 'skipped'
-                        ? 'bg-gray-600'
-                        : 'bg-green-500'
-                  }`}
-                />
-                <span
-                  className={`truncate ${entry.status === 'skipped' ? 'text-gray-500' : ''}`}
-                >
-                  {entry.nodeName}
-                </span>
-                {entry.engine === 'live' && (
-                  <Zap
-                    size={9}
-                    className="shrink-0 text-amber-400"
-                    aria-label="Executed live"
-                  />
-                )}
-              </span>
-              <span style={{ color: meta?.color }} className="truncate">
-                {entry.nodeType}
-              </span>
-              <span className="tabular-nums text-gray-500">
-                {entry.durationMs}ms
-              </span>
-              <span className="truncate text-gray-500">
-                {entry.input} <span className="text-gray-700">→</span>{' '}
-                {entry.output}
-              </span>
-            </button>
-          )
-        })}
+        {entries.map((entry) => (
+          <TraceEntryRow key={entry.id} entry={entry} onClick={focusNode} />
+        ))}
       </div>
     </div>
   )

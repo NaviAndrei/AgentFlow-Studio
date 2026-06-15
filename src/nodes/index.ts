@@ -22,6 +22,7 @@ import { NoteNode } from './NoteNode'
 import { OutputNode } from './OutputNode'
 import { PlannerNode } from './PlannerNode'
 import { RetrieverNode } from './RetrieverNode'
+import { RetryNode } from './RetryNode'
 import { StartNode } from './StartNode'
 import { StructuredOutputNode } from './StructuredOutputNode'
 import { SubagentNode } from './SubagentNode'
@@ -29,6 +30,7 @@ import { SubgraphNode } from './SubgraphNode'
 import { SupervisorNode } from './SupervisorNode'
 import { SwarmWorkerNode } from './SwarmWorkerNode'
 import { ToolNode } from './ToolNode'
+import { TryCatchNode } from './TryCatchNode'
 
 export const nodeTypes: NodeTypes = {
   start: StartNode,
@@ -59,6 +61,8 @@ export const nodeTypes: NodeTypes = {
   computerUse: ComputerUseNode,
   a2aAgent: A2AAgentNode,
   multimodalInput: MultimodalInputNode,
+  tryCatch: TryCatchNode,
+  retry: RetryNode,
   note: NoteNode,
   group: GroupNode,
 }

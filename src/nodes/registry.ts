@@ -19,7 +19,9 @@ import {
   Play,
   Plug,
   Radio,
+  RefreshCw,
   Repeat,
+  ShieldAlert,
   ShieldCheck,
   Sparkles,
   Split,
@@ -267,6 +269,22 @@ export const NODE_META: Record<AgentFlowNodeType, NodeMeta> = {
     icon: Table,
     description: 'Enforce a Pydantic schema',
   },
+  tryCatch: {
+    type: 'tryCatch',
+    label: 'Try/Catch',
+    category: 'flow',
+    color: '#b45309',
+    icon: ShieldAlert,
+    description: 'Guard a branch and reroute errors',
+  },
+  retry: {
+    type: 'retry',
+    label: 'Retry',
+    category: 'flow',
+    color: '#0369a1',
+    icon: RefreshCw,
+    description: 'Retry the next node with backoff',
+  },
   note: {
     type: 'note',
     label: 'Sticky Note',
@@ -314,7 +332,7 @@ export const PALETTE: { title: string; types: AgentFlowNodeType[] }[] = [
   },
   {
     title: 'Flow Control',
-    types: ['condition', 'router', 'guardrail', 'evaluator', 'join', 'loop', 'map', 'humanInLoop'],
+    types: ['condition', 'router', 'guardrail', 'evaluator', 'join', 'loop', 'map', 'humanInLoop', 'tryCatch', 'retry'],
   },
   {
     title: 'Multi-Agent',

@@ -1,16 +1,18 @@
 import { useCallback, useEffect, useState } from 'react'
-import { PanelRightClose, PanelRightOpen, RotateCcw } from 'lucide-react'
+import { PanelRightClose, PanelRightOpen, RotateCcw, Search } from 'lucide-react'
 import { NODE_META } from '../nodes'
 import { ICON_OPTIONS } from '../nodes/iconOptions'
 import { useUIStore } from '../store/uiStore'
 import { useCanvasStore } from '../store/canvasStore'
 import { useSimulationStore } from '../store/simulationStore'
 import { isInsecureRemoteUrl } from '../llm'
-import { discoverMcpTools } from '../utils/mcpClient'
+import { listTools } from '../utils/mcpClient'
 import { StateInspector } from './StateInspector'
 import { HintIcon } from './HintIcon'
 import { HINTS } from '../data/hints'
 import { MODEL_PRESETS } from '../utils/exportModels'
+import { usePromptStore } from '../store/promptStore'
+import { ExternalLink, Link as LinkIcon, X } from 'lucide-react'
 import type { AgentFlowNodeData, MemoryType } from '../types'
 
 const inputCls =
@@ -35,6 +37,75 @@ function StartFields({ data, update }: FieldsProps) {
         onChange={(e) => update({ inputVariables: e.target.value.split('\n') })}
       />
     </label>
+  )
+}
+
+/** "Link to registry" affordance shown below a prompt textarea. */
+function SystemPromptRegistryLink({ data, update }: FieldsProps) {
+  const entries = usePromptStore((s) => s.entries)
+  const setRegistryOpen = usePromptStore((s) => s.setRegistryOpen)
+  const [pickerOpen, setPickerOpen] = useState(false)
+
+  const linkedEntry = entries.find((e) => e.id === data.systemPromptRef)
+  const candidates = entries.filter(
+    (e) => e.category === 'system' || e.category === 'general',
+  )
+
+  if (linkedEntry) {
+    return (
+      <div className="mt-1 flex items-center gap-1.5">
+        <span className="flex-1 truncate rounded bg-white/5 px-1.5 py-0.5 text-[10px] text-gray-400">
+          {linkedEntry.name}
+        </span>
+        <button
+          onClick={() => setRegistryOpen(true)}
+          title="Edit in registry"
+          className="text-gray-500 hover:text-accent"
+        >
+          <ExternalLink size={11} />
+        </button>
+        <button
+          onClick={() => update({ systemPromptRef: undefined })}
+          title="Unlink"
+          className="text-gray-500 hover:text-red-400"
+        >
+          <X size={11} />
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="relative mt-1">
+      <button
+        onClick={() => setPickerOpen((open) => !open)}
+        className="flex items-center gap-1 text-[10px] text-gray-400 hover:text-accent"
+      >
+        <LinkIcon size={10} />
+        Link to registry
+      </button>
+      {pickerOpen && (
+        <div className="absolute left-0 top-full z-10 mt-1 w-full rounded-md border border-white/10 bg-surface-2 shadow-xl">
+          {candidates.length === 0 && (
+            <p className="px-2 py-1.5 text-[10px] text-gray-500">
+              No registry prompts yet.
+            </p>
+          )}
+          {candidates.map((entry) => (
+            <button
+              key={entry.id}
+              onClick={() => {
+                update({ systemPromptRef: entry.id })
+                setPickerOpen(false)
+              }}
+              className="block w-full truncate px-2 py-1 text-left text-[10px] text-gray-300 hover:bg-white/5"
+            >
+              {entry.name}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -84,6 +155,7 @@ function LLMFields({ data, update }: FieldsProps) {
           value={data.systemPrompt ?? ''}
           onChange={(e) => update({ systemPrompt: e.target.value })}
         />
+        <SystemPromptRegistryLink data={data} update={update} />
       </label>
       <label className="block">
         <span className={labelHintCls}>
@@ -1115,9 +1187,10 @@ function RetrieverFields({ data, update }: FieldsProps) {
 }
 
 function MCPServerFields({ data, update }: FieldsProps) {
-  const [discovering, setDiscovering] = useState(false)
+  const [isDiscovering, setIsDiscovering] = useState(false)
   const [discoverError, setDiscoverError] = useState<string | null>(null)
-  const tools = (data.mcpTools ?? []).filter(Boolean)
+  const discoveredTools = data.discoveredTools ?? []
+  const selectedTools = data.selectedTools ?? []
 
   const discover = () => {
     const url = (data.serverUrl ?? '').trim()
@@ -1125,16 +1198,38 @@ function MCPServerFields({ data, update }: FieldsProps) {
       setDiscoverError('Enter a server URL first')
       return
     }
-    setDiscovering(true)
+    setIsDiscovering(true)
     setDiscoverError(null)
-    void discoverMcpTools(url)
-      .then((names) => update({ mcpTools: names }))
+    void listTools(url, data.authToken)
+      .then((result) =>
+        update({
+          discoveredTools: result,
+          mcpTools: result.map((t) => t.name),
+          selectedTools: result.map((t) => t.name),
+        }),
+      )
       .catch((error: unknown) =>
         setDiscoverError(
           error instanceof Error ? error.message : 'Discovery failed',
         ),
       )
-      .finally(() => setDiscovering(false))
+      .finally(() => setIsDiscovering(false))
+  }
+
+  const toggleTool = (name: string) => {
+    const next = selectedTools.includes(name)
+      ? selectedTools.filter((t) => t !== name)
+      : [...selectedTools, name]
+    update({ selectedTools: next, mcpTools: next })
+  }
+
+  const selectAll = () => {
+    const names = discoveredTools.map((t) => t.name)
+    update({ selectedTools: names, mcpTools: names })
+  }
+
+  const deselectAll = () => {
+    update({ selectedTools: [], mcpTools: [] })
   }
 
   return (
@@ -1155,27 +1250,70 @@ function MCPServerFields({ data, update }: FieldsProps) {
           </p>
         )}
       </label>
+      <label className="block">
+        <span className={labelCls}>Auth token</span>
+        <input
+          className={inputCls}
+          type="password"
+          value={data.authToken ?? ''}
+          onChange={(e) => update({ authToken: e.target.value })}
+        />
+      </label>
       <button
         onClick={discover}
-        disabled={discovering}
-        className="w-full rounded-md border border-accent/50 px-2 py-1.5 text-xs text-accent transition-colors hover:bg-accent/10 disabled:cursor-not-allowed disabled:opacity-40"
+        disabled={isDiscovering}
+        className="flex w-full items-center justify-center gap-1.5 rounded-md border border-accent/50 px-2 py-1.5 text-xs text-accent transition-colors hover:bg-accent/10 disabled:cursor-not-allowed disabled:opacity-40"
       >
-        {discovering ? 'Discovering…' : 'Discover tools'}
+        <Search size={13} />
+        {isDiscovering ? 'Discovering…' : 'Discover Tools'}
       </button>
       {discoverError && (
         <p className="text-[10px] text-red-400">{discoverError}</p>
       )}
       <div>
-        <span className={labelCls}>
-          Discovered tools ({tools.length})
-        </span>
-        {tools.length === 0 ? (
+        <div className="flex items-center justify-between">
+          <span className={labelCls}>
+            Discovered tools ({discoveredTools.length})
+          </span>
+          {discoveredTools.length > 0 && (
+            <div className="flex gap-2 text-[10px]">
+              <button
+                onClick={selectAll}
+                className="text-accent hover:underline"
+              >
+                Select all
+              </button>
+              <button
+                onClick={deselectAll}
+                className="text-gray-500 hover:underline"
+              >
+                Deselect all
+              </button>
+            </div>
+          )}
+        </div>
+        {discoveredTools.length === 0 ? (
           <p className="text-[10px] text-gray-600">None yet.</p>
         ) : (
-          <ul className="space-y-0.5 text-[11px] text-gray-300">
-            {tools.map((tool) => (
-              <li key={tool} className="truncate rounded bg-surface-2 px-2 py-1">
-                {tool}
+          <ul className="space-y-1">
+            {discoveredTools.map((tool) => (
+              <li key={tool.name} className="rounded bg-surface-2 px-2 py-1">
+                <label className="flex items-start gap-2 text-[11px] text-gray-300">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 accent-accent"
+                    checked={selectedTools.includes(tool.name)}
+                    onChange={() => toggleTool(tool.name)}
+                  />
+                  <span className="flex-1">
+                    <span className="block truncate">{tool.name}</span>
+                    {tool.description && (
+                      <span className="block truncate text-[10px] text-gray-500">
+                        {truncateDescription(tool.description, 60)}
+                      </span>
+                    )}
+                  </span>
+                </label>
               </li>
             ))}
           </ul>
@@ -1183,6 +1321,10 @@ function MCPServerFields({ data, update }: FieldsProps) {
       </div>
     </>
   )
+}
+
+function truncateDescription(text: string, max: number): string {
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text
 }
 
 function StructuredOutputFields({ data, update }: FieldsProps) {
@@ -1303,6 +1445,127 @@ function NoteFields({ data, update }: FieldsProps) {
   )
 }
 
+const CATCH_ERROR_OPTIONS: { value: 'timeout' | 'rate_limit' | 'network' | 'any'; label: string }[] = [
+  { value: 'timeout', label: 'Timeout' },
+  { value: 'rate_limit', label: 'Rate limit' },
+  { value: 'network', label: 'Network' },
+  { value: 'any', label: 'Any' },
+]
+
+function TryCatchFields({ data, update }: FieldsProps) {
+  const tryCatch = data.tryCatch ?? { catchErrors: ['any'], fallbackOutput: '' }
+  const toggle = (value: (typeof CATCH_ERROR_OPTIONS)[number]['value']) => {
+    const next = tryCatch.catchErrors.includes(value)
+      ? tryCatch.catchErrors.filter((e) => e !== value)
+      : [...tryCatch.catchErrors, value]
+    update({ tryCatch: { ...tryCatch, catchErrors: next } })
+  }
+  return (
+    <>
+      <div className="block">
+        <span className={labelCls}>Catch errors</span>
+        <div className="space-y-1">
+          {CATCH_ERROR_OPTIONS.map((opt) => (
+            <label
+              key={opt.value}
+              className="flex items-center gap-2 text-xs text-gray-300"
+            >
+              <input
+                type="checkbox"
+                checked={tryCatch.catchErrors.includes(opt.value)}
+                onChange={() => toggle(opt.value)}
+              />
+              <span>{opt.label}</span>
+            </label>
+          ))}
+        </div>
+      </div>
+      <label className="block">
+        <span className={labelCls}>Fallback output</span>
+        <textarea
+          className={`${inputCls} h-16 resize-none`}
+          value={tryCatch.fallbackOutput}
+          onChange={(e) => update({ tryCatch: { ...tryCatch, fallbackOutput: e.target.value } })}
+        />
+      </label>
+    </>
+  )
+}
+
+const RETRY_ON_OPTIONS: { value: 'error' | 'empty_output' | 'any'; label: string }[] = [
+  { value: 'error', label: 'Error' },
+  { value: 'empty_output', label: 'Empty output' },
+  { value: 'any', label: 'Any' },
+]
+
+function RetryFields({ data, update }: FieldsProps) {
+  const retry = data.retry ?? {
+    maxAttempts: 3,
+    backoffMs: 1000,
+    backoffMultiplier: 2.0,
+    retryOn: ['error'],
+  }
+  const toggle = (value: (typeof RETRY_ON_OPTIONS)[number]['value']) => {
+    const next = retry.retryOn.includes(value)
+      ? retry.retryOn.filter((e) => e !== value)
+      : [...retry.retryOn, value]
+    update({ retry: { ...retry, retryOn: next } })
+  }
+  return (
+    <>
+      <label className="block">
+        <span className={labelCls}>Max attempts</span>
+        <input
+          type="number"
+          min={1}
+          max={10}
+          className={inputCls}
+          value={retry.maxAttempts}
+          onChange={(e) =>
+            update({
+              retry: { ...retry, maxAttempts: Math.min(10, Math.max(1, Number(e.target.value) || 1)) },
+            })
+          }
+        />
+      </label>
+      <label className="block">
+        <span className={labelCls}>Initial backoff (ms)</span>
+        <input
+          type="number"
+          min={100}
+          max={30000}
+          step={100}
+          className={inputCls}
+          value={retry.backoffMs}
+          onChange={(e) =>
+            update({
+              retry: { ...retry, backoffMs: Math.min(30000, Math.max(100, Number(e.target.value) || 100)) },
+            })
+          }
+        />
+      </label>
+      <div className="block">
+        <span className={labelCls}>Retry on</span>
+        <div className="space-y-1">
+          {RETRY_ON_OPTIONS.map((opt) => (
+            <label
+              key={opt.value}
+              className="flex items-center gap-2 text-xs text-gray-300"
+            >
+              <input
+                type="checkbox"
+                checked={retry.retryOn.includes(opt.value)}
+                onChange={() => toggle(opt.value)}
+              />
+              <span>{opt.label}</span>
+            </label>
+          ))}
+        </div>
+      </div>
+    </>
+  )
+}
+
 function ConfigPanel() {
   const selectedNodeId = useCanvasStore((s) => s.selectedNodeId)
   // Select data and type separately: a pure position drag replaces the node
@@ -1377,6 +1640,8 @@ function ConfigPanel() {
         {nodeType === 'structuredOutput' && (
           <StructuredOutputFields {...props} />
         )}
+        {nodeType === 'tryCatch' && <TryCatchFields {...props} />}
+        {nodeType === 'retry' && <RetryFields {...props} />}
         {nodeType === 'note' && <NoteFields {...props} />}
         {nodeType !== 'note' && nodeType !== 'group' && (
           <AppearanceFields {...props} />

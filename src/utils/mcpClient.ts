@@ -3,9 +3,14 @@
  * browser-side; failures (network, CORS, timeouts) reject with a
  * human-readable Error message.
  */
+import type { MCPTool } from '../types'
 
 interface JsonRpcResponse {
-  result?: { tools?: { name: string }[] }
+  result?: {
+    tools?: { name: string; description?: string; inputSchema?: Record<string, unknown> }[]
+    content?: unknown
+    [key: string]: unknown
+  }
   error?: { message?: string }
 }
 
@@ -36,23 +41,32 @@ async function readJsonRpc(response: Response): Promise<JsonRpcResponse | null> 
 }
 
 /**
- * Query an MCP server (Streamable HTTP transport) for its tool list. Performs
- * the spec handshake — `initialize` → `notifications/initialized` →
- * `tools/list` — on one session (honoring the `mcp-session-id` header), since
- * compliant servers reject calls made before initialization.
+ * Open a session against an MCP server (Streamable HTTP transport) by
+ * performing the spec handshake — `initialize` → `notifications/initialized`
+ * — and return a `post` helper that carries the resulting `mcp-session-id`
+ * (if issued) on subsequent calls.
  */
-export async function discoverMcpTools(serverUrl: string): Promise<string[]> {
+async function openSession(
+  serverUrl: string,
+  authToken?: string,
+  signal?: AbortSignal,
+): Promise<(body: unknown) => Promise<Response>> {
   const headers: Record<string, string> = {
     'content-type': 'application/json',
     accept: 'application/json, text/event-stream',
   }
-  const post = (body: unknown): Promise<Response> =>
-    fetch(serverUrl, {
+  if (authToken) headers.authorization = `Bearer ${authToken}`
+  const post = (body: unknown): Promise<Response> => {
+    const controller = new AbortController()
+    const timeout = window.setTimeout(() => controller.abort(), 5000)
+    signal?.addEventListener('abort', () => controller.abort(), { once: true })
+    return fetch(serverUrl, {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(5000),
-    })
+      signal: controller.signal,
+    }).finally(() => window.clearTimeout(timeout))
+  }
 
   let initResponse: Response
   try {
@@ -86,6 +100,18 @@ export async function discoverMcpTools(serverUrl: string): Promise<string[]> {
     // Best-effort: some servers don't require the notification.
   }
 
+  return post
+}
+
+/**
+ * Query an MCP server for its full tool list (name, description, JSON Schema
+ * input shape) via `tools/list`, using the spec initialize handshake.
+ */
+export async function listTools(
+  serverUrl: string,
+  authToken?: string,
+): Promise<MCPTool[]> {
+  const post = await openSession(serverUrl, authToken)
   let listResponse: Response
   try {
     listResponse = await post({
@@ -104,5 +130,52 @@ export async function discoverMcpTools(serverUrl: string): Promise<string[]> {
   if (data?.error) {
     throw new Error(data.error.message ?? 'MCP server returned an error')
   }
-  return (data?.result?.tools ?? []).map((t) => t.name)
+  return (data?.result?.tools ?? []).map((t) => ({
+    name: t.name,
+    description: t.description ?? '',
+    inputSchema: t.inputSchema ?? {},
+  }))
+}
+
+/**
+ * Query an MCP server (Streamable HTTP transport) for its tool names. Performs
+ * the spec handshake — `initialize` → `notifications/initialized` →
+ * `tools/list` — on one session (honoring the `mcp-session-id` header), since
+ * compliant servers reject calls made before initialization.
+ */
+export async function discoverMcpTools(serverUrl: string): Promise<string[]> {
+  return (await listTools(serverUrl)).map((t) => t.name)
+}
+
+/**
+ * Invoke a tool on an MCP server via `tools/call`, returning the raw `result`
+ * from the JSON-RPC response.
+ */
+export async function callTool(
+  serverUrl: string,
+  authToken: string | undefined,
+  name: string,
+  input: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<unknown> {
+  const post = await openSession(serverUrl, authToken, signal)
+  let callResponse: Response
+  try {
+    callResponse = await post({
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'tools/call',
+      params: { name, arguments: input },
+    })
+  } catch {
+    throw new Error(`MCP server not reachable at ${serverUrl}`)
+  }
+  if (!callResponse.ok) {
+    throw new Error(`MCP server responded with ${callResponse.status}`)
+  }
+  const data = await readJsonRpc(callResponse)
+  if (data?.error) {
+    throw new Error(data.error.message ?? 'MCP server returned an error')
+  }
+  return data?.result ?? null
 }

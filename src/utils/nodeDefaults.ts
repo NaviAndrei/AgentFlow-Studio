@@ -145,12 +145,33 @@ export function createDefaultNodeData(type: AgentFlowNodeType): AgentFlowNodeDat
         similarityThreshold: 0.75,
       }
     case 'mcpServer':
-      return { label: 'MCP Server', serverUrl: 'http://localhost:3001/mcp', mcpTools: [] }
+      return {
+        label: 'MCP Server',
+        serverUrl: 'http://localhost:3001/mcp',
+        mcpTools: [],
+        discoveredTools: [],
+        selectedTools: [],
+      }
     case 'structuredOutput':
       return {
         label: 'Structured Output',
         pydanticModel: 'OutputModel',
         jsonSchema: '{\n  "type": "object",\n  "properties": {\n    "answer": { "type": "string" }\n  }\n}',
+      }
+    case 'tryCatch':
+      return {
+        label: 'Try/Catch',
+        tryCatch: { catchErrors: ['any'], fallbackOutput: '' },
+      }
+    case 'retry':
+      return {
+        label: 'Retry',
+        retry: {
+          maxAttempts: 3,
+          backoffMs: 1000,
+          backoffMultiplier: 2.0,
+          retryOn: ['error'],
+        },
       }
     case 'note':
       return { label: 'Note', text: 'Add an annotation…' }

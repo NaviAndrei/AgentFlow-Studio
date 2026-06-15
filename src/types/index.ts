@@ -31,10 +31,19 @@ export type AgentFlowNodeType =
   | 'computerUse'
   | 'a2aAgent'
   | 'multimodalInput'
+  | 'tryCatch'
+  | 'retry'
   | 'note'
   | 'group'
 
 export type MemoryType = 'short-term' | 'vector-store' | 'checkpointer'
+
+/** A tool advertised by an MCP server's `tools/list` response. */
+export interface MCPTool {
+  name: string
+  description: string
+  inputSchema: Record<string, unknown>
+}
 
 /**
  * Flat data shape shared by every node type. Type-specific fields are
@@ -80,6 +89,8 @@ export type AgentFlowNodeData = {
   /** MCP Server */
   serverUrl?: string
   mcpTools?: string[]
+  discoveredTools?: MCPTool[]
+  selectedTools?: string[]
   /** Structured Output */
   pydanticModel?: string
   jsonSchema?: string
@@ -139,6 +150,18 @@ export type AgentFlowNodeData = {
   inputVariable?: string
   textPrompt?: string
   encoding?: 'base64' | 'url'
+  /** Try/Catch — guards the onSuccess subgraph; errors route to onError. */
+  tryCatch?: {
+    catchErrors: ('timeout' | 'rate_limit' | 'network' | 'any')[]
+    fallbackOutput: string
+  }
+  /** Retry — wraps the single downstream node with retry + backoff. */
+  retry?: {
+    maxAttempts: number
+    backoffMs: number
+    backoffMultiplier: number
+    retryOn: ('error' | 'empty_output' | 'any')[]
+  }
   /** Note */
   text?: string
   /** Appearance overrides (any node) */
@@ -148,6 +171,8 @@ export type AgentFlowNodeData = {
   collapsed?: boolean
   expandedWidth?: number
   expandedHeight?: number
+  /** Prompt Registry — references a PromptEntry.id; overrides inline systemPrompt at runtime/export when set. */
+  systemPromptRef?: string
 }
 
 export type AgentFlowNode = Node<AgentFlowNodeData, AgentFlowNodeType>
@@ -282,4 +307,44 @@ export interface RunCostSummary {
   totalTokens: number
   totalCostUsd: number
   model: string
+}
+
+/** A single saved version of a prompt's text. */
+export interface PromptVersion {
+  id: string
+  content: string
+  createdAt: number
+  note?: string
+}
+
+/** A named, versioned prompt template referenced by nodes via *Ref fields. */
+export interface PromptEntry {
+  id: string
+  name: string
+  category: 'system' | 'user' | 'general'
+  /** Newest last. */
+  versions: PromptVersion[]
+  /** Which version is "active"; defaults to the latest. */
+  pinnedVersionId: string
+}
+
+/** A snapshot of one completed/stopped simulation run, kept in Run History. */
+export interface RunRecord {
+  id: string
+  startedAt: number
+  finishedAt: number
+  durationMs: number
+  mode: 'simulated' | 'live'
+  status: 'done' | 'error' | 'stopped'
+  nodeCount: number
+  stepCount: number
+  totalTokens: number
+  totalCostUsd: number
+  model: string
+  /** null if there were no eval test cases for this run. */
+  qualityScore: number | null
+  evalPassCount: number | null
+  evalTotalCount: number | null
+  traceSnapshot: TraceEntry[]
+  costSnapshot: RunCostSummary | null
 }

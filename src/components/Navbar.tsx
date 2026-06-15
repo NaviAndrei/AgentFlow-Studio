@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import {
+  BookOpen,
+  Check,
   CircleDollarSign,
   Code2,
   Download,
@@ -7,9 +9,11 @@ import {
   FlaskConical,
   FolderOpen,
   HelpCircle,
+  History,
   LayoutTemplate,
   Play,
   Settings,
+  Share2,
   Square,
   Workflow,
   Zap,
@@ -18,6 +22,8 @@ import { useCanvasStore } from '../store/canvasStore'
 import { useUIStore } from '../store/uiStore'
 import { useEvalStore } from '../store/evalStore'
 import { useLLMConfigStore } from '../store/llmConfigStore'
+import { usePromptStore } from '../store/promptStore'
+import { useRunHistoryStore } from '../store/runHistoryStore'
 import { useSimulationMetricsStore } from '../store/simulationMetricsStore'
 import { useSimulationStore } from '../store/simulationStore'
 import {
@@ -25,6 +31,7 @@ import {
   downloadCanvas,
   readCanvasFile,
 } from '../utils/canvasSerializer'
+import { encodeFlow } from '../utils/shareUrl'
 import { PROVIDERS, listOllamaModels } from '../llm'
 import { ConfirmDialog } from './Modal'
 import { HintIcon } from './HintIcon'
@@ -48,6 +55,10 @@ export function Navbar() {
   const setShortcutsOpen = useUIStore((s) => s.setShortcutsOpen)
   const setCostPanelOpen = useUIStore((s) => s.setCostPanelOpen)
   const setEvalOpen = useEvalStore((s) => s.setEvalOpen)
+  const setRegistryOpen = usePromptStore((s) => s.setRegistryOpen)
+  const promptEntryCount = usePromptStore((s) => s.entries.length)
+  const setRunHistoryOpen = useRunHistoryStore((s) => s.setPanelOpen)
+  const runCount = useRunHistoryStore((s) => s.runs.length)
   const costSummary = useSimulationMetricsStore((s) => s.costSummary)
   const simulationActive = useSimulationStore((s) => s.isActive)
   const startSimulation = useSimulationStore((s) => s.start)
@@ -98,6 +109,20 @@ export function Navbar() {
   }
 
   const [confirmNewOpen, setConfirmNewOpen] = useState(false)
+  const [shareCopied, setShareCopied] = useState(false)
+
+  const handleShare = async () => {
+    const { nodes, edges } = useCanvasStore.getState()
+    const url = await encodeFlow(nodes, edges)
+    try {
+      await navigator.clipboard.writeText(url)
+    } catch {
+      window.prompt('Copy this URL:', url)
+      return
+    }
+    setShareCopied(true)
+    window.setTimeout(() => setShareCopied(false), 2000)
+  }
 
   const handleNew = () => {
     if (!hasNodes) {
@@ -181,6 +206,30 @@ export function Navbar() {
           Blueprints
         </button>
         <button
+          onClick={() => setRegistryOpen(true)}
+          className="flex items-center gap-1.5 rounded-md border border-white/10 px-3 py-1.5 text-xs text-gray-300 transition-colors hover:border-accent/50 hover:text-white"
+        >
+          <BookOpen size={13} />
+          Prompts
+          {promptEntryCount > 0 && (
+            <span className="ml-1 text-[10px] tabular-nums text-accent">
+              {promptEntryCount}
+            </span>
+          )}
+        </button>
+        <button
+          onClick={() => setRunHistoryOpen(true)}
+          className="flex items-center gap-1.5 rounded-md border border-white/10 px-3 py-1.5 text-xs text-gray-300 transition-colors hover:border-accent/50 hover:text-white"
+        >
+          <History size={13} />
+          History
+          {runCount > 0 && (
+            <span className="ml-1 text-[10px] tabular-nums text-accent">
+              {runCount}
+            </span>
+          )}
+        </button>
+        <button
           onClick={() => setEvalOpen(true)}
           className="flex items-center gap-1.5 rounded-md border border-white/10 px-3 py-1.5 text-xs text-gray-300 transition-colors hover:border-accent/50 hover:text-white"
         >
@@ -247,6 +296,14 @@ export function Navbar() {
           className="rounded-md border border-white/10 p-1.5 text-gray-300 transition-colors hover:border-accent/50 hover:text-white"
         >
           <Settings size={13} />
+        </button>
+        <button
+          onClick={() => void handleShare()}
+          title="Copy a shareable link to this flow"
+          className="flex items-center gap-1.5 rounded-md border border-white/10 px-3 py-1.5 text-xs text-gray-300 transition-colors hover:border-accent/50 hover:text-white"
+        >
+          {shareCopied ? <Check size={13} /> : <Share2 size={13} />}
+          {shareCopied ? 'Copied!' : 'Share'}
         </button>
         <div className="flex items-center gap-1">
           <button

@@ -173,6 +173,52 @@ export function validateGraph(
       }
     }
 
+    // Try/Catch routes on onSuccess/onError edge labels; both should exist.
+    if (node.type === 'tryCatch') {
+      const labels = new Set(
+        edges
+          .filter((e) => e.source === node.id)
+          .map((e) => (typeof e.label === 'string' ? e.label : '')),
+      )
+      if (!labels.has('onSuccess')) {
+        issues.push({
+          nodeId: node.id,
+          level: 'warning',
+          message: 'Try/Catch is missing its "onSuccess" edge',
+        })
+      }
+      if (!labels.has('onError')) {
+        issues.push({
+          nodeId: node.id,
+          level: 'warning',
+          message: 'Try/Catch is missing its "onError" edge',
+        })
+      }
+    }
+
+    // Retry wraps the single downstream node — it needs something to retry,
+    // and wrapping another Retry is redundant.
+    if (node.type === 'retry') {
+      const outs = edges.filter((e) => e.source === node.id)
+      if (outs.length === 0) {
+        issues.push({
+          nodeId: node.id,
+          level: 'error',
+          message: 'Retry node has nothing to retry',
+        })
+      }
+      const wrapsRetry = outs.some(
+        (e) => nodes.find((n) => n.id === e.target)?.type === 'retry',
+      )
+      if (wrapsRetry) {
+        issues.push({
+          nodeId: node.id,
+          level: 'warning',
+          message: 'Nested retries are redundant',
+        })
+      }
+    }
+
     // Planner emits a todos list — best paired with a downstream Map/executor.
     if (node.type === 'planner') {
       if ((node.data.decompositionPrompt ?? '').trim() === '') {

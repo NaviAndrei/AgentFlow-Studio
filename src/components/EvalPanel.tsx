@@ -1,6 +1,7 @@
-import { useState } from 'react'
-import { ChevronRight, FlaskConical, Plus, Trash2 } from 'lucide-react'
+import { useRef, useState } from 'react'
+import { ChevronRight, FlaskConical, Plus, Trash2, Upload } from 'lucide-react'
 import { useEvalStore } from '../store/evalStore'
+import { parseDatasetFile } from '../utils/datasetParser'
 
 function badgeColor(score: number): string {
   if (score >= 80) return 'text-green-400'
@@ -26,6 +27,7 @@ export function EvalPanel() {
   const setEvalOpen = useEvalStore((s) => s.setEvalOpen)
   const testCases = useEvalStore((s) => s.testCases)
   const addTestCase = useEvalStore((s) => s.addTestCase)
+  const addMany = useEvalStore((s) => s.addMany)
   const removeTestCase = useEvalStore((s) => s.removeTestCase)
   const runs = useEvalStore((s) => s.runs)
   const lastRun = runs.length > 0 ? runs[runs.length - 1] : null
@@ -34,6 +36,32 @@ export function EvalPanel() {
   const [input, setInput] = useState('')
   const [expectedOutput, setExpectedOutput] = useState('')
   const [description, setDescription] = useState('')
+
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [importStatus, setImportStatus] = useState<{
+    status: 'idle' | 'success' | 'error'
+    message: string
+  }>({ status: 'idle', message: '' })
+
+  const handleImportFile = (file: File) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      try {
+        const text = String(reader.result ?? '')
+        const cases = parseDatasetFile(text, file.name)
+        addMany(cases)
+        setImportStatus({ status: 'success', message: `Imported ${cases.length} test cases` })
+        window.setTimeout(() => setImportStatus({ status: 'idle', message: '' }), 3000)
+      } catch (error) {
+        setImportStatus({
+          status: 'error',
+          message: error instanceof Error ? error.message : 'Could not parse file',
+        })
+        window.setTimeout(() => setImportStatus({ status: 'idle', message: '' }), 5000)
+      }
+    }
+    reader.readAsText(file)
+  }
 
   const resetForm = () => {
     setAdding(false)
@@ -79,15 +107,45 @@ export function EvalPanel() {
               Test Cases ({testCases.length})
             </span>
             {!adding && (
-              <button
-                onClick={() => setAdding(true)}
-                className="flex items-center gap-1 rounded-md border border-white/10 px-2 py-0.5 text-[10px] text-gray-300 hover:border-accent/50 hover:text-white"
-              >
-                <Plus size={10} />
-                Add
-              </button>
+              <div className="flex gap-1.5">
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex items-center gap-1 rounded-md border border-white/10 px-2 py-0.5 text-[10px] text-gray-300 hover:border-accent/50 hover:text-white"
+                >
+                  <Upload size={10} />
+                  Import Dataset
+                </button>
+                <button
+                  onClick={() => setAdding(true)}
+                  className="flex items-center gap-1 rounded-md border border-white/10 px-2 py-0.5 text-[10px] text-gray-300 hover:border-accent/50 hover:text-white"
+                >
+                  <Plus size={10} />
+                  Add
+                </button>
+              </div>
             )}
           </div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv,.json"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0]
+              if (file) handleImportFile(file)
+              e.target.value = ''
+            }}
+          />
+          <p className="mb-2 text-[10px] text-gray-500">
+            CSV: columns input, expectedOutput, description (optional). JSON: array of{' '}
+            {'{input, expectedOutput}'}.
+          </p>
+          {importStatus.status === 'success' && (
+            <p className="mb-2 text-[10px] text-green-400">{importStatus.message}</p>
+          )}
+          {importStatus.status === 'error' && (
+            <p className="mb-2 text-[10px] text-red-400">{importStatus.message}</p>
+          )}
 
           {adding && (
             <div className="mb-3 rounded-md border border-white/10 bg-canvas p-2">

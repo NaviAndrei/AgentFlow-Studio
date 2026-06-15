@@ -2,6 +2,8 @@ import { create } from 'zustand'
 import type { AgentFlowEdge, AgentFlowNode, Blueprint } from '../types'
 import { useCanvasStore } from './canvasStore'
 import { useEvalStore } from './evalStore'
+import { usePromptStore } from './promptStore'
+import { useRunHistoryStore } from './runHistoryStore'
 
 /** Inspector resize bounds (px). */
 export const INSPECTOR_MIN_WIDTH = 240
@@ -66,6 +68,8 @@ export const useUIStore = create<UIState>((set, get) => ({
       costPanelOpen: false,
     })
     useEvalStore.getState().setEvalOpen(false)
+    usePromptStore.getState().setRegistryOpen(false)
+    useRunHistoryStore.getState().setPanelOpen(false)
   },
 
   loadBlueprint: (blueprint) => {

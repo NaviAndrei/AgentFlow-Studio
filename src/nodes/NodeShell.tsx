@@ -18,6 +18,8 @@ interface NodeShellProps {
   hasOutput?: boolean
   /** Named source handles (e.g. one per discovered MCP tool); replaces the single output port. */
   extraOutputs?: string[]
+  /** Named bottom-edge source handles with custom colors (e.g. Try/Catch onSuccess/onError). */
+  bottomHandles?: { id: string; side: 'left' | 'right'; color: string; title?: string }[]
   children?: ReactNode
 }
 
@@ -29,6 +31,7 @@ export function NodeShell({
   hasInput = true,
   hasOutput = true,
   extraOutputs,
+  bottomHandles,
   children,
 }: NodeShellProps) {
   const [editingLabel, setEditingLabel] = useState(false)
@@ -171,6 +174,19 @@ export function NodeShell({
           position={Position.Right}
           title={name}
           style={{ top: 46 + index * 16 }}
+        />
+      ))}
+      {bottomHandles?.map((h) => (
+        <Handle
+          key={h.id}
+          id={h.id}
+          type="source"
+          position={Position.Bottom}
+          title={h.title ?? h.id}
+          style={{
+            left: h.side === 'left' ? '30%' : '70%',
+            background: h.color,
+          }}
         />
       ))}
     </div>

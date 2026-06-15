@@ -271,6 +271,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
     loadGraph: (nodes, edges) => {
       pushHistory()
       // Loading a saved graph resets the dirty flag — it's a clean baseline.
+      // GROUP RESTORE: loadGraph bypasses releaseOrphans — confirmed safe
       set({ ...validated(nodes, edges), selectedNodeId: null, isDirty: false })
     },
 

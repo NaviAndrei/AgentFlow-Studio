@@ -6,6 +6,7 @@ interface EvalState {
   runs: EvalRun[]
   evalOpen: boolean
   addTestCase: (testCase: Omit<EvalTestCase, 'id'>) => void
+  addMany: (cases: Array<Pick<EvalTestCase, 'input' | 'expectedOutput' | 'description'>>) => void
   removeTestCase: (id: string) => void
   updateTestCase: (id: string, patch: Partial<Omit<EvalTestCase, 'id'>>) => void
   addRun: (run: EvalRun) => void
@@ -22,6 +23,19 @@ export const useEvalStore = create<EvalState>((set, get) => ({
       testCases: [
         ...get().testCases,
         { ...testCase, id: crypto.randomUUID() },
+      ],
+    }),
+
+  addMany: (cases) =>
+    set({
+      testCases: [
+        ...get().testCases,
+        ...cases.map((c) => ({
+          id: crypto.randomUUID(),
+          input: c.input,
+          expectedOutput: c.expectedOutput,
+          description: c.description,
+        })),
       ],
     }),
 
