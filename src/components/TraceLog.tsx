@@ -108,8 +108,8 @@ export function TraceLog() {
 
   return (
     <div
-      className={`fixed inset-x-0 bottom-12 z-20 flex h-60 flex-col border-t border-white/10 bg-surface shadow-2xl transition-transform duration-300 ${
-        traceOpen ? 'translate-y-0' : 'translate-y-[calc(100%+3rem)]'
+      className={`fixed inset-x-0 bottom-0 z-20 flex h-60 flex-col border-t border-white/10 bg-surface shadow-2xl transition-transform duration-300 ${
+        traceOpen ? 'translate-y-0' : 'translate-y-full'
       }`}
     >
       <div className="flex shrink-0 items-center gap-2 border-b border-white/10 px-3 py-1.5">

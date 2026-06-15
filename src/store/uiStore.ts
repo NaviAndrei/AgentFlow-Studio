@@ -19,11 +19,16 @@ interface UIState {
   inspectorOpen: boolean
   inspectorWidth: number
   costPanelOpen: boolean
+  problemsPanelOpen: boolean
+  /** Vertical drag offset (px) for the PanelRail, relative to its centered default. */
+  railOffsetPx: number
   setGalleryOpen: (open: boolean) => void
   setExportOpen: (open: boolean) => void
   setQuickAddOpen: (open: boolean) => void
   setShortcutsOpen: (open: boolean) => void
   setCostPanelOpen: (open: boolean) => void
+  setProblemsPanelOpen: (open: boolean) => void
+  setRailOffsetPx: (offset: number) => void
   toggleSidebar: () => void
   toggleInspector: () => void
   setInspectorWidth: (width: number) => void
@@ -44,12 +49,16 @@ export const useUIStore = create<UIState>((set, get) => ({
   inspectorOpen: widePanelDefault,
   inspectorWidth: 300,
   costPanelOpen: false,
+  problemsPanelOpen: false,
+  railOffsetPx: 0,
 
+  setRailOffsetPx: (railOffsetPx) => set({ railOffsetPx }),
   setGalleryOpen: (galleryOpen) => set({ galleryOpen }),
   setExportOpen: (exportOpen) => set({ exportOpen }),
   setQuickAddOpen: (quickAddOpen) => set({ quickAddOpen }),
   setShortcutsOpen: (shortcutsOpen) => set({ shortcutsOpen }),
   setCostPanelOpen: (costPanelOpen) => set({ costPanelOpen }),
+  setProblemsPanelOpen: (problemsPanelOpen) => set({ problemsPanelOpen }),
   toggleSidebar: () => set({ sidebarOpen: !get().sidebarOpen }),
   toggleInspector: () => set({ inspectorOpen: !get().inspectorOpen }),
   setInspectorWidth: (width) =>
@@ -66,6 +75,7 @@ export const useUIStore = create<UIState>((set, get) => ({
       quickAddOpen: false,
       shortcutsOpen: false,
       costPanelOpen: false,
+      problemsPanelOpen: false,
     })
     useEvalStore.getState().setEvalOpen(false)
     usePromptStore.getState().setRegistryOpen(false)

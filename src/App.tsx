@@ -10,6 +10,8 @@ import { ExportModal } from './components/ExportModal'
 import { Inspector } from './components/Inspector'
 import { LLMSettingsModal } from './components/LLMSettingsModal'
 import { Navbar } from './components/Navbar'
+import { PanelRail } from './components/PanelRail'
+import { ProblemsPanel } from './components/ProblemsPanel'
 import { QuickAddPopup } from './components/QuickAddPopup'
 import { MetricsBar } from './components/MetricsBar'
 import { PromptRegistryPanel } from './components/PromptRegistryPanel'
@@ -59,6 +61,8 @@ export default function App() {
         <CostPanel />
         <PromptRegistryPanel />
         <RunHistoryPanel />
+        <ProblemsPanel />
+        <PanelRail />
         <MetricsBar />
       </div>
     </ReactFlowProvider>

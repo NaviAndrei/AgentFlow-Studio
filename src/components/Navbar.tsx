@@ -1,16 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import {
-  BookOpen,
   Check,
-  CircleDollarSign,
   Code2,
   Download,
   FilePlus2,
-  FlaskConical,
   FolderOpen,
   HelpCircle,
-  History,
-  LayoutTemplate,
   Play,
   Settings,
   Share2,
@@ -20,11 +15,7 @@ import {
 } from 'lucide-react'
 import { useCanvasStore } from '../store/canvasStore'
 import { useUIStore } from '../store/uiStore'
-import { useEvalStore } from '../store/evalStore'
 import { useLLMConfigStore } from '../store/llmConfigStore'
-import { usePromptStore } from '../store/promptStore'
-import { useRunHistoryStore } from '../store/runHistoryStore'
-import { useSimulationMetricsStore } from '../store/simulationMetricsStore'
 import { useSimulationStore } from '../store/simulationStore'
 import {
   deserializeCanvas,
@@ -37,12 +28,6 @@ import { ConfirmDialog } from './Modal'
 import { HintIcon } from './HintIcon'
 import { HINTS } from '../data/hints'
 
-function formatCost(usd: number): string {
-  if (usd < 0.001) return '<$0.001'
-  if (usd < 1) return `$${usd.toFixed(4)}`
-  return `$${usd.toFixed(2)}`
-}
-
 export function Navbar() {
   const clearCanvas = useCanvasStore((s) => s.clearCanvas)
   const markClean = useCanvasStore((s) => s.markClean)
@@ -50,16 +35,8 @@ export function Navbar() {
   const hasErrors = useCanvasStore((s) =>
     s.validationIssues.some((i) => i.level === 'error'),
   )
-  const setGalleryOpen = useUIStore((s) => s.setGalleryOpen)
   const setExportOpen = useUIStore((s) => s.setExportOpen)
   const setShortcutsOpen = useUIStore((s) => s.setShortcutsOpen)
-  const setCostPanelOpen = useUIStore((s) => s.setCostPanelOpen)
-  const setEvalOpen = useEvalStore((s) => s.setEvalOpen)
-  const setRegistryOpen = usePromptStore((s) => s.setRegistryOpen)
-  const promptEntryCount = usePromptStore((s) => s.entries.length)
-  const setRunHistoryOpen = useRunHistoryStore((s) => s.setPanelOpen)
-  const runCount = useRunHistoryStore((s) => s.runs.length)
-  const costSummary = useSimulationMetricsStore((s) => s.costSummary)
   const simulationActive = useSimulationStore((s) => s.isActive)
   const startSimulation = useSimulationStore((s) => s.start)
   const stopSimulation = useSimulationStore((s) => s.stop)
@@ -198,56 +175,6 @@ export function Navbar() {
             e.target.value = ''
           }}
         />
-        <button
-          onClick={() => setGalleryOpen(true)}
-          className="flex items-center gap-1.5 rounded-md border border-white/10 px-3 py-1.5 text-xs text-gray-300 transition-colors hover:border-accent/50 hover:text-white"
-        >
-          <LayoutTemplate size={13} />
-          Blueprints
-        </button>
-        <button
-          onClick={() => setRegistryOpen(true)}
-          className="flex items-center gap-1.5 rounded-md border border-white/10 px-3 py-1.5 text-xs text-gray-300 transition-colors hover:border-accent/50 hover:text-white"
-        >
-          <BookOpen size={13} />
-          Prompts
-          {promptEntryCount > 0 && (
-            <span className="ml-1 text-[10px] tabular-nums text-accent">
-              {promptEntryCount}
-            </span>
-          )}
-        </button>
-        <button
-          onClick={() => setRunHistoryOpen(true)}
-          className="flex items-center gap-1.5 rounded-md border border-white/10 px-3 py-1.5 text-xs text-gray-300 transition-colors hover:border-accent/50 hover:text-white"
-        >
-          <History size={13} />
-          History
-          {runCount > 0 && (
-            <span className="ml-1 text-[10px] tabular-nums text-accent">
-              {runCount}
-            </span>
-          )}
-        </button>
-        <button
-          onClick={() => setEvalOpen(true)}
-          className="flex items-center gap-1.5 rounded-md border border-white/10 px-3 py-1.5 text-xs text-gray-300 transition-colors hover:border-accent/50 hover:text-white"
-        >
-          <FlaskConical size={13} />
-          Eval
-        </button>
-        <button
-          onClick={() => setCostPanelOpen(true)}
-          className="flex items-center gap-1.5 rounded-md border border-white/10 px-3 py-1.5 text-xs text-gray-300 transition-colors hover:border-accent/50 hover:text-white"
-        >
-          <CircleDollarSign size={13} />
-          Cost
-          {costSummary && (
-            <span className="ml-1 text-[10px] tabular-nums text-accent">
-              {formatCost(costSummary.totalCostUsd)}
-            </span>
-          )}
-        </button>
         <div className="flex items-center gap-1">
           <button
             onClick={() => (simulationActive ? stopSimulation() : startSimulation())}
