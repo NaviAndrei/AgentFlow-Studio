@@ -86,6 +86,14 @@ export type AgentFlowNodeData = {
   /** Map (Send) — dynamic runtime fan-out over a list in state. */
   inputExpression?: string
   maxParallel?: number
+  /**
+   * Simulation-only fan-out config: explicit item list (one virtual branch
+   * per item). When empty/absent, the simulator falls back to mapCount and
+   * synthesizes generic items. Live/exported runtime still uses inputExpression.
+   */
+  mapItems?: string[]
+  /** Simulation-only branch count when mapItems is empty. Default 3. */
+  mapCount?: number
   /** Code Executor — sandboxed REPL for generated code. */
   language?: 'python' | 'javascript' | 'bash'
   timeout?: number
@@ -100,6 +108,8 @@ export type AgentFlowNodeData = {
   subgraphSummary?: string
   inputMapping?: string
   outputMapping?: string
+  /** Simulation-only: append a summary of the inner run to the parent transcript. */
+  appendToParent?: boolean
   /** Long-Term Store — namespaced cross-thread memory (BaseStore). */
   namespace?: string
   storeOperation?: 'read' | 'write' | 'search'
@@ -235,4 +245,41 @@ export interface CanvasDocument {
   schemaVersion: number
   nodes: CanvasDocumentNode[]
   edges: CanvasDocumentEdge[]
+}
+
+export interface EvalTestCase {
+  id: string
+  input: string
+  expectedOutput: string
+  description?: string
+}
+
+export interface EvalResult {
+  testCaseId: string
+  status: 'pass' | 'partial' | 'fail' | 'pending'
+  actualOutput: string
+  score: number
+}
+
+export interface EvalRun {
+  id: string
+  runAt: number
+  results: EvalResult[]
+  qualityScore: number
+}
+
+export interface NodeCostEntry {
+  nodeId: string
+  nodeName: string
+  nodeType: string
+  tokensIn: number
+  tokensOut: number
+  estimatedCostUsd: number
+}
+
+export interface RunCostSummary {
+  entries: NodeCostEntry[]
+  totalTokens: number
+  totalCostUsd: number
+  model: string
 }

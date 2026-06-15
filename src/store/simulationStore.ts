@@ -18,16 +18,72 @@ import {
   pickRouteByKeyword,
 } from '../utils/flowSemantics'
 import { useCanvasStore } from './canvasStore'
+import { useEvalStore } from './evalStore'
 import { useLLMConfigStore } from './llmConfigStore'
 import { useSimulationMetricsStore } from './simulationMetricsStore'
+import { computeQualityScore, scoreTestCase } from '../utils/evalScorer'
+import { getPricing } from '../data/modelPricing'
 import type {
   AgentFlowEdge,
   AgentFlowNode,
   AgentFlowNodeType,
   ChatMessage,
+  EvalResult,
   ExecutionEngine,
+  NodeCostEntry,
+  RunCostSummary,
   TraceEntry,
 } from '../types'
+
+/**
+ * ── Dynamic simulation walker (architecture note) ────────────────────────
+ *
+ * The run is a DYNAMIC next-step walker, not a prebuilt topological pass.
+ * `executionQueue` starts as just the seed node(s) and GROWS as each node
+ * finishes and schedules its reachable successors. `currentNodeIndex` walks
+ * that growing array; the run is finished once the index passes its end.
+ *
+ * 1. Where the queue is built
+ *    - Seeded by buildSeeds(): Start nodes, else flow nodes with no incoming
+ *      flow edge, else (pure cycle) the topological head — one node only.
+ *      topologicalSort is used ONLY for that last-resort single seed, never to
+ *      pre-order the whole run.
+ *    - Grown by scheduleNextNodes() after every node runs, plus the join
+ *      defer in executeCurrent (which re-queues a not-ready join at the tail).
+ *      resetRunState() resets index/queue to the seeds for start/restart.
+ *
+ * 2. Where routing decisions are resolved
+ *    - The `taken` value comes from the pure flowSemantics helpers
+ *      (evaluateConditionBranches / pickRouteByKeyword / evaluateKeywordGuardrail),
+ *      shared by the simulated and live engines so both behave identically.
+ *    - resolveCondition() then maps `taken` to one outgoing edge (by label,
+ *      else target id) and returns the single taken target, the updated skip
+ *      set, and the newly-skipped ids. Routing node types are ROUTING_TYPES =
+ *      condition, router, guardrail, evaluator (flowSemantics.isRoutingType).
+ *
+ * 3. How skip-marking works
+ *    - When a routing node takes one edge, every node reachable ONLY via the
+ *      non-taken edges (not also reachable from the taken edge, not already
+ *      executed, not the routing node itself) is added to skippedNodeIds and
+ *      gets a 'skipped' trace entry. scheduleNextNodes/enqueueTargets never
+ *      enqueue a skipped node, and the pending tail is pruned of them.
+ *
+ * 4. How joins are deferred
+ *    - A join at the queue head whose incoming branches have not all executed
+ *      or been skipped (joinReadiness) is moved to the queue tail WITHOUT
+ *      consuming visit budget. A per-join defer counter bounds the wait to the
+ *      pending-queue length so an unreachable source can't livelock the run.
+ *
+ * 5. What still assumes a flat queue
+ *    - Nothing prebuilds the whole run. The only residual flatness is
+ *      cosmetic: progress is reported as currentNodeIndex / queue.length
+ *      (MetricsBar) over the growing array, and finished() is an index check.
+ *      Both are intentional and consistent with the dynamic growth model.
+ *
+ * Inner Subgraph nodes run an isolated copy of this same walker (runSubgraph),
+ * mirroring the seed/skip/join/visit rules on their own local state.
+ * ─────────────────────────────────────────────────────────────────────────
+ */
 
 /** Node types that take part in the simulated execution sequence. */
 const SIMULATED_TYPES: AgentFlowNodeType[] = [
@@ -142,6 +198,32 @@ let visitCounts = new Map<string, number>()
 // the wait so an unreachable source can't livelock the run.
 let joinDeferCounts = new Map<string, number>()
 
+/**
+ * ── Map virtual-node expansion (per-item simulation) ─────────────────────
+ * When a Map node executes, it expands its body (every flow node between it
+ * and the downstream Join) into N parallel copies — one per item. Each copy
+ * is a "virtual node" with id `<bodyId>__map_<i>`; it has no canvas presence
+ * but is enqueued, executed, traced, and shows up in nodeOutputs like any
+ * real node. The real body nodes are skip-marked so the join's CANVAS source
+ * (the body terminal) counts as satisfied; the join then waits on the union
+ * of canvas sources + virtual terminals via flowSources(joinId).
+ *
+ * Lifetimes: scoped to a run. Cleared by stop()/start()/restart().
+ */
+let virtualNodes = new Map<string, AgentFlowNode>()
+let virtualSuccessors = new Map<string, string[]>()
+let virtualJoinSources = new Map<string, Set<string>>()
+let virtualParents = new Map<string, string>()
+let virtualMeta = new Map<string, { item: string; index: number }>()
+
+function clearVirtualState() {
+  virtualNodes = new Map()
+  virtualSuccessors = new Map()
+  virtualJoinSources = new Map()
+  virtualParents = new Map()
+  virtualMeta = new Map()
+}
+
 function abortInFlight() {
   abortController?.abort()
   abortController = null
@@ -198,6 +280,8 @@ function reachableFrom(
 }
 
 function findNode(id: string): AgentFlowNode | undefined {
+  const virtual = virtualNodes.get(id)
+  if (virtual) return virtual
   return useCanvasStore.getState().nodes.find((n) => n.id === id)
 }
 
@@ -211,6 +295,13 @@ interface SubgraphResult {
   trace: TraceEntry[]
   stepCount: number
   error?: string
+  /**
+   * Fork of the parent transcript after the inner run (seed + any live/
+   * simulated assistant turns appended inside the subgraph). The caller only
+   * merges this back into the parent's `messages` when the Subgraph node's
+   * `appendToParent` is enabled; otherwise it is discarded.
+   */
+  localMessages?: ChatMessage[]
 }
 
 /**
@@ -313,219 +404,100 @@ function mergeSubgraphOutput(
   }
 }
 
-/**
- * Isolated sub-walker for a Subgraph node's inner graph. Mirrors the parent
- * walker's queue/visit/skip/join semantics on its own copies of that state —
- * the parent's executionQueue, visitCounts, nodeOutputs, messages etc. are
- * never read or mutated. Always uses fakeOutputFor; there is no live mode for
- * inner graphs. Aborts if `parentRunToken` no longer matches the module-level
- * `runToken` (the parent run was stopped/paused/restarted while this was in
- * flight).
- */
-async function runSubgraph(
-  subgraphNodes: AgentFlowNode[],
-  subgraphEdges: AgentFlowEdge[],
-  inputState: Record<string, unknown>,
-  parentRunToken: number,
-  parentNodeId: string,
-): Promise<SubgraphResult> {
-  if (subgraphNodes.length === 0) {
-    return { output: {}, trace: [], stepCount: 0 }
-  }
-
-  const ids = new Set(subgraphNodes.map((n) => n.id))
-  const edges = subgraphEdges.filter((e) => ids.has(e.source) && ids.has(e.target))
-  const nodeById = new Map(subgraphNodes.map((n) => [n.id, n]))
-  const targets = (nodeId: string) =>
-    edges.filter((e) => e.source === nodeId).map((e) => e.target)
-  const sources = (nodeId: string) =>
-    edges.filter((e) => e.target === nodeId).map((e) => e.source)
-
-  const hasIncoming = new Set(edges.map((e) => e.target))
-  const starts = subgraphNodes.filter((n) => n.type === 'start').map((n) => n.id)
-  const entries =
-    starts.length > 0
-      ? starts
-      : subgraphNodes.filter((n) => !hasIncoming.has(n.id)).map((n) => n.id)
-  if (entries.length === 0) {
-    return { output: {}, trace: [], stepCount: 0, error: 'subgraph has no entry node' }
-  }
-
-  const visitCounts = new Map<string, number>()
-  const executedIds = new Set<string>()
-  let skippedIds = new Set<string>()
-  const localMessages: ChatMessage[] = Array.isArray(inputState.messages)
-    ? [...(inputState.messages as ChatMessage[])]
-    : []
-  const localOutputs: Record<string, unknown> = { ...inputState }
-  const deferCounts = new Map<string, number>()
-  const trace: TraceEntry[] = []
-
-  const queue = [...entries]
-  for (const id of entries) visitCounts.set(id, 1)
-  let stepCount = 0
-  let i = 0
-
-  while (i < queue.length) {
-    const nodeId = queue[i]
-    i++
-    const node = nodeById.get(nodeId)
-    if (!node || skippedIds.has(nodeId)) continue
-
-    // Join barrier: defer (re-queue) until every incoming branch has run or
-    // been skipped, bounded by the remaining queue length.
-    if (node.type === 'join') {
-      const ready = joinReadiness(sources(nodeId), executedIds, skippedIds)
-      const pending = queue.length - i
-      const deferred = deferCounts.get(nodeId) ?? 0
-      if (!ready && deferred < pending) {
-        deferCounts.set(nodeId, deferred + 1)
-        queue.push(nodeId)
-        continue
-      }
-    }
-
-    if (parentRunToken !== runToken) {
-      return { output: {}, trace: [], stepCount: 0, error: 'aborted' }
-    }
-    const startedAt = Date.now()
-    await delay(nodeStepDurationMs(node.type))
-    if (parentRunToken !== runToken) {
-      return { output: {}, trace: [], stepCount: 0, error: 'aborted' }
-    }
-
-    let output: unknown = fakeOutputFor(node, '')
-    const latest = [...localMessages].reverse()[0]?.content ?? ''
-    const forceElse = (visitCounts.get(nodeId) ?? 1) >= MAX_NODE_VISITS
-
-    if (node.type === 'condition') {
-      const branches = node.data.branches ?? []
-      const decision = evaluateConditionBranches(branches, latest, forceElse)
-      output = {
-        evaluated: branches,
-        taken: decision.taken,
-        matched: decision.matched,
-        forced_else: forceElse,
-      }
-    } else if (node.type === 'router') {
-      const decision = pickRouteByKeyword(node.data.routes ?? [], latest)
-      output = {
-        routes: node.data.routes ?? [],
-        taken: decision.taken,
-        matched_on: decision.matchedOn,
-      }
-    } else if (node.type === 'evaluator') {
-      const branches = node.data.evalBranches ?? ['pass', 'fail']
-      const decision = evaluateConditionBranches(branches, latest, forceElse)
-      output = {
-        score_type: node.data.scoreType ?? 'pass_fail',
-        evaluated: branches,
-        taken: decision.taken,
-        matched: decision.matched,
-        forced_else: forceElse,
-        note: '(simulated judge)',
-      }
-    } else if (node.type === 'guardrail') {
-      if ((node.data.checkType ?? 'keyword') === 'keyword') {
-        const decision = evaluateKeywordGuardrail(node.data.criteria ?? '', latest)
-        output = { taken: decision.taken, matched: decision.matched }
-      } else {
-        output = { taken: 'pass', note: '(simulated judge)' }
-      }
-    } else if (node.type === 'join') {
-      const inputs = sources(nodeId)
-        .filter((s) => executedIds.has(s))
-        .map((s) => ({ source: s, output: localOutputs[s] }))
-      output = mergeJoinInputs(inputs, node.data.mergeStrategy ?? 'concat')
-    }
-
-    if (node.type === 'llm' || node.type === 'agent') {
-      const o = output as { content?: unknown; final_answer?: unknown }
-      const content = o?.content ?? o?.final_answer
-      if (typeof content === 'string' && content !== '') {
-        localMessages.push({ role: 'assistant', content })
-      }
-    }
-
-    localOutputs[nodeId] = output
-    executedIds.add(nodeId)
-    stepCount++
-    trace.push({
-      id: crypto.randomUUID(),
-      at: Date.now(),
-      nodeId,
-      nodeName: node.data.label,
-      nodeType: node.type ?? 'unknown',
-      status: 'ok',
-      engine: 'simulated',
-      durationMs: Date.now() - startedAt,
-      input: '—',
-      output: truncate(JSON.stringify(output), 120),
-      parentNodeId,
-    })
-
-    let nextTargets: string[]
-    if (isRoutingType(node.type)) {
-      const taken = (output as { taken?: unknown } | null)?.taken
-      const resolution = resolveSubgraphCondition(
-        nodeId,
-        taken,
-        edges,
-        executedIds,
-        skippedIds,
-      )
-      skippedIds = resolution.skipped
-      nextTargets = resolution.targets
-      for (const skId of resolution.newlySkipped) {
-        const skNode = nodeById.get(skId)
-        if (!skNode) continue
-        trace.push({
-          id: crypto.randomUUID(),
-          at: Date.now(),
-          nodeId: skId,
-          nodeName: skNode.data.label,
-          nodeType: skNode.type ?? 'unknown',
-          status: 'skipped',
-          durationMs: 0,
-          input: '—',
-          output: 'branch not taken',
-          parentNodeId,
-        })
-      }
-    } else {
-      nextTargets = targets(nodeId)
-    }
-
-    for (const t of nextTargets) {
-      if (skippedIds.has(t)) continue
-      if ((visitCounts.get(t) ?? 0) >= MAX_NODE_VISITS) continue
-      if (queue.slice(i).includes(t)) continue
-      visitCounts.set(t, (visitCounts.get(t) ?? 0) + 1)
-      queue.push(t)
-    }
-  }
-
-  // Expose the inner graph's terminal Output node (if any) under a stable
-  // `output` key so outputMapping can reference it regardless of its id.
-  const outputNode = subgraphNodes.find(
-    (n) => n.type === 'output' && executedIds.has(n.id),
-  )
-  if (outputNode) {
-    localOutputs.output = localOutputs[outputNode.id]
-  }
-
-  return { output: localOutputs, trace, stepCount }
-}
-
 export const useSimulationStore = create<SimulationState>((set, get) => {
   const finished = () =>
     get().currentNodeIndex >= get().executionQueue.length
 
   const finishRun = () => {
-    set({ isRunning: false })
     const metrics = useSimulationMetricsStore.getState()
     metrics.pauseTimer()
     metrics.setActiveNodeCount(0)
+
+    const trace = get().trace
+    const messages = get().messages
+
+    const costSummary = buildCostSummary(trace)
+    metrics.setCostSummary(costSummary)
+
+    const evalStore = useEvalStore.getState()
+    if (evalStore.testCases.length > 0) {
+      const outputTrace = [...trace]
+        .reverse()
+        .find((e) => e.nodeType === 'output' && e.status === 'ok')
+      const lastAssistant = [...messages]
+        .reverse()
+        .find((m) => m.role === 'assistant')
+      const actualOutput = outputTrace?.output ?? lastAssistant?.content ?? ''
+      const results: EvalResult[] = evalStore.testCases.map((tc) =>
+        scoreTestCase(tc, actualOutput),
+      )
+      evalStore.addRun({
+        id: crypto.randomUUID(),
+        runAt: Date.now(),
+        results,
+        qualityScore: computeQualityScore(results),
+      })
+    }
+
+    set({ isRunning: false })
+  }
+
+  const buildCostSummary = (trace: TraceEntry[]): RunCostSummary => {
+    const COSTED_TYPES = new Set([
+      'llm',
+      'agent',
+      'router',
+      'guardrail',
+      'evaluator',
+      'supervisor',
+      'swarmWorker',
+    ])
+    const { activeProvider, settings } = useLLMConfigStore.getState()
+    const globalModel = settings[activeProvider]?.model ?? ''
+
+    const nodesById = new Map<string, AgentFlowNode>()
+    for (const n of useCanvasStore.getState().nodes) nodesById.set(n.id, n)
+
+    const entries: NodeCostEntry[] = []
+    let resolvedModel = globalModel
+    for (const t of trace) {
+      if (!COSTED_TYPES.has(t.nodeType)) continue
+      if (t.status !== 'ok') continue
+      const node = nodesById.get(t.nodeId)
+      const nodeModel =
+        node?.data.modelOverride && node.data.modelOverride.trim() !== ''
+          ? node.data.modelOverride
+          : (node?.data.model && node.data.model.trim() !== ''
+              ? node.data.model
+              : globalModel)
+      if (nodeModel && nodeModel.trim() !== '') resolvedModel = nodeModel
+      const inTokens = estimateTokens(t.input)
+      const outTokens = estimateTokens(t.output)
+      const total = inTokens + outTokens
+      const tokensIn = Math.round(total * 0.7)
+      const tokensOut = total - tokensIn
+      const pricing = getPricing(nodeModel || globalModel)
+      const costUsd =
+        (tokensIn / 1_000_000) * pricing.inputPer1M +
+        (tokensOut / 1_000_000) * pricing.outputPer1M
+      entries.push({
+        nodeId: t.nodeId,
+        nodeName: t.nodeName,
+        nodeType: t.nodeType,
+        tokensIn,
+        tokensOut,
+        estimatedCostUsd: costUsd,
+      })
+    }
+    return {
+      entries,
+      totalTokens: entries.reduce(
+        (s, e) => s + e.tokensIn + e.tokensOut,
+        0,
+      ),
+      totalCostUsd: entries.reduce((s, e) => s + e.estimatedCostUsd, 0),
+      model: resolvedModel,
+    }
   }
 
   const flushStreams = () => {
@@ -567,8 +539,15 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
         .map((n) => n.id),
     )
 
-  /** Flow-node successors of a node (what the walker enqueues next). */
+  /**
+   * Flow-node successors of a node (what the walker enqueues next). For
+   * virtual nodes (Map per-item branches), edges live in the virtualSuccessors
+   * sidecar; the canvas has no record of them.
+   */
   const flowTargets = (nodeId: string): string[] => {
+    if (virtualNodes.has(nodeId)) {
+      return virtualSuccessors.get(nodeId) ?? []
+    }
     const ids = flowNodeIds()
     return useCanvasStore
       .getState()
@@ -576,13 +555,20 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
       .map((e) => e.target)
   }
 
-  /** Flow-node predecessors of a node (the branches a join waits on). */
+  /**
+   * Flow-node predecessors of a node (the branches a join waits on). Joins
+   * also pick up their Map's virtual terminal branches via virtualJoinSources,
+   * unioned with the canvas sources, so joinReadiness waits for every per-item
+   * branch to complete.
+   */
   const flowSources = (nodeId: string): string[] => {
     const ids = flowNodeIds()
-    return useCanvasStore
+    const canvas = useCanvasStore
       .getState()
       .edges.filter((e) => e.target === nodeId && ids.has(e.source))
       .map((e) => e.source)
+    const virtual = virtualJoinSources.get(nodeId)
+    return virtual ? [...canvas, ...virtual] : canvas
   }
 
   /**
@@ -696,6 +682,200 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
       skipped,
       newlySkipped,
     }
+  }
+
+  /**
+   * Dynamic scheduling step: given the node that just finished and its output,
+   * decide which nodes run next and how the pending queue grows. This is the
+   * heart of the dynamic walker — successors are discovered HERE, after the
+   * current node runs, never prebuilt. Routing nodes contribute only their
+   * taken edge (the rest are skip-marked + traced via resolveCondition); every
+   * other node fans out to all flow targets. Returns the advanced index, the
+   * grown-and-pruned queue, the updated skip set, and the skipped-branch trace
+   * entries the caller records alongside the node's own entry.
+   */
+  const scheduleNextNodes = (
+    node: AgentFlowNode,
+    nodeId: string,
+    output: unknown,
+  ): {
+    nextIndex: number
+    nextQueue: string[]
+    skipped: Set<string>
+    skipEntries: TraceEntry[]
+  } => {
+    let skipped = get().skippedNodeIds
+    let nextTargets: string[]
+    const skipEntries: TraceEntry[] = []
+    if (isRoutingType(node.type)) {
+      const taken = (output as { taken?: unknown } | null)?.taken
+      const resolution = resolveCondition(nodeId, taken)
+      skipped = resolution.skipped
+      nextTargets = resolution.targets
+      for (const skippedId of resolution.newlySkipped) {
+        const skippedNode = findNode(skippedId)
+        if (!skippedNode) continue
+        skipEntries.push({
+          id: crypto.randomUUID(),
+          at: Date.now(),
+          nodeId: skippedId,
+          nodeName: skippedNode.data.label,
+          nodeType: skippedNode.type ?? 'unknown',
+          status: 'skipped',
+          durationMs: 0,
+          input: '—',
+          output: 'branch not taken',
+        })
+      }
+    } else {
+      nextTargets = flowTargets(nodeId)
+    }
+
+    const nextIndex = get().currentNodeIndex + 1
+    const grown = enqueueTargets(
+      get().executionQueue,
+      nextIndex,
+      skipped,
+      nextTargets,
+    )
+    // Drop freshly skip-marked nodes from the pending part of the queue.
+    const nextQueue = [
+      ...grown.slice(0, nextIndex),
+      ...grown.slice(nextIndex).filter((id) => !skipped.has(id)),
+    ]
+    return { nextIndex, nextQueue, skipped, skipEntries }
+  }
+
+  /**
+   * Find the first Join node reachable forward from a Map node. Returns
+   * undefined if no Join exists downstream (then Map falls back to the
+   * original single-step fan animation, no virtual expansion).
+   */
+  const findDownstreamJoin = (mapId: string): string | undefined => {
+    const { edges, nodes } = useCanvasStore.getState()
+    const ids = flowNodeIds()
+    const nodeById = new Map(nodes.map((n) => [n.id, n]))
+    const visited = new Set<string>([mapId])
+    const queue = edges
+      .filter((e) => e.source === mapId && ids.has(e.target))
+      .map((e) => e.target)
+    while (queue.length > 0) {
+      const cur = queue.shift()
+      if (cur === undefined || visited.has(cur)) continue
+      visited.add(cur)
+      if (nodeById.get(cur)?.type === 'join') return cur
+      for (const e of edges) {
+        if (e.source === cur && ids.has(e.target) && !visited.has(e.target)) {
+          queue.push(e.target)
+        }
+      }
+    }
+    return undefined
+  }
+
+  /** All real flow nodes strictly between Map and Join (exclusive both ends). */
+  const findBodyNodes = (mapId: string, joinId: string): Set<string> => {
+    const { edges } = useCanvasStore.getState()
+    const ids = flowNodeIds()
+    const body = new Set<string>()
+    const queue = edges
+      .filter(
+        (e) => e.source === mapId && ids.has(e.target) && e.target !== joinId,
+      )
+      .map((e) => e.target)
+    while (queue.length > 0) {
+      const cur = queue.shift()
+      if (cur === undefined || cur === joinId || body.has(cur)) continue
+      body.add(cur)
+      for (const e of edges) {
+        if (
+          e.source === cur &&
+          ids.has(e.target) &&
+          e.target !== joinId &&
+          !body.has(e.target)
+        ) {
+          queue.push(e.target)
+        }
+      }
+    }
+    return body
+  }
+
+  /**
+   * Expand a Map node into per-item virtual branches. Populates virtualNodes,
+   * virtualSuccessors, virtualJoinSources, virtualParents, virtualMeta. Returns
+   * the entry virtual ids to enqueue, the real body ids to skip-mark, the
+   * resolved item list, and the join id. Returns null when no downstream join
+   * was found (caller falls back to the legacy single-step fan).
+   */
+  const expandMap = (
+    mapNode: AgentFlowNode,
+    mapId: string,
+  ): {
+    items: string[]
+    entryVids: string[]
+    bodyIds: Set<string>
+    joinId: string
+  } | null => {
+    const joinId = findDownstreamJoin(mapId)
+    if (!joinId) return null
+    const body = findBodyNodes(mapId, joinId)
+    if (body.size === 0) return null
+
+    const configured = (mapNode.data.mapItems ?? []).filter(
+      (s) => s.trim() !== '',
+    )
+    const items =
+      configured.length > 0
+        ? configured
+        : Array.from(
+            { length: Math.max(1, mapNode.data.mapCount ?? 3) },
+            (_, i) => `item_${i + 1}`,
+          )
+
+    const { edges } = useCanvasStore.getState()
+    const bodyEntries = edges
+      .filter((e) => e.source === mapId && body.has(e.target))
+      .map((e) => e.target)
+    const bodyTerminals = new Set(
+      edges
+        .filter((e) => body.has(e.source) && e.target === joinId)
+        .map((e) => e.source),
+    )
+
+    const entryVids: string[] = []
+    const joinSources =
+      virtualJoinSources.get(joinId) ?? new Set<string>()
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i]
+      for (const bId of body) {
+        const real = findNode(bId)
+        if (!real) continue
+        const vid = `${bId}__map_${i}`
+        const synth: AgentFlowNode = {
+          ...real,
+          id: vid,
+          data: { ...real.data, label: `${real.data.label} [item ${item}]` },
+        }
+        virtualNodes.set(vid, synth)
+        virtualParents.set(vid, mapId)
+        virtualMeta.set(vid, { item, index: i })
+      }
+      for (const e of edges) {
+        if (!body.has(e.source)) continue
+        if (body.has(e.target)) {
+          const sv = `${e.source}__map_${i}`
+          const tv = `${e.target}__map_${i}`
+          const prev = virtualSuccessors.get(sv) ?? []
+          virtualSuccessors.set(sv, [...prev, tv])
+        }
+      }
+      for (const t of bodyTerminals) joinSources.add(`${t}__map_${i}`)
+      for (const b of bodyEntries) entryVids.push(`${b}__map_${i}`)
+    }
+    virtualJoinSources.set(joinId, joinSources)
+    return { items, entryVids, bodyIds: body, joinId }
   }
 
   /**
@@ -935,6 +1115,415 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
   }
 
   /**
+   * Isolated sub-walker for a Subgraph node's inner graph. Mirrors the parent
+   * walker's queue/visit/skip/join semantics on its own copies of that state —
+   * the parent's executionQueue, visitCounts, nodeOutputs etc. are never read
+   * or mutated. `localMessages` starts as a fork of the parent transcript
+   * (seeded by buildSubgraphInput via inputState.messages); it is only merged
+   * back into the parent's `messages` by the caller when the Subgraph node's
+   * `appendToParent` is enabled.
+   *
+   * When `liveMode` is true, inner nodes whose type is in LIVE_EXECUTED_TYPES
+   * make real provider calls — reusing the SAME module-level abortController
+   * as the parent walker, so Stop/Pause aborts an in-flight inner call too.
+   * Every other inner node type stays simulated via fakeOutputFor/the pure
+   * flowSemantics helpers, exactly as in the non-live path. Aborts if
+   * `parentRunToken` no longer matches the module-level `runToken` (the parent
+   * run was stopped/paused/restarted while this was in flight) — checked
+   * after every await, live or simulated.
+   */
+  const runSubgraph = async (
+    subgraphNodes: AgentFlowNode[],
+    subgraphEdges: AgentFlowEdge[],
+    inputState: Record<string, unknown>,
+    parentRunToken: number,
+    parentNodeId: string,
+    liveMode: boolean,
+  ): Promise<SubgraphResult> => {
+    if (subgraphNodes.length === 0) {
+      return { output: {}, trace: [], stepCount: 0 }
+    }
+
+    const metrics = useSimulationMetricsStore.getState()
+    const ids = new Set(subgraphNodes.map((n) => n.id))
+    const edges = subgraphEdges.filter((e) => ids.has(e.source) && ids.has(e.target))
+    const nodeById = new Map(subgraphNodes.map((n) => [n.id, n]))
+    const targets = (nodeId: string) =>
+      edges.filter((e) => e.source === nodeId).map((e) => e.target)
+    const sources = (nodeId: string) =>
+      edges.filter((e) => e.target === nodeId).map((e) => e.source)
+
+    const hasIncoming = new Set(edges.map((e) => e.target))
+    const starts = subgraphNodes.filter((n) => n.type === 'start').map((n) => n.id)
+    const entries =
+      starts.length > 0
+        ? starts
+        : subgraphNodes.filter((n) => !hasIncoming.has(n.id)).map((n) => n.id)
+    if (entries.length === 0) {
+      return { output: {}, trace: [], stepCount: 0, error: 'subgraph has no entry node' }
+    }
+
+    const visitCounts = new Map<string, number>()
+    const executedIds = new Set<string>()
+    let skippedIds = new Set<string>()
+    const localMessages: ChatMessage[] = Array.isArray(inputState.messages)
+      ? [...(inputState.messages as ChatMessage[])]
+      : []
+    const localOutputs: Record<string, unknown> = { ...inputState }
+    const deferCounts = new Map<string, number>()
+    const trace: TraceEntry[] = []
+
+    const queue = [...entries]
+    for (const id of entries) visitCounts.set(id, 1)
+    let stepCount = 0
+    let i = 0
+
+    while (i < queue.length) {
+      const nodeId = queue[i]
+      i++
+      const node = nodeById.get(nodeId)
+      if (!node || skippedIds.has(nodeId)) continue
+
+      // Join barrier: defer (re-queue) until every incoming branch has run or
+      // been skipped, bounded by the remaining queue length.
+      if (node.type === 'join') {
+        const ready = joinReadiness(sources(nodeId), executedIds, skippedIds)
+        const pending = queue.length - i
+        const deferred = deferCounts.get(nodeId) ?? 0
+        if (!ready && deferred < pending) {
+          deferCounts.set(nodeId, deferred + 1)
+          queue.push(nodeId)
+          continue
+        }
+      }
+
+      if (parentRunToken !== runToken) {
+        return { output: {}, trace: [], stepCount: 0, error: 'aborted' }
+      }
+      const startedAt = Date.now()
+      await delay(nodeStepDurationMs(node.type))
+      if (parentRunToken !== runToken) {
+        return { output: {}, trace: [], stepCount: 0, error: 'aborted' }
+      }
+
+      let output: unknown = fakeOutputFor(node, '')
+      const latest = [...localMessages].reverse()[0]?.content ?? ''
+      const forceElse = (visitCounts.get(nodeId) ?? 1) >= MAX_NODE_VISITS
+
+      if (node.type === 'condition') {
+        const branches = node.data.branches ?? []
+        const decision = evaluateConditionBranches(branches, latest, forceElse)
+        output = {
+          evaluated: branches,
+          taken: decision.taken,
+          matched: decision.matched,
+          forced_else: forceElse,
+        }
+      } else if (node.type === 'router') {
+        const decision = pickRouteByKeyword(node.data.routes ?? [], latest)
+        output = {
+          routes: node.data.routes ?? [],
+          taken: decision.taken,
+          matched_on: decision.matchedOn,
+        }
+      } else if (node.type === 'evaluator') {
+        const branches = node.data.evalBranches ?? ['pass', 'fail']
+        const decision = evaluateConditionBranches(branches, latest, forceElse)
+        output = {
+          score_type: node.data.scoreType ?? 'pass_fail',
+          evaluated: branches,
+          taken: decision.taken,
+          matched: decision.matched,
+          forced_else: forceElse,
+          note: '(simulated judge)',
+        }
+      } else if (node.type === 'guardrail') {
+        if ((node.data.checkType ?? 'keyword') === 'keyword') {
+          const decision = evaluateKeywordGuardrail(node.data.criteria ?? '', latest)
+          output = { taken: decision.taken, matched: decision.matched }
+        } else {
+          output = { taken: 'pass', note: '(simulated judge)' }
+        }
+      } else if (node.type === 'join') {
+        const inputs = sources(nodeId)
+          .filter((s) => executedIds.has(s))
+          .map((s) => ({ source: s, output: localOutputs[s] }))
+        output = mergeJoinInputs(inputs, node.data.mergeStrategy ?? 'concat')
+      }
+
+      // Live execution: nodes in LIVE_EXECUTED_TYPES make real provider calls
+      // against the local transcript fork, reusing the parent's
+      // abortController so Stop/Pause cancels an in-flight inner call.
+      const isLive =
+        liveMode && node.type !== undefined && LIVE_EXECUTED_TYPES.includes(node.type)
+      if (isLive) {
+        switch (node.type) {
+          case 'start': {
+            output = {
+              inputs: { message: localMessages[localMessages.length - 1]?.content ?? '' },
+            }
+            break
+          }
+          case 'llm': {
+            const base = useLLMConfigStore.getState().getConfig()
+            const override = (node.data.modelOverride ?? '').trim()
+            const config =
+              override === ''
+                ? base
+                : { ...base, settings: { ...base.settings, model: override } }
+            const chat: ChatMessage[] = [
+              {
+                role: 'system',
+                content: node.data.systemPrompt ?? 'You are a helpful assistant.',
+              },
+              ...localMessages,
+            ]
+            set({ nodeStreams: { ...get().nodeStreams, [nodeId]: '' } })
+            abortController?.abort()
+            abortController = new AbortController()
+            const full = await streamChat(
+              config,
+              chat,
+              (chunk) => appendStream(nodeId, chunk),
+              abortController.signal,
+            )
+            flushStreams()
+            if (parentRunToken !== runToken) {
+              return { output: {}, trace: [], stepCount: 0, error: 'aborted' }
+            }
+            localMessages.push({ role: 'assistant', content: full })
+            metrics.addTokens(estimateTokens(full))
+            output = {
+              role: 'assistant',
+              content: truncate(full, 400),
+              model: node.data.model ?? '—',
+              temperature: node.data.temperature ?? 0.7,
+            }
+            break
+          }
+          case 'router': {
+            const routes = (node.data.routes ?? []).filter(Boolean)
+            if (routes.length === 0) {
+              output = { taken: 'default', matched_on: null }
+              break
+            }
+            const base = useLLMConfigStore.getState().getConfig()
+            const override = (node.data.modelOverride ?? '').trim()
+            const config =
+              override === ''
+                ? base
+                : { ...base, settings: { ...base.settings, model: override } }
+            const chat: ChatMessage[] = [
+              {
+                role: 'system',
+                content: `${node.data.routingPrompt ?? 'Classify the request.'}\nRespond with exactly one of: ${routes.join(', ')}. Reply with the route name only.`,
+              },
+              ...localMessages,
+            ]
+            set({ nodeStreams: { ...get().nodeStreams, [nodeId]: '' } })
+            abortController?.abort()
+            abortController = new AbortController()
+            const reply = await streamChat(
+              config,
+              chat,
+              (chunk) => appendStream(nodeId, chunk),
+              abortController.signal,
+            )
+            flushStreams()
+            if (parentRunToken !== runToken) {
+              return { output: {}, trace: [], stepCount: 0, error: 'aborted' }
+            }
+            metrics.addTokens(estimateTokens(reply))
+            const lower = reply.toLowerCase()
+            const matched = routes.find((r) => lower.includes(r.toLowerCase()))
+            output = {
+              taken: matched ?? routes[0],
+              matched_on: matched ?? null,
+              reply: truncate(reply, 120),
+            }
+            break
+          }
+          case 'guardrail': {
+            if ((node.data.checkType ?? 'keyword') !== 'keyword') {
+              const base = useLLMConfigStore.getState().getConfig()
+              const override = (node.data.modelOverride ?? '').trim()
+              const config =
+                override === ''
+                  ? base
+                  : { ...base, settings: { ...base.settings, model: override } }
+              const chat: ChatMessage[] = [
+                {
+                  role: 'system',
+                  content: `${node.data.criteria ?? 'Judge whether the response is acceptable.'}\nReply with exactly PASS or FAIL.`,
+                },
+                ...localMessages,
+              ]
+              set({ nodeStreams: { ...get().nodeStreams, [nodeId]: '' } })
+              abortController?.abort()
+              abortController = new AbortController()
+              const reply = await streamChat(
+                config,
+                chat,
+                (chunk) => appendStream(nodeId, chunk),
+                abortController.signal,
+              )
+              flushStreams()
+              if (parentRunToken !== runToken) {
+                return { output: {}, trace: [], stepCount: 0, error: 'aborted' }
+              }
+              metrics.addTokens(estimateTokens(reply))
+              const taken = reply.toLowerCase().includes('fail') ? 'fail' : 'pass'
+              output = { taken, verdict: truncate(reply, 80) }
+            }
+            break
+          }
+          case 'evaluator': {
+            const branches = (node.data.evalBranches ?? ['pass', 'fail']).filter(Boolean)
+            if (branches.length === 0) {
+              output = { taken: 'pass', note: 'no branches configured' }
+              break
+            }
+            const base = useLLMConfigStore.getState().getConfig()
+            const override = (node.data.modelOverride ?? '').trim()
+            const config =
+              override === ''
+                ? base
+                : { ...base, settings: { ...base.settings, model: override } }
+            const rubric = node.data.scoringPrompt ?? 'Score the response.'
+            const chat: ChatMessage[] = [
+              {
+                role: 'system',
+                content: `${rubric}\nReply with exactly one of: ${branches.join(', ')}. Reply with the branch name only.`,
+              },
+              ...localMessages,
+            ]
+            set({ nodeStreams: { ...get().nodeStreams, [nodeId]: '' } })
+            abortController?.abort()
+            abortController = new AbortController()
+            const reply = await streamChat(
+              config,
+              chat,
+              (chunk) => appendStream(nodeId, chunk),
+              abortController.signal,
+            )
+            flushStreams()
+            if (parentRunToken !== runToken) {
+              return { output: {}, trace: [], stepCount: 0, error: 'aborted' }
+            }
+            metrics.addTokens(estimateTokens(reply))
+            const lower = reply.toLowerCase()
+            const matched = branches.find((b) => lower.includes(b.toLowerCase()))
+            const taken = forceElse
+              ? branches[branches.length - 1]
+              : (matched ?? branches[branches.length - 1])
+            output = {
+              score_type: node.data.scoreType ?? 'pass_fail',
+              evaluated: branches,
+              taken,
+              matched: !forceElse && matched !== undefined,
+              forced_else: forceElse,
+              verdict: truncate(reply, 120),
+            }
+            break
+          }
+          case 'join': {
+            // output already computed above via mergeJoinInputs; append a
+            // transcript summary so downstream live LLM calls see it.
+            const merged = output as { waited_for?: number; merged?: unknown }
+            appendStream(nodeId, JSON.stringify(merged.merged ?? null, null, 2))
+            localMessages.push({
+              role: 'user',
+              content: `[${node.data.label}] merged ${merged.waited_for ?? 0} branch result(s)`,
+            })
+            break
+          }
+          case 'output': {
+            const lastAssistant = [...localMessages].reverse().find((m) => m.role === 'assistant')
+            output = { final_reply: truncate(lastAssistant?.content ?? '', 400) }
+            break
+          }
+        }
+      }
+
+      if (!isLive && (node.type === 'llm' || node.type === 'agent')) {
+        const o = output as { content?: unknown; final_answer?: unknown }
+        const content = o?.content ?? o?.final_answer
+        if (typeof content === 'string' && content !== '') {
+          localMessages.push({ role: 'assistant', content })
+        }
+      }
+
+      localOutputs[nodeId] = output
+      executedIds.add(nodeId)
+      stepCount++
+      trace.push({
+        id: crypto.randomUUID(),
+        at: Date.now(),
+        nodeId,
+        nodeName: node.data.label,
+        nodeType: node.type ?? 'unknown',
+        status: 'ok',
+        engine: isLive ? 'live' : 'simulated',
+        durationMs: Date.now() - startedAt,
+        input: '—',
+        output: truncate(JSON.stringify(output), 120),
+        parentNodeId,
+      })
+
+      let nextTargets: string[]
+      if (isRoutingType(node.type)) {
+        const taken = (output as { taken?: unknown } | null)?.taken
+        const resolution = resolveSubgraphCondition(
+          nodeId,
+          taken,
+          edges,
+          executedIds,
+          skippedIds,
+        )
+        skippedIds = resolution.skipped
+        nextTargets = resolution.targets
+        for (const skId of resolution.newlySkipped) {
+          const skNode = nodeById.get(skId)
+          if (!skNode) continue
+          trace.push({
+            id: crypto.randomUUID(),
+            at: Date.now(),
+            nodeId: skId,
+            nodeName: skNode.data.label,
+            nodeType: skNode.type ?? 'unknown',
+            status: 'skipped',
+            durationMs: 0,
+            input: '—',
+            output: 'branch not taken',
+            parentNodeId,
+          })
+        }
+      } else {
+        nextTargets = targets(nodeId)
+      }
+
+      for (const t of nextTargets) {
+        if (skippedIds.has(t)) continue
+        if ((visitCounts.get(t) ?? 0) >= MAX_NODE_VISITS) continue
+        if (queue.slice(i).includes(t)) continue
+        visitCounts.set(t, (visitCounts.get(t) ?? 0) + 1)
+        queue.push(t)
+      }
+    }
+
+    // Expose the inner graph's terminal Output node (if any) under a stable
+    // `output` key so outputMapping can reference it regardless of its id.
+    const outputNode = subgraphNodes.find(
+      (n) => n.type === 'output' && executedIds.has(n.id),
+    )
+    if (outputNode) {
+      localOutputs.output = localOutputs[outputNode.id]
+    }
+
+    return { output: localOutputs, trace, stepCount, localMessages }
+  }
+
+  /**
    * Execute the node at the queue head. `token` must match `runToken` for
    * any state writes after an await — stop/pause/restart bump the token, so
    * results of an execution they interrupted are discarded, never written
@@ -1040,7 +1629,74 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
       // the parent trace alongside this node's own entry.
       let nestedTrace: TraceEntry[] = []
       try {
-        if (get().liveMode) {
+        if (node.type === 'subgraph') {
+          // Subgraph runs its own inner walker regardless of liveMode — the
+          // walker itself routes inner nodes between live and simulated.
+          await delay(nodeStepDurationMs(node.type))
+          output = fakeOutputFor(node, get().userInput)
+          const ref = (node.data.subgraphRef ?? '').trim()
+          if (ref) {
+            let innerNodes: AgentFlowNode[] = []
+            let innerEdges: AgentFlowEdge[] = []
+            let parseError: string | undefined
+            try {
+              const parsed = JSON.parse(ref) as {
+                nodes?: AgentFlowNode[]
+                edges?: AgentFlowEdge[]
+              }
+              innerNodes = parsed.nodes ?? []
+              innerEdges = parsed.edges ?? []
+            } catch {
+              parseError = 'Invalid subgraphRef — not valid JSON'
+            }
+            if (parseError) {
+              output = { subgraph_ran: false, error: parseError }
+            } else {
+              const inputState = buildSubgraphInput(
+                node.data.inputMapping,
+                get().nodeOutputs,
+                get().messages,
+              )
+              const result = await runSubgraph(
+                innerNodes,
+                innerEdges,
+                inputState,
+                token,
+                nodeId,
+                get().liveMode,
+              )
+              if (result.error === 'aborted') return
+              if (result.error) {
+                output = { subgraph_ran: false, error: result.error }
+              } else {
+                output = {
+                  ...mergeSubgraphOutput(result.output, node.data.outputMapping),
+                  _innerStepCount: result.stepCount,
+                }
+                nestedTrace = result.trace
+                if (
+                  node.data.appendToParent &&
+                  result.localMessages &&
+                  result.localMessages.length > 0
+                ) {
+                  const lastAssistant = [...result.localMessages]
+                    .reverse()
+                    .find((m) => m.role === 'assistant')
+                  const summaryContent =
+                    lastAssistant?.content ??
+                    truncate(JSON.stringify(result.output), 400)
+                  set({
+                    messages: [
+                      ...get().messages,
+                      { role: 'assistant', content: summaryContent },
+                    ],
+                  })
+                }
+              }
+            }
+          }
+          if (!get().liveMode) metrics.addTokens(fakeTokensFor(node))
+        } else if (get().liveMode) {
           output = await executeLiveNode(node, nodeId)
         } else {
           const streamText = fakeStreamTextFor(node)
@@ -1101,49 +1757,6 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
             }
           } else if (node.type === 'join') {
             output = mergeJoinForNode(nodeId, node.data.mergeStrategy ?? 'concat')
-          } else if (node.type === 'subgraph') {
-            const ref = (node.data.subgraphRef ?? '').trim()
-            if (ref) {
-              let innerNodes: AgentFlowNode[] = []
-              let innerEdges: AgentFlowEdge[] = []
-              let parseError: string | undefined
-              try {
-                const parsed = JSON.parse(ref) as {
-                  nodes?: AgentFlowNode[]
-                  edges?: AgentFlowEdge[]
-                }
-                innerNodes = parsed.nodes ?? []
-                innerEdges = parsed.edges ?? []
-              } catch {
-                parseError = 'Invalid subgraphRef — not valid JSON'
-              }
-              if (parseError) {
-                output = { subgraph_ran: false, error: parseError }
-              } else {
-                const inputState = buildSubgraphInput(
-                  node.data.inputMapping,
-                  get().nodeOutputs,
-                  get().messages,
-                )
-                const result = await runSubgraph(
-                  innerNodes,
-                  innerEdges,
-                  inputState,
-                  token,
-                  nodeId,
-                )
-                if (result.error === 'aborted') return
-                if (result.error) {
-                  output = { subgraph_ran: false, error: result.error }
-                } else {
-                  output = {
-                    ...mergeSubgraphOutput(result.output, node.data.outputMapping),
-                    _innerStepCount: result.stepCount,
-                  }
-                  nestedTrace = result.trace
-                }
-              }
-            }
           }
           metrics.addTokens(fakeTokensFor(node))
         }
@@ -1192,56 +1805,123 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
         }
       }
 
-      // Walk forward: routing nodes (condition/router/guardrail) follow only
-      // the taken edge (marking the rest skipped); every other node fans out
-      // to all flow targets.
-      let skipped = get().skippedNodeIds
-      let nextTargets: string[]
-      const skipEntries: TraceEntry[] = []
-      if (isRoutingType(node.type)) {
-        const taken = (output as { taken?: unknown } | null)?.taken
-        const resolution = resolveCondition(nodeId, taken)
-        skipped = resolution.skipped
-        nextTargets = resolution.targets
-        for (const skippedId of resolution.newlySkipped) {
-          const skippedNode = findNode(skippedId)
-          if (!skippedNode) continue
-          skipEntries.push({
-            id: crypto.randomUUID(),
-            at: Date.now(),
-            nodeId: skippedId,
-            nodeName: skippedNode.data.label,
-            nodeType: skippedNode.type ?? 'unknown',
-            status: 'skipped',
-            durationMs: 0,
-            input: '—',
-            output: 'branch not taken',
+      // Map node — true per-item simulation: expand into N virtual branches
+      // (one per item), skip-mark the real body, register virtual terminals as
+      // join sources. Falls back to the legacy single-step fan when no
+      // downstream join exists.
+      if (node.type === 'map') {
+        const expansion = expandMap(node, nodeId)
+        if (expansion) {
+          const { items, entryVids, bodyIds, joinId } = expansion
+          const mapOutput = {
+            map_ran: true,
+            item_count: items.length,
+            items,
+            over: node.data.inputExpression ?? 'items',
+            max_parallel: node.data.maxParallel ?? 10,
+            _mapBranchCount: items.length,
+          }
+          const newSkipped = new Set(get().skippedNodeIds)
+          const skipTrace: TraceEntry[] = []
+          for (const bId of bodyIds) {
+            if (newSkipped.has(bId) || get().executedIds.has(bId)) continue
+            newSkipped.add(bId)
+            const bNode = findNode(bId)
+            if (!bNode) continue
+            skipTrace.push({
+              id: crypto.randomUUID(),
+              at: Date.now(),
+              nodeId: bId,
+              nodeName: bNode.data.label,
+              nodeType: bNode.type ?? 'unknown',
+              status: 'skipped',
+              durationMs: 0,
+              input: '—',
+              output: 'expanded into map branches',
+            })
+          }
+          for (const vid of entryVids) {
+            if (!visitCounts.has(vid)) visitCounts.set(vid, 1)
+          }
+          // Set visit budget for every virtual node (entries + interior).
+          for (const vid of virtualNodes.keys()) {
+            if (!visitCounts.has(vid)) visitCounts.set(vid, 1)
+          }
+          const nextIdxMap = get().currentNodeIndex + 1
+          const baseQueue = get().executionQueue
+          // Enqueue the join after the virtual entries — the body's canvas
+          // path is skip-marked, so without this the join is never reached.
+          // joinReadiness will defer it at the head until every virtual
+          // terminal has executed.
+          if (!visitCounts.has(joinId)) visitCounts.set(joinId, 1)
+          const tail = baseQueue
+            .slice(nextIdxMap)
+            .filter((id) => !newSkipped.has(id) && id !== joinId)
+          const grown = [
+            ...baseQueue.slice(0, nextIdxMap),
+            ...entryVids,
+            joinId,
+            ...tail,
+          ]
+          set({
+            nodeOutputs: { ...get().nodeOutputs, [nodeId]: mapOutput },
+            nodeEngines: { ...get().nodeEngines, [nodeId]: engine },
+            trace: [
+              ...get().trace,
+              makeEntry('ok', mapOutput),
+              ...skipTrace,
+            ],
+            executedIds: new Set(get().executedIds).add(nodeId),
+            skippedNodeIds: newSkipped,
+            executionQueue: grown,
+            currentNodeIndex: nextIdxMap,
+            activeId: grown[nextIdxMap] ?? null,
           })
+          useSimulationMetricsStore
+            .getState()
+            .setStep(nextIdxMap, grown.length)
+          if (finished()) finishRun()
+          return
         }
-      } else {
-        nextTargets = flowTargets(nodeId)
       }
 
-      const errored = get().erroredNodeIds
-      const nextIndex = get().currentNodeIndex + 1
-      const grown = enqueueTargets(
-        get().executionQueue,
-        nextIndex,
-        skipped,
-        nextTargets,
+      // Virtual node (a Map per-item branch): inject _mapItem/_mapIndex into
+      // the recorded output so the State Inspector and downstream Join see the
+      // per-item identity. Trace entry is stamped with parentNodeId = mapId.
+      const vMeta = virtualMeta.get(nodeId)
+      if (vMeta && output !== null && typeof output === 'object') {
+        output = {
+          _mapIndex: vMeta.index,
+          _mapItem: vMeta.item,
+          ...(output as Record<string, unknown>),
+        }
+      }
+
+      // Walk forward: routing nodes (condition/router/guardrail/evaluator)
+      // follow only the taken edge (marking the rest skipped); every other
+      // node fans out to all flow targets. Successors are discovered now, after
+      // this node ran — see scheduleNextNodes (the dynamic walker's core).
+      const { nextIndex, nextQueue, skipped, skipEntries } = scheduleNextNodes(
+        node,
+        nodeId,
+        output,
       )
-      // Drop freshly skip-marked nodes from the pending part of the queue.
-      const nextQueue = [
-        ...grown.slice(0, nextIndex),
-        ...grown.slice(nextIndex).filter((id) => !skipped.has(id)),
-      ]
+
+      const errored = get().erroredNodeIds
+      // Stamp parentNodeId on a virtual node's trace entry (Map per-item
+      // branch) so the trace can be grouped by its originating Map node.
+      const baseEntry = makeEntry('ok', output)
+      const parentMapId = virtualParents.get(nodeId)
+      const taggedEntry: TraceEntry = parentMapId
+        ? { ...baseEntry, parentNodeId: parentMapId }
+        : baseEntry
       set({
         erroredNodeIds: errored.includes(nodeId)
           ? errored.filter((id) => id !== nodeId)
           : errored,
         nodeOutputs: { ...get().nodeOutputs, [nodeId]: output },
         nodeEngines: { ...get().nodeEngines, [nodeId]: engine },
-        trace: [...get().trace, makeEntry('ok', output), ...skipEntries, ...nestedTrace],
+        trace: [...get().trace, taggedEntry, ...skipEntries, ...nestedTrace],
         executedIds: new Set(get().executedIds).add(nodeId),
         skippedNodeIds: skipped,
         executionQueue: nextQueue,
@@ -1280,6 +1960,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
     discardPendingStreams()
     visitCounts = new Map(executionQueue.map((id) => [id, 1]))
     joinDeferCounts = new Map()
+    clearVirtualState()
     set({
       currentNodeIndex: 0,
       executionQueue,
@@ -1338,6 +2019,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
       discardPendingStreams()
       visitCounts = new Map()
       joinDeferCounts = new Map()
+      clearVirtualState()
       set({
         isActive: false,
         isRunning: false,

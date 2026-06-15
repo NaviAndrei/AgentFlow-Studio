@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import type { RunCostSummary } from '../types'
 
 interface SimulationMetricsState {
   stepIndex: number
@@ -6,9 +7,11 @@ interface SimulationMetricsState {
   activeNodeCount: number
   elapsedMs: number
   tokens: number
+  costSummary: RunCostSummary | null
   setStep: (index: number, total: number) => void
   setActiveNodeCount: (count: number) => void
   addTokens: (count: number) => void
+  setCostSummary: (summary: RunCostSummary | null) => void
   startTimer: () => void
   pauseTimer: () => void
   resetAll: () => void
@@ -25,6 +28,7 @@ export const useSimulationMetricsStore = create<SimulationMetricsState>(
     activeNodeCount: 0,
     elapsedMs: 0,
     tokens: 0,
+    costSummary: null,
 
     // stepTotal never shrinks within a run: the queue grows as targets are
     // discovered and joins re-queue while waiting, so a monotonic denominator
@@ -33,6 +37,8 @@ export const useSimulationMetricsStore = create<SimulationMetricsState>(
       set({ stepIndex, stepTotal: Math.max(get().stepTotal, stepTotal) }),
     setActiveNodeCount: (activeNodeCount) => set({ activeNodeCount }),
     addTokens: (count) => set({ tokens: get().tokens + count }),
+
+    setCostSummary: (costSummary) => set({ costSummary }),
 
     startTimer: () => {
       if (interval !== null) return
@@ -62,6 +68,7 @@ export const useSimulationMetricsStore = create<SimulationMetricsState>(
         activeNodeCount: 0,
         elapsedMs: 0,
         tokens: 0,
+        costSummary: null,
       })
     },
   }),

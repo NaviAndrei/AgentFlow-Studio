@@ -70,6 +70,18 @@ body,
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 8px;
   overflow: hidden;
+  transform-origin: bottom right;
+  transform: scale(0.3);
+  opacity: 0.5;
+  transition: transform 200ms ease, opacity 200ms ease, box-shadow 200ms ease, border-color 200ms ease;
+  cursor: pointer;
+}
+
+.react-flow__minimap:hover {
+  transform: scale(1);
+  opacity: 1;
+  border-color: rgba(0, 196, 204, 0.4);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
 }
 
 .react-flow__minimap-mask {

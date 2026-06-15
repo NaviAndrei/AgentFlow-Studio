@@ -8,12 +8,15 @@ import { useSimulationStore } from '../store/simulationStore'
 import { isInsecureRemoteUrl } from '../llm'
 import { discoverMcpTools } from '../utils/mcpClient'
 import { StateInspector } from './StateInspector'
+import { HintIcon } from './HintIcon'
+import { HINTS } from '../data/hints'
 import { MODEL_PRESETS } from '../utils/exportModels'
 import type { AgentFlowNodeData, MemoryType } from '../types'
 
 const inputCls =
   'w-full rounded-md border border-white/10 bg-surface-2 px-2 py-1.5 text-xs text-gray-200 focus:border-accent focus:outline-none'
 const labelCls = 'mb-1 block text-[10px] uppercase tracking-wider text-gray-500'
+const labelHintCls = 'mb-1 flex items-center gap-1 text-[10px] uppercase tracking-wider text-gray-500'
 
 const MEMORY_TYPES: MemoryType[] = ['short-term', 'vector-store', 'checkpointer']
 
@@ -72,7 +75,10 @@ function LLMFields({ data, update }: FieldsProps) {
         </p>
       </label>
       <label className="block">
-        <span className={labelCls}>System prompt</span>
+        <span className={labelHintCls}>
+          System prompt
+          <HintIcon text={HINTS.fields.systemPrompt} />
+        </span>
         <textarea
           className={`${inputCls} h-28 resize-none`}
           value={data.systemPrompt ?? ''}
@@ -80,8 +86,9 @@ function LLMFields({ data, update }: FieldsProps) {
         />
       </label>
       <label className="block">
-        <span className={labelCls}>
+        <span className={labelHintCls}>
           Temperature <span className="text-accent">{temperature.toFixed(1)}</span>
+          <HintIcon text={HINTS.fields.temperature} />
         </span>
         <input
           type="range"
@@ -109,7 +116,10 @@ function AgentFields({ data, update }: FieldsProps) {
         />
       </label>
       <label className="block">
-        <span className={labelCls}>Max iterations</span>
+        <span className={labelHintCls}>
+          Max iterations
+          <HintIcon text={HINTS.fields.maxIterations} />
+        </span>
         <input
           type="number"
           min={1}
@@ -142,7 +152,10 @@ function ToolFields({ data, update }: FieldsProps) {
         />
       </label>
       <label className="block">
-        <span className={labelCls}>Input schema</span>
+        <span className={labelHintCls}>
+          Input schema
+          <HintIcon text={HINTS.fields.toolSchema} />
+        </span>
         <input
           className={inputCls}
           value={data.inputSchema ?? ''}
@@ -150,7 +163,10 @@ function ToolFields({ data, update }: FieldsProps) {
         />
       </label>
       <label className="block">
-        <span className={labelCls}>Output schema</span>
+        <span className={labelHintCls}>
+          Output schema
+          <HintIcon text={HINTS.fields.toolSchema} />
+        </span>
         <input
           className={inputCls}
           value={data.outputSchema ?? ''}
@@ -164,7 +180,10 @@ function ToolFields({ data, update }: FieldsProps) {
 function MemoryFields({ data, update }: FieldsProps) {
   return (
     <label className="block">
-      <span className={labelCls}>Memory type</span>
+      <span className={labelHintCls}>
+        Memory type
+        <HintIcon text={HINTS.fields.memoryType} />
+      </span>
       <select
         className={inputCls}
         value={data.memoryType ?? 'short-term'}
@@ -213,7 +232,10 @@ function RouterFields({ data, update }: FieldsProps) {
         </p>
       </label>
       <label className="block">
-        <span className={labelCls}>Routing instruction</span>
+        <span className={labelHintCls}>
+          Routing instruction
+          <HintIcon text={HINTS.fields.routingPrompt} />
+        </span>
         <textarea
           className={`${inputCls} h-20 resize-none`}
           value={data.routingPrompt ?? ''}
@@ -241,7 +263,10 @@ function GuardrailFields({ data, update }: FieldsProps) {
   return (
     <>
       <label className="block">
-        <span className={labelCls}>Check type</span>
+        <span className={labelHintCls}>
+          Check type
+          <HintIcon text={HINTS.fields.checkType} />
+        </span>
         <select
           className={inputCls}
           value={checkType}
@@ -254,8 +279,9 @@ function GuardrailFields({ data, update }: FieldsProps) {
         </select>
       </label>
       <label className="block">
-        <span className={labelCls}>
+        <span className={labelHintCls}>
           {checkType === 'keyword' ? 'Required keywords' : 'Judge rubric'}
+          <HintIcon text={HINTS.fields.criteria} />
         </span>
         <textarea
           className={`${inputCls} h-20 resize-none`}
@@ -294,7 +320,10 @@ function JoinFields({ data, update }: FieldsProps) {
         Waits for every incoming branch (executed or skipped) before merging.
       </p>
       <label className="block">
-        <span className={labelCls}>Merge strategy</span>
+        <span className={labelHintCls}>
+          Merge strategy
+          <HintIcon text={HINTS.fields.mergeStrategy} />
+        </span>
         <select
           className={inputCls}
           value={data.mergeStrategy ?? 'concat'}
@@ -313,7 +342,10 @@ function JoinFields({ data, update }: FieldsProps) {
 function LoopFields({ data, update }: FieldsProps) {
   return (
     <label className="block">
-      <span className={labelCls}>Loop until</span>
+      <span className={labelHintCls}>
+        Loop until
+        <HintIcon text={HINTS.fields.loopCondition} />
+      </span>
       <input
         className={inputCls}
         value={data.loopCondition ?? ''}
@@ -362,6 +394,7 @@ function CodeExecutorFields({ data, update }: FieldsProps) {
           onChange={(e) => update({ allowNetworkAccess: e.target.checked })}
         />
         <span>Allow network access</span>
+        <HintIcon text={HINTS.fields.allowNetworkAccess} />
       </label>
       <p className="text-[10px] text-gray-600">
         Sandbox the LLM's generated code. Pair with a downstream Condition
@@ -397,7 +430,10 @@ function MultimodalInputFields({ data, update }: FieldsProps) {
         </select>
       </label>
       <label className="block">
-        <span className={labelCls}>Input variable</span>
+        <span className={labelHintCls}>
+          Input variable
+          <HintIcon text={HINTS.fields.inputVariable} />
+        </span>
         <input
           className={inputCls}
           value={data.inputVariable ?? ''}
@@ -414,7 +450,10 @@ function MultimodalInputFields({ data, update }: FieldsProps) {
         />
       </label>
       <label className="block">
-        <span className={labelCls}>Encoding</span>
+        <span className={labelHintCls}>
+          Encoding
+          <HintIcon text={HINTS.fields.encoding} />
+        </span>
         <select
           className={inputCls}
           value={data.encoding ?? 'url'}
@@ -447,7 +486,10 @@ function A2AAgentFields({ data, update }: FieldsProps) {
         />
       </label>
       <label className="block">
-        <span className={labelCls}>Agent A2A URL</span>
+        <span className={labelHintCls}>
+          Agent A2A URL
+          <HintIcon text={HINTS.fields.agentUrl} />
+        </span>
         <input
           className={inputCls}
           value={data.agentUrl ?? ''}
@@ -464,7 +506,10 @@ function A2AAgentFields({ data, update }: FieldsProps) {
         />
       </label>
       <label className="block">
-        <span className={labelCls}>Auth token (optional)</span>
+        <span className={labelHintCls}>
+          Auth token (optional)
+          <HintIcon text={HINTS.fields.authToken} />
+        </span>
         <input
           type="password"
           className={inputCls}
@@ -525,7 +570,10 @@ function ComputerUseFields({ data, update }: FieldsProps) {
         </select>
       </label>
       <label className="block">
-        <span className={labelCls}>Max steps</span>
+        <span className={labelHintCls}>
+          Max steps
+          <HintIcon text={HINTS.fields.maxSteps} />
+        </span>
         <input
           type="number"
           min={1}
@@ -537,7 +585,10 @@ function ComputerUseFields({ data, update }: FieldsProps) {
         />
       </label>
       <div className="block">
-        <span className={labelCls}>Allowed tools</span>
+        <span className={labelHintCls}>
+          Allowed tools
+          <HintIcon text={HINTS.fields.allowedTools} />
+        </span>
         <div className="space-y-1">
           {COMPUTER_USE_TOOLS.map((tool) => (
             <label
@@ -567,7 +618,10 @@ function PlannerFields({ data, update }: FieldsProps) {
   return (
     <>
       <label className="block">
-        <span className={labelCls}>Decomposition prompt</span>
+        <span className={labelHintCls}>
+          Decomposition prompt
+          <HintIcon text={HINTS.fields.decompositionPrompt} />
+        </span>
         <textarea
           className={`${inputCls} h-20 resize-none`}
           value={data.decompositionPrompt ?? ''}
@@ -616,7 +670,10 @@ function SubagentFields({ data, update }: FieldsProps) {
         />
       </label>
       <label className="block">
-        <span className={labelCls}>Task input variable</span>
+        <span className={labelHintCls}>
+          Task input variable
+          <HintIcon text={HINTS.fields.taskInput} />
+        </span>
         <input
           className={inputCls}
           value={data.taskInput ?? ''}
@@ -637,7 +694,10 @@ function SubagentFields({ data, update }: FieldsProps) {
         />
       </label>
       <label className="block">
-        <span className={labelCls}>Max iterations</span>
+        <span className={labelHintCls}>
+          Max iterations
+          <HintIcon text={HINTS.fields.maxIterations} />
+        </span>
         <input
           type="number"
           min={1}
@@ -663,7 +723,10 @@ function LongTermStoreFields({ data, update }: FieldsProps) {
   return (
     <>
       <label className="block">
-        <span className={labelCls}>Namespace</span>
+        <span className={labelHintCls}>
+          Namespace
+          <HintIcon text={HINTS.fields.namespace} />
+        </span>
         <input
           className={inputCls}
           value={data.namespace ?? ''}
@@ -676,7 +739,10 @@ function LongTermStoreFields({ data, update }: FieldsProps) {
         </p>
       </label>
       <label className="block">
-        <span className={labelCls}>Operation</span>
+        <span className={labelHintCls}>
+          Operation
+          <HintIcon text={HINTS.fields.storeOperation} />
+        </span>
         <select
           className={inputCls}
           value={op}
@@ -714,7 +780,10 @@ function MemoryWriterFields({ data, update }: FieldsProps) {
   return (
     <>
       <label className="block">
-        <span className={labelCls}>Memory kind</span>
+        <span className={labelHintCls}>
+          Memory kind
+          <HintIcon text={HINTS.fields.memoryKind} />
+        </span>
         <select
           className={inputCls}
           value={data.memoryKind ?? 'episodic'}
@@ -733,7 +802,10 @@ function MemoryWriterFields({ data, update }: FieldsProps) {
         </select>
       </label>
       <label className="block">
-        <span className={labelCls}>Extraction prompt</span>
+        <span className={labelHintCls}>
+          Extraction prompt
+          <HintIcon text={HINTS.fields.extractionPrompt} />
+        </span>
         <textarea
           className={`${inputCls} h-20 resize-none`}
           value={data.extractionPrompt ?? ''}
@@ -782,7 +854,10 @@ function SubgraphFields({ data, update }: FieldsProps) {
         />
       </label>
       <label className="block">
-        <span className={labelCls}>Input mapping (JSON)</span>
+        <span className={labelHintCls}>
+          Input mapping (JSON)
+          <HintIcon text={HINTS.fields.ioMapping} />
+        </span>
         <textarea
           className={`${inputCls} h-16 resize-none font-mono`}
           value={data.inputMapping ?? '{}'}
@@ -790,12 +865,24 @@ function SubgraphFields({ data, update }: FieldsProps) {
         />
       </label>
       <label className="block">
-        <span className={labelCls}>Output mapping (JSON)</span>
+        <span className={labelHintCls}>
+          Output mapping (JSON)
+          <HintIcon text={HINTS.fields.ioMapping} />
+        </span>
         <textarea
           className={`${inputCls} h-16 resize-none font-mono`}
           value={data.outputMapping ?? '{}'}
           onChange={(e) => update({ outputMapping: e.target.value })}
         />
+      </label>
+      <label className="flex items-center gap-2 text-xs text-gray-300">
+        <input
+          type="checkbox"
+          checked={data.appendToParent ?? false}
+          onChange={(e) => update({ appendToParent: e.target.checked })}
+        />
+        <span>Append result to parent transcript</span>
+        <HintIcon text={HINTS.fields.appendToParent} />
       </label>
       <p className="text-[10px] text-gray-600">
         Sim: executes as one opaque step. Export emits a real compiled
@@ -819,7 +906,10 @@ function EvaluatorFields({ data, update }: FieldsProps) {
         />
       </label>
       <label className="block">
-        <span className={labelCls}>Score type</span>
+        <span className={labelHintCls}>
+          Score type
+          <HintIcon text={HINTS.fields.scoreType} />
+        </span>
         <select
           className={inputCls}
           value={scoreType}
@@ -843,7 +933,10 @@ function EvaluatorFields({ data, update }: FieldsProps) {
       </label>
       {scoreType === 'numeric' && (
         <label className="block">
-          <span className={labelCls}>Threshold (pass if score ≥)</span>
+          <span className={labelHintCls}>
+            Threshold (pass if score ≥)
+            <HintIcon text={HINTS.fields.threshold} />
+          </span>
           <input
             type="number"
             className={inputCls}
@@ -881,10 +974,16 @@ function EvaluatorFields({ data, update }: FieldsProps) {
 }
 
 function MapFields({ data, update }: FieldsProps) {
+  const items = data.mapItems ?? []
+  const itemsText = items.join('\n')
+  const hasItems = items.some((it) => it.trim() !== '')
   return (
     <>
       <label className="block">
-        <span className={labelCls}>List source (state key)</span>
+        <span className={labelHintCls}>
+          List source (state key)
+          <HintIcon text={HINTS.fields.mapListSource} />
+        </span>
         <input
           className={inputCls}
           value={data.inputExpression ?? ''}
@@ -896,7 +995,44 @@ function MapFields({ data, update }: FieldsProps) {
         </p>
       </label>
       <label className="block">
-        <span className={labelCls}>Max parallel</span>
+        <span className={labelCls}>Items (one per line)</span>
+        <textarea
+          className={`${inputCls} h-20 resize-none font-mono`}
+          value={itemsText}
+          onChange={(e) =>
+            update({
+              mapItems: e.target.value.split('\n').map((s) => s.trim()),
+            })
+          }
+          placeholder="Chapter 1&#10;Chapter 2&#10;Chapter 3"
+        />
+        <p className="mt-1 text-[10px] text-gray-600">
+          Simulation only: each item spawns one parallel branch. Empty falls
+          back to Count.
+        </p>
+      </label>
+      {!hasItems && (
+        <label className="block">
+          <span className={labelCls}>Count</span>
+          <input
+            type="number"
+            min={1}
+            max={10}
+            className={inputCls}
+            value={data.mapCount ?? 3}
+            onChange={(e) =>
+              update({
+                mapCount: Math.max(1, Math.min(10, Number(e.target.value) || 1)),
+              })
+            }
+          />
+        </label>
+      )}
+      <label className="block">
+        <span className={labelHintCls}>
+          Max parallel
+          <HintIcon text={HINTS.fields.maxParallel} />
+        </span>
         <input
           type="number"
           min={1}
@@ -908,8 +1044,8 @@ function MapFields({ data, update }: FieldsProps) {
         />
       </label>
       <p className="text-[10px] text-gray-600">
-        Sim: animates as one fan step reporting the item count. Exported Python
-        emits a real <code>Send</code> per item.
+        Sim: spawns one virtual branch per item. Exported Python emits a real{' '}
+        <code>Send</code> per item.
       </p>
     </>
   )
@@ -942,8 +1078,9 @@ function RetrieverFields({ data, update }: FieldsProps) {
         />
       </label>
       <label className="block">
-        <span className={labelCls}>
+        <span className={labelHintCls}>
           Top-k <span className="text-accent">{topK}</span>
+          <HintIcon text={HINTS.fields.topK} />
         </span>
         <input
           type="range"
@@ -956,9 +1093,10 @@ function RetrieverFields({ data, update }: FieldsProps) {
         />
       </label>
       <label className="block">
-        <span className={labelCls}>
+        <span className={labelHintCls}>
           Similarity threshold{' '}
           <span className="text-accent">{threshold.toFixed(2)}</span>
+          <HintIcon text={HINTS.fields.similarityThreshold} />
         </span>
         <input
           type="range"
@@ -1002,7 +1140,10 @@ function MCPServerFields({ data, update }: FieldsProps) {
   return (
     <>
       <label className="block">
-        <span className={labelCls}>Server URL</span>
+        <span className={labelHintCls}>
+          Server URL
+          <HintIcon text={HINTS.fields.serverUrl} />
+        </span>
         <input
           className={inputCls}
           value={data.serverUrl ?? ''}
@@ -1048,7 +1189,10 @@ function StructuredOutputFields({ data, update }: FieldsProps) {
   return (
     <>
       <label className="block">
-        <span className={labelCls}>Pydantic model name</span>
+        <span className={labelHintCls}>
+          Pydantic model name
+          <HintIcon text={HINTS.fields.pydanticModel} />
+        </span>
         <input
           className={inputCls}
           value={data.pydanticModel ?? ''}
@@ -1056,7 +1200,10 @@ function StructuredOutputFields({ data, update }: FieldsProps) {
         />
       </label>
       <label className="block">
-        <span className={labelCls}>JSON schema</span>
+        <span className={labelHintCls}>
+          JSON schema
+          <HintIcon text={HINTS.fields.jsonSchema} />
+        </span>
         <textarea
           className={`${inputCls} h-32 resize-none font-mono`}
           value={data.jsonSchema ?? ''}

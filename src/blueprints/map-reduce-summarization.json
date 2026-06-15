@@ -38,7 +38,8 @@
       "data": {
         "label": "Fan-out Chunks",
         "inputExpression": "chunks",
-        "maxParallel": 8
+        "maxParallel": 8,
+        "mapItems": ["Chapter 1", "Chapter 2", "Chapter 3"]
       }
     },
     {

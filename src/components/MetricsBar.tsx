@@ -8,8 +8,11 @@ import {
   Terminal,
   X,
 } from 'lucide-react'
+import { useEvalStore } from '../store/evalStore'
 import { useSimulationMetricsStore } from '../store/simulationMetricsStore'
 import { useSimulationStore } from '../store/simulationStore'
+import { HintIcon } from './HintIcon'
+import { HINTS } from '../data/hints'
 
 const btnCls =
   'flex items-center gap-1 rounded-md border border-white/10 px-2 py-1 text-[11px] text-gray-300 transition-colors hover:border-accent/50 hover:text-white disabled:cursor-not-allowed disabled:opacity-40'
@@ -45,6 +48,23 @@ export function MetricsBar() {
   const activeNodeCount = useSimulationMetricsStore((s) => s.activeNodeCount)
   const elapsedMs = useSimulationMetricsStore((s) => s.elapsedMs)
   const tokens = useSimulationMetricsStore((s) => s.tokens)
+  const costSummary = useSimulationMetricsStore((s) => s.costSummary)
+  const runs = useEvalStore((s) => s.runs)
+  const lastRun = runs.length > 0 ? runs[runs.length - 1] : null
+  const passing =
+    lastRun?.results.filter((r) => r.score === 1).length ?? 0
+  const totalCases = lastRun?.results.length ?? 0
+  const evalColor =
+    lastRun && totalCases > 0
+      ? passing === totalCases
+        ? 'text-accent'
+        : passing > 0
+          ? 'text-yellow-400'
+          : 'text-red-400'
+      : 'text-gray-400'
+
+  const formatCost = (v: number) =>
+    v < 0.001 ? `$${v.toFixed(5)}` : `$${v.toPrecision(4)}`
 
   const finished = currentNodeIndex >= queueLength
   const shownStep = stepTotal === 0 ? 0 : Math.min(stepIndex + 1, stepTotal)
@@ -57,7 +77,7 @@ export function MetricsBar() {
         isActive ? 'translate-y-0' : 'translate-y-full'
       }`}
     >
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-1.5">
         <span className="whitespace-nowrap text-xs text-gray-300">
           Step {shownStep}/{stepTotal}
         </span>
@@ -67,16 +87,33 @@ export function MetricsBar() {
             style={{ width: `${progressPct}%` }}
           />
         </div>
+        <HintIcon text={HINTS.controls.stepCounter} />
       </div>
 
       <div className="flex flex-1 items-center justify-center gap-5 text-xs text-gray-400">
-        <span>
+        <span className="flex items-center gap-1">
           <span className="text-accent">{activeNodeCount}</span> active
+          <HintIcon text={HINTS.controls.activeCount} />
         </span>
         <span className="tabular-nums">{formatElapsed(elapsedMs)}</span>
-        <span>
+        <span className="flex items-center gap-1">
           ~<span className="text-accent">{tokens}</span> tokens
+          <HintIcon text={HINTS.controls.tokens} />
         </span>
+        {costSummary && (
+          <span className="flex items-center gap-1 tabular-nums">
+            <span className="text-accent">
+              {formatCost(costSummary.totalCostUsd)}
+            </span>
+          </span>
+        )}
+        {lastRun && totalCases > 0 && (
+          <span className="flex items-center gap-1 tabular-nums">
+            <span className={evalColor}>
+              ✓ {passing}/{totalCases}
+            </span>
+          </span>
+        )}
       </div>
 
       <div className="flex items-center gap-1.5">
@@ -92,6 +129,7 @@ export function MetricsBar() {
               <Check size={11} />
               Approve
             </button>
+            <HintIcon text={HINTS.controls.approve} />
             <button
               onClick={reject}
               className={`${btnCls} border-red-500/50 text-red-400 hover:border-red-500 hover:text-red-300`}
@@ -99,6 +137,7 @@ export function MetricsBar() {
               <X size={11} />
               Reject
             </button>
+            <HintIcon text={HINTS.controls.reject} />
           </div>
         )}
         {liveMode && (
@@ -132,6 +171,7 @@ export function MetricsBar() {
           <SkipForward size={11} />
           Step
         </button>
+        <HintIcon text={HINTS.controls.step} />
         <button onClick={restart} className={btnCls}>
           <RotateCcw size={11} />
           Restart
@@ -148,6 +188,7 @@ export function MetricsBar() {
           <Terminal size={11} />
           Trace
         </button>
+        <HintIcon text={HINTS.controls.trace} />
       </div>
     </div>
   )

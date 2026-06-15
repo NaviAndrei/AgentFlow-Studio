@@ -4,6 +4,8 @@ import { ChevronDown, Trash2, Zap } from 'lucide-react'
 import { getNodeMeta } from '../nodes'
 import { useCanvasStore } from '../store/canvasStore'
 import { useSimulationStore } from '../store/simulationStore'
+import { HintIcon } from './HintIcon'
+import { HINTS } from '../data/hints'
 import type { TraceEntry } from '../types'
 
 type TraceFilter = 'all' | 'errors' | 'llm' | 'tools'
@@ -65,8 +67,9 @@ export function TraceLog() {
       }`}
     >
       <div className="flex shrink-0 items-center gap-2 border-b border-white/10 px-3 py-1.5">
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+        <span className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-gray-400">
           Execution Trace
+          <HintIcon text={HINTS.trace.title} />
         </span>
         <div className="ml-2 flex gap-1">
           {FILTERS.map((f) => (
@@ -83,6 +86,15 @@ export function TraceLog() {
             </button>
           ))}
         </div>
+        <span className="flex items-center gap-1 text-[10px] text-gray-500">
+          <Zap size={9} className="text-amber-400" />
+          live
+          <HintIcon text={HINTS.trace.engineLive} />
+        </span>
+        <span className="flex items-center gap-1 text-[10px] text-gray-500">
+          ms
+          <HintIcon text={HINTS.trace.durationMs} />
+        </span>
         <button
           onClick={clearTrace}
           className="ml-auto flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] text-gray-500 transition-colors hover:text-gray-300"

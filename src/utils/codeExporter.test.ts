@@ -235,6 +235,52 @@ describe('exportPython — join node', () => {
   })
 })
 
+describe('exportPython — subgraph node', () => {
+  const nodes = [
+    node('s', 'start', { label: 'Start' }),
+    node('sg', 'subgraph', {
+      label: 'Research Team',
+      subgraphRef: 'research-team',
+      inputMapping: '{"brief": "topic"}',
+      outputMapping: '{"output": "report"}',
+    }),
+    node('o', 'output', { label: 'Done' }),
+  ]
+  const edges = [edge('s', 'sg'), edge('sg', 'o')]
+  const code = exportPython(nodes, edges)
+
+  it('compiles the inner graph and registers the wrapper, not the raw graph', () => {
+    expect(code).toContain('research_team_inner = build_research_team_subgraph()')
+    expect(code).toContain('def research_team(state: State) -> dict:')
+    expect(code).toContain('builder.add_node("research_team", research_team)')
+  })
+
+  it('emits input and output remapping from the mapping JSON', () => {
+    expect(code).toContain('inner_input["topic"] = state.get("brief")  # inputMapping')
+    expect(code).toContain('result = research_team_inner.invoke(inner_input)')
+    expect(code).toContain('if "output" in result:')
+    expect(code).toContain('update["report"] = result["output"]  # outputMapping')
+  })
+
+  it('falls back to a messages-only passthrough when no mappings are set', () => {
+    const plain = [
+      node('s', 'start', { label: 'Start' }),
+      node('sg', 'subgraph', { label: 'Sub', subgraphRef: 'sub' }),
+      node('o', 'output', { label: 'Done' }),
+    ]
+    const c = exportPython(plain, [edge('s', 'sg'), edge('sg', 'o')])
+    expect(c).toContain('def sub(state: State) -> dict:')
+    expect(c).toContain('return {"messages": result.get("messages", [])}')
+    expect(c).not.toContain('# inputMapping')
+  })
+
+  it('uses ainvoke in async mode', () => {
+    const c = exportPython(nodes, edges, { asyncMode: true })
+    expect(c).toContain('async def research_team(state: State) -> dict:')
+    expect(c).toContain('result = await research_team_inner.ainvoke(inner_input)')
+  })
+})
+
 describe('pydanticFieldsFromSchema', () => {
   it('maps JSON-schema types and respects required vs optional', () => {
     const schema = JSON.stringify({

@@ -120,6 +120,24 @@ function pyDoc(value: string): string {
 }
 
 /**
+ * Parse a Subgraph node's input/output mapping JSON ('{"from": "to"}') into
+ * ordered [from, to] string pairs. Invalid or non-string entries are dropped,
+ * mirroring the simulation's tolerant `JSON.parse` handling.
+ */
+function parseMapping(raw: string | undefined): [string, string][] {
+  if (!raw || raw.trim() === '') return []
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>
+    if (typeof parsed !== 'object' || parsed === null) return []
+    return Object.entries(parsed).filter(
+      (entry): entry is [string, string] => typeof entry[1] === 'string',
+    )
+  } catch {
+    return []
+  }
+}
+
+/**
  * Remove the given nodes from the edge list, reconnecting each incoming
  * source to each outgoing target so flow continuity is preserved (e.g.
  * `A → Memory → B` becomes `A → B`). Labels of the incoming edge survive.
@@ -839,7 +857,14 @@ export function exportPython(
         break
       }
       case 'subgraph': {
-        const ref = (node.data.subgraphRef ?? '').trim() || name
+        // subgraphRef is overloaded: a short name, OR (when authored on the
+        // canvas) the inline inner-graph JSON. Only echo it as a reference when
+        // it's a plain name, so the comment doesn't dump a whole graph blob.
+        const rawRef = (node.data.subgraphRef ?? '').trim()
+        const ref =
+          rawRef !== '' && !rawRef.startsWith('{') ? rawRef : node.data.label
+        const inputMap = parseMapping(node.data.inputMapping)
+        const outputMap = parseMapping(node.data.outputMapping)
         emit(
           `# --- Subgraph: ${pyDoc(node.data.label)} (${pyDoc(ref)}) ---`,
           `def build_${name}_subgraph():`,
@@ -852,9 +877,36 @@ export function exportPython(
           '    inner.add_edge("placeholder", END)',
           '    return inner.compile()',
           '',
-          `${name} = build_${name}_subgraph()`,
+          `${name}_inner = build_${name}_subgraph()`,
           '',
         )
+        // Wrapper node: the inner graph speaks SubgraphState, so remap parent
+        // State into its input namespace, invoke it, then map the result back.
+        // Without this, parent and inner schemas would have to share channels.
+        emit(
+          `${defKeyword} ${name}(state: State) -> dict:`,
+          `    """Subgraph wrapper for ${pyDoc(node.data.label)}: map parent state into`,
+          '    the inner graph, invoke it, then map the result back out."""',
+          '    inner_input = {"messages": state["messages"]}',
+        )
+        for (const [parentKey, innerKey] of inputMap) {
+          emit(
+            `    inner_input[${pyStr(innerKey)}] = state.get(${pyStr(parentKey)})  # inputMapping`,
+          )
+        }
+        emit(`    result = ${invoke(`${name}_inner`, 'inner_input')}`)
+        if (outputMap.length === 0) {
+          emit('    return {"messages": result.get("messages", [])}', '')
+        } else {
+          emit('    update: dict = {"messages": result.get("messages", [])}')
+          for (const [innerKey, parentKey] of outputMap) {
+            emit(
+              `    if ${pyStr(innerKey)} in result:`,
+              `        update[${pyStr(parentKey)}] = result[${pyStr(innerKey)}]  # outputMapping`,
+            )
+          }
+          emit('    return update', '')
+        }
         break
       }
       case 'longTermStore': {

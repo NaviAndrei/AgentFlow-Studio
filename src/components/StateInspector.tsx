@@ -1,6 +1,8 @@
 import { getNodeMeta } from '../nodes'
 import { useCanvasStore } from '../store/canvasStore'
 import { useSimulationStore } from '../store/simulationStore'
+import { HintIcon } from './HintIcon'
+import { HINTS } from '../data/hints'
 
 /**
  * Minimal recursive JSON renderer with hand-rolled syntax colors:
@@ -77,8 +79,9 @@ export function StateInspector() {
     <div className="space-y-3 text-[11px] leading-relaxed">
       {messages.length > 0 && (
         <div>
-          <h3 className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+          <h3 className="mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-gray-400">
             messages
+            <HintIcon text={HINTS.trace.messages} />
           </h3>
           <div className="rounded-md border border-white/10 bg-canvas p-2">
             <JsonValue value={messages} />
@@ -105,13 +108,20 @@ export function StateInspector() {
               {node.data.label}
               {nodeEngines[id] && (
                 <span
-                  className={`rounded px-1 py-px text-[9px] normal-case tracking-normal ${
+                  className={`flex items-center gap-1 rounded px-1 py-px text-[9px] normal-case tracking-normal ${
                     nodeEngines[id] === 'live'
                       ? 'bg-amber-500/15 text-amber-400'
                       : 'bg-white/5 text-gray-500'
                   }`}
                 >
                   {nodeEngines[id] === 'live' ? '⚡ live' : 'simulated'}
+                  <HintIcon
+                    text={
+                      nodeEngines[id] === 'live'
+                        ? HINTS.trace.engineLive
+                        : HINTS.trace.engineSimulated
+                    }
+                  />
                 </span>
               )}
             </h3>
@@ -120,10 +130,20 @@ export function StateInspector() {
             </div>
             {typeof (nodeOutputs[id] as { _innerStepCount?: unknown })
               ?._innerStepCount === 'number' && (
-              <p className="mt-1 text-[10px] text-gray-500">
+              <p className="mt-1 flex items-center gap-1 text-[10px] text-gray-500">
                 Executed{' '}
                 {(nodeOutputs[id] as { _innerStepCount: number })._innerStepCount}{' '}
                 inner steps
+                <HintIcon text={HINTS.trace.innerSteps} />
+              </p>
+            )}
+            {typeof (nodeOutputs[id] as { _mapBranchCount?: unknown })
+              ?._mapBranchCount === 'number' && (
+              <p className="mt-1 flex items-center gap-1 text-[10px] text-gray-500">
+                Ran{' '}
+                {(nodeOutputs[id] as { _mapBranchCount: number })._mapBranchCount}{' '}
+                branches
+                <HintIcon text={HINTS.trace.mapBranches} />
               </p>
             )}
           </div>

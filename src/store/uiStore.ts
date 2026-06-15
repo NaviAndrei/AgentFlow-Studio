@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { AgentFlowEdge, AgentFlowNode, Blueprint } from '../types'
 import { useCanvasStore } from './canvasStore'
+import { useEvalStore } from './evalStore'
 
 /** Inspector resize bounds (px). */
 export const INSPECTOR_MIN_WIDTH = 240
@@ -15,10 +16,12 @@ interface UIState {
   sidebarOpen: boolean
   inspectorOpen: boolean
   inspectorWidth: number
+  costPanelOpen: boolean
   setGalleryOpen: (open: boolean) => void
   setExportOpen: (open: boolean) => void
   setQuickAddOpen: (open: boolean) => void
   setShortcutsOpen: (open: boolean) => void
+  setCostPanelOpen: (open: boolean) => void
   toggleSidebar: () => void
   toggleInspector: () => void
   setInspectorWidth: (width: number) => void
@@ -38,11 +41,13 @@ export const useUIStore = create<UIState>((set, get) => ({
   sidebarOpen: widePanelDefault,
   inspectorOpen: widePanelDefault,
   inspectorWidth: 300,
+  costPanelOpen: false,
 
   setGalleryOpen: (galleryOpen) => set({ galleryOpen }),
   setExportOpen: (exportOpen) => set({ exportOpen }),
   setQuickAddOpen: (quickAddOpen) => set({ quickAddOpen }),
   setShortcutsOpen: (shortcutsOpen) => set({ shortcutsOpen }),
+  setCostPanelOpen: (costPanelOpen) => set({ costPanelOpen }),
   toggleSidebar: () => set({ sidebarOpen: !get().sidebarOpen }),
   toggleInspector: () => set({ inspectorOpen: !get().inspectorOpen }),
   setInspectorWidth: (width) =>
@@ -52,13 +57,16 @@ export const useUIStore = create<UIState>((set, get) => ({
         Math.max(INSPECTOR_MIN_WIDTH, width),
       ),
     }),
-  closeAllModals: () =>
+  closeAllModals: () => {
     set({
       galleryOpen: false,
       exportOpen: false,
       quickAddOpen: false,
       shortcutsOpen: false,
-    }),
+      costPanelOpen: false,
+    })
+    useEvalStore.getState().setEvalOpen(false)
+  },
 
   loadBlueprint: (blueprint) => {
     const nodes: AgentFlowNode[] = blueprint.nodes.map((n) => ({

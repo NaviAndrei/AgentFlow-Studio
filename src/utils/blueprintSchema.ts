@@ -37,10 +37,13 @@ function isPosition(value: unknown): value is { x: number; y: number } {
   )
 }
 
-function parseNode(raw: unknown): CanvasDocumentNode | null {
+/** 'unknown-type' lets callers skip forward-incompatible nodes instead of rejecting the whole document. */
+function parseNode(raw: unknown): CanvasDocumentNode | null | 'unknown-type' {
   if (!isRecord(raw)) return null
   if (typeof raw.id !== 'string' || raw.id === '') return null
-  if (!isNodeType(raw.type)) return null
+  if (!isNodeType(raw.type)) {
+    return typeof raw.type === 'string' ? 'unknown-type' : null
+  }
   if (!isPosition(raw.position)) return null
   if (!isRecord(raw.data) || typeof raw.data.label !== 'string') return null
   const node: CanvasDocumentNode = {
@@ -82,11 +85,18 @@ function parseEdge(
 function parseGraph(
   rawNodes: unknown,
   rawEdges: unknown,
+  skipUnknownTypes = false,
 ): { nodes: CanvasDocumentNode[]; edges: CanvasDocumentEdge[] } | null {
   if (!Array.isArray(rawNodes) || !Array.isArray(rawEdges)) return null
   const nodes: CanvasDocumentNode[] = []
   for (const raw of rawNodes) {
     const node = parseNode(raw)
+    if (node === 'unknown-type') {
+      if (!skipUnknownTypes) return null
+      const id = isRecord(raw) ? raw.id : undefined
+      console.warn(`Canvas import: skipping node "${String(id)}" of unknown type "${String((raw as Record<string, unknown>).type)}"`)
+      continue
+    }
     if (!node) return null
     nodes.push(node)
   }
@@ -98,7 +108,14 @@ function parseGraph(
   const edges: CanvasDocumentEdge[] = []
   for (const raw of rawEdges) {
     const edge = parseEdge(raw, nodeIds)
-    if (!edge) return null
+    if (!edge) {
+      // A skipped (unknown-type) node may leave dangling edge references.
+      if (skipUnknownTypes && isRecord(raw)) {
+        console.warn(`Canvas import: skipping edge "${String(raw.id)}" referencing a removed node`)
+        continue
+      }
+      return null
+    }
     edges.push(edge)
   }
   return { nodes, edges }
@@ -138,7 +155,7 @@ export function parseCanvasDocument(raw: unknown): CanvasDocument | null {
     return null
   }
   const migrated = migrate(raw, version)
-  const graph = parseGraph(migrated.nodes, migrated.edges)
+  const graph = parseGraph(migrated.nodes, migrated.edges, true)
   if (!graph) {
     console.warn('Canvas import rejected: malformed nodes or edges')
     return null

@@ -2,6 +2,8 @@ import type { DragEvent } from 'react'
 import { PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import { NODE_META, PALETTE } from '../nodes'
 import { useUIStore } from '../store/uiStore'
+import { HintIcon } from './HintIcon'
+import { HINTS } from '../data/hints'
 import type { AgentFlowNodeType } from '../types'
 
 function PaletteItem({ type }: { type: AgentFlowNodeType }) {
@@ -17,7 +19,7 @@ function PaletteItem({ type }: { type: AgentFlowNodeType }) {
     <div
       draggable
       onDragStart={onDragStart}
-      className="flex cursor-grab items-center gap-2.5 rounded-md border border-white/10 bg-surface-2 px-2.5 py-2 transition-colors hover:border-accent/50 active:cursor-grabbing"
+      className="relative flex cursor-grab items-center gap-2.5 rounded-md border border-white/10 bg-surface-2 px-2.5 py-2 transition-colors hover:border-accent/50 active:cursor-grabbing"
     >
       <span
         className="flex h-6 w-6 shrink-0 items-center justify-center rounded"
@@ -29,6 +31,9 @@ function PaletteItem({ type }: { type: AgentFlowNodeType }) {
         <div className="truncate text-xs text-gray-200">{meta.label}</div>
         <div className="truncate text-[10px] text-gray-500">{meta.description}</div>
       </div>
+      <span className="absolute right-1.5 top-1.5">
+        <HintIcon text={HINTS.nodes[type]} />
+      </span>
     </div>
   )
 }

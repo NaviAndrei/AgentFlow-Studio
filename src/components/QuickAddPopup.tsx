@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useReactFlow } from '@xyflow/react'
 import { Search } from 'lucide-react'
 import { NODE_META, PALETTE } from '../nodes'
@@ -21,6 +21,13 @@ function QuickAddInner() {
   const [query, setQuery] = useState('')
   const [tab, setTab] = useState<string | null>(null)
   const [highlight, setHighlight] = useState(0)
+
+  // Restore focus to whatever opened the palette (e.g. the canvas) on close,
+  // matching the shared Modal's focus contract for keyboard users. Captured via
+  // a lazy initializer so it runs on the first render, before the input's
+  // autoFocus steals focus (an effect would capture the input itself).
+  const [trigger] = useState(() => document.activeElement as HTMLElement | null)
+  useEffect(() => () => trigger?.focus?.(), [trigger])
 
   const q = query.toLowerCase().trim()
   const items: AgentFlowNodeType[] = PALETTE.filter(

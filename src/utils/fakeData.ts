@@ -5,7 +5,7 @@ export function truncate(text: string, max: number): string {
 }
 
 export function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 4)
+  return Math.ceil((text ?? '').length / 4)
 }
 
 /** Simulated processing time per node type (also paces the run loop). */

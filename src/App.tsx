@@ -1,6 +1,8 @@
 import { ReactFlowProvider } from '@xyflow/react'
 import { BlueprintGallery } from './components/BlueprintGallery'
 import { Canvas } from './components/Canvas'
+import { CostPanel } from './components/CostPanel'
+import { EvalPanel } from './components/EvalPanel'
 import { ExportModal } from './components/ExportModal'
 import { Inspector } from './components/Inspector'
 import { LLMSettingsModal } from './components/LLMSettingsModal'
@@ -35,6 +37,8 @@ export default function App() {
         <QuickAddPopup />
         <LLMSettingsModal />
         <TraceLog />
+        <EvalPanel />
+        <CostPanel />
         <MetricsBar />
       </div>
     </ReactFlowProvider>

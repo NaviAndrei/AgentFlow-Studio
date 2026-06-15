@@ -10,6 +10,12 @@ import type {
 import { useCanvasStore } from './canvasStore'
 import { useSimulationStore } from './simulationStore'
 import { useSimulationMetricsStore } from './simulationMetricsStore'
+import { streamChat } from '../llm'
+
+vi.mock('../llm', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../llm')>()
+  return { ...actual, streamChat: vi.fn() }
+})
 
 function node(
   id: string,
@@ -54,6 +60,9 @@ async function runUntilPending(): Promise<
 
 beforeEach(() => {
   useSimulationStore.getState().stop()
+  useSimulationStore.getState().setLiveMode(false)
+  vi.mocked(streamChat).mockReset()
+  vi.mocked(streamChat).mockResolvedValue('(mock live reply)')
 })
 
 describe('simulation queue walker — condition predicates', () => {
@@ -413,6 +422,95 @@ describe('simulation queue walker — MAX_NODE_VISITS budget', () => {
   })
 })
 
+describe('simulation queue walker — Map per-item virtual branches', () => {
+  // s → m → b → j → o. The Map expands the body (b) into one virtual branch
+  // per item; each branch's virtual terminal becomes a join source so the
+  // join waits for all N to finish.
+  const mapGraph = (mapData: Partial<AgentFlowNodeData>) =>
+    loadGraph(
+      [
+        node('s', 'start'),
+        node('m', 'map', mapData),
+        node('b', 'llm', { label: 'Body' }),
+        node('j', 'join', { mergeStrategy: 'concat' }),
+        node('o', 'output'),
+      ],
+      [
+        edge('s', 'm'),
+        edge('m', 'b'),
+        edge('b', 'j'),
+        edge('j', 'o'),
+      ],
+    )
+
+  it('spawns one virtual branch per item when mapItems is set', async () => {
+    mapGraph({ mapItems: ['x', 'y', 'z'] })
+    const s = await runToEnd()
+    expect(s.nodeOutputs['b__map_0']).toBeDefined()
+    expect(s.nodeOutputs['b__map_1']).toBeDefined()
+    expect(s.nodeOutputs['b__map_2']).toBeDefined()
+    // The real body node is replaced by virtuals — it should be skip-marked.
+    expect(s.skippedNodeIds.has('b')).toBe(true)
+    expect(s.executedIds.has('b')).toBe(false)
+  })
+
+  it('injects _mapItem and _mapIndex into each virtual branch output', async () => {
+    mapGraph({ mapItems: ['x', 'y', 'z'] })
+    const s = await runToEnd()
+    expect((s.nodeOutputs['b__map_0'] as { _mapItem: string })._mapItem).toBe('x')
+    expect((s.nodeOutputs['b__map_0'] as { _mapIndex: number })._mapIndex).toBe(0)
+    expect((s.nodeOutputs['b__map_2'] as { _mapItem: string })._mapItem).toBe('z')
+    expect((s.nodeOutputs['b__map_2'] as { _mapIndex: number })._mapIndex).toBe(2)
+  })
+
+  it('downstream Join fires only after all N virtual branches complete', async () => {
+    mapGraph({ mapItems: ['x', 'y', 'z'] })
+    const s = await runToEnd()
+    // Join executed exactly once and waited for all 3 virtual branches.
+    const jRuns = s.trace.filter((t) => t.nodeId === 'j' && t.status === 'ok')
+    expect(jRuns).toHaveLength(1)
+    const jOut = s.nodeOutputs.j as { waited_for: number; merged: unknown[] }
+    expect(jOut.waited_for).toBe(3)
+    expect(jOut.merged).toHaveLength(3)
+    // Every virtual branch ran before the join.
+    const okOrder = s.trace
+      .filter((t) => t.status === 'ok')
+      .map((t) => t.nodeId)
+    for (const vid of ['b__map_0', 'b__map_1', 'b__map_2']) {
+      expect(okOrder.indexOf(vid)).toBeLessThan(okOrder.indexOf('j'))
+    }
+    expect(s.executedIds.has('o')).toBe(true)
+  })
+
+  it('does not leak virtual node state between runs after Stop', async () => {
+    mapGraph({ mapItems: ['x', 'y', 'z'] })
+    await runToEnd()
+    useSimulationStore.getState().stop()
+    // Subsequent simple run must show no leftover __map_ ids in trace/outputs.
+    loadGraph(
+      [node('s', 'start'), node('o', 'output')],
+      [edge('s', 'o')],
+    )
+    const s = await runToEnd()
+    expect(s.trace.every((t) => !t.nodeId.includes('__map_'))).toBe(true)
+    expect(
+      Object.keys(s.nodeOutputs).every((id) => !id.includes('__map_')),
+    ).toBe(true)
+  })
+
+  it('defaults to 3 branches when neither mapItems nor mapCount is set', async () => {
+    mapGraph({})
+    const s = await runToEnd()
+    expect(s.nodeOutputs['b__map_0']).toBeDefined()
+    expect(s.nodeOutputs['b__map_1']).toBeDefined()
+    expect(s.nodeOutputs['b__map_2']).toBeDefined()
+    expect(s.nodeOutputs['b__map_3']).toBeUndefined()
+    expect((s.nodeOutputs['b__map_0'] as { _mapItem: string })._mapItem).toBe(
+      'item_1',
+    )
+  })
+})
+
 describe('simulation queue walker — Subgraph nested execution', () => {
   it('runs the inner graph of a configured subgraph (Hierarchical Teams)', async () => {
     const bp = BLUEPRINTS.find((b) => b.id === 'hierarchical-teams')
@@ -488,5 +586,131 @@ describe('simulation queue walker — Subgraph nested execution', () => {
     const s = useSimulationStore.getState()
     expect(s.trace.some((t) => t.parentNodeId === 'sg')).toBe(false)
     expect(s.executionQueue).toEqual([])
+  })
+})
+
+describe('simulation queue walker — Subgraph live execution', () => {
+  const llmInnerRef = JSON.stringify({
+    nodes: [
+      { id: 'inner-s', type: 'start', position: { x: 0, y: 0 }, data: { label: 'Inner Start' } },
+      { id: 'inner-llm', type: 'llm', position: { x: 0, y: 0 }, data: { label: 'Inner LLM' } },
+      { id: 'inner-o', type: 'output', position: { x: 0, y: 0 }, data: { label: 'Inner Output' } },
+    ],
+    edges: [
+      { id: 'ie1', source: 'inner-s', target: 'inner-llm' },
+      { id: 'ie2', source: 'inner-llm', target: 'inner-o' },
+    ],
+  })
+
+  const agentInnerRef = JSON.stringify({
+    nodes: [
+      { id: 'inner-s', type: 'start', position: { x: 0, y: 0 }, data: { label: 'Inner Start' } },
+      { id: 'inner-agent', type: 'agent', position: { x: 0, y: 0 }, data: { label: 'Inner Agent' } },
+      { id: 'inner-o', type: 'output', position: { x: 0, y: 0 }, data: { label: 'Inner Output' } },
+    ],
+    edges: [
+      { id: 'ie1', source: 'inner-s', target: 'inner-agent' },
+      { id: 'ie2', source: 'inner-agent', target: 'inner-o' },
+    ],
+  })
+
+  it('liveMode false: always uses fakeOutputFor, never calls streamChat', async () => {
+    loadGraph(
+      [
+        node('s', 'start'),
+        node('sg', 'subgraph', { subgraphRef: llmInnerRef }),
+        node('o', 'output'),
+      ],
+      [edge('s', 'sg'), edge('sg', 'o')],
+    )
+    const s = await runToEnd()
+    expect(streamChat).not.toHaveBeenCalled()
+    const innerLlmEntry = s.trace.find((t) => t.nodeId === 'inner-llm')
+    expect(innerLlmEntry?.engine).toBe('simulated')
+  })
+
+  it('liveMode true: calls streamChat exactly once for the inner llm node', async () => {
+    useSimulationStore.getState().setLiveMode(true)
+    loadGraph(
+      [
+        node('s', 'start'),
+        node('sg', 'subgraph', { subgraphRef: llmInnerRef }),
+        node('o', 'output'),
+      ],
+      [edge('s', 'sg'), edge('sg', 'o')],
+    )
+    const s = await runToEnd()
+    expect(streamChat).toHaveBeenCalledTimes(1)
+    const innerLlmEntry = s.trace.find((t) => t.nodeId === 'inner-llm')
+    expect(innerLlmEntry?.engine).toBe('live')
+  })
+
+  it('liveMode true: inner node type in SIMULATED_TYPES (agent) still uses fakeOutputFor', async () => {
+    useSimulationStore.getState().setLiveMode(true)
+    loadGraph(
+      [
+        node('s', 'start'),
+        node('sg', 'subgraph', { subgraphRef: agentInnerRef }),
+        node('o', 'output'),
+      ],
+      [edge('s', 'sg'), edge('sg', 'o')],
+    )
+    const s = await runToEnd()
+    expect(streamChat).not.toHaveBeenCalled()
+    const innerAgentEntry = s.trace.find((t) => t.nodeId === 'inner-agent')
+    expect(innerAgentEntry?.engine).toBe('simulated')
+  })
+
+  it('aborts cleanly when the run is stopped mid live inner call', async () => {
+    vi.mocked(streamChat).mockImplementation(async () => {
+      useSimulationStore.getState().stop()
+      return '(late reply)'
+    })
+    useSimulationStore.getState().setLiveMode(true)
+    loadGraph(
+      [
+        node('s', 'start'),
+        node('sg', 'subgraph', { subgraphRef: llmInnerRef }),
+        node('o', 'output'),
+      ],
+      [edge('s', 'sg'), edge('sg', 'o')],
+    )
+    useSimulationStore.getState().start()
+    await vi.waitFor(() => {
+      expect(useSimulationStore.getState().isActive).toBe(false)
+    })
+    const s = useSimulationStore.getState()
+    expect(s.nodeOutputs.sg).toBeUndefined()
+    expect(s.executedIds.has('sg')).toBe(false)
+    expect(s.trace.some((t) => t.nodeId === 'inner-llm')).toBe(false)
+    expect(s.executionQueue).toEqual([])
+  })
+
+  it('appendToParent false (default): parent transcript is unaffected by the inner run', async () => {
+    loadGraph(
+      [
+        node('s', 'start'),
+        node('sg', 'subgraph', { subgraphRef: llmInnerRef }),
+        node('o', 'output'),
+      ],
+      [edge('s', 'sg'), edge('sg', 'o')],
+    )
+    const s = await runToEnd()
+    // Only the Start node's seed message is present — no assistant turn was
+    // appended from the inner subgraph run.
+    expect(s.messages.every((m) => m.role !== 'assistant')).toBe(true)
+  })
+
+  it('appendToParent true: appends one assistant message from the inner run', async () => {
+    loadGraph(
+      [
+        node('s', 'start'),
+        node('sg', 'subgraph', { subgraphRef: llmInnerRef, appendToParent: true }),
+        node('o', 'output'),
+      ],
+      [edge('s', 'sg'), edge('sg', 'o')],
+    )
+    const s = await runToEnd()
+    expect(s.messages[s.messages.length - 1]?.role).toBe('assistant')
   })
 })

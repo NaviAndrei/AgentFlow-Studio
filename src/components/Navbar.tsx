@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import {
+  CircleDollarSign,
   Code2,
   Download,
   FilePlus2,
+  FlaskConical,
   FolderOpen,
   HelpCircle,
   LayoutTemplate,
@@ -14,7 +16,9 @@ import {
 } from 'lucide-react'
 import { useCanvasStore } from '../store/canvasStore'
 import { useUIStore } from '../store/uiStore'
+import { useEvalStore } from '../store/evalStore'
 import { useLLMConfigStore } from '../store/llmConfigStore'
+import { useSimulationMetricsStore } from '../store/simulationMetricsStore'
 import { useSimulationStore } from '../store/simulationStore'
 import {
   deserializeCanvas,
@@ -23,6 +27,14 @@ import {
 } from '../utils/canvasSerializer'
 import { PROVIDERS, listOllamaModels } from '../llm'
 import { ConfirmDialog } from './Modal'
+import { HintIcon } from './HintIcon'
+import { HINTS } from '../data/hints'
+
+function formatCost(usd: number): string {
+  if (usd < 0.001) return '<$0.001'
+  if (usd < 1) return `$${usd.toFixed(4)}`
+  return `$${usd.toFixed(2)}`
+}
 
 export function Navbar() {
   const clearCanvas = useCanvasStore((s) => s.clearCanvas)
@@ -34,6 +46,9 @@ export function Navbar() {
   const setGalleryOpen = useUIStore((s) => s.setGalleryOpen)
   const setExportOpen = useUIStore((s) => s.setExportOpen)
   const setShortcutsOpen = useUIStore((s) => s.setShortcutsOpen)
+  const setCostPanelOpen = useUIStore((s) => s.setCostPanelOpen)
+  const setEvalOpen = useEvalStore((s) => s.setEvalOpen)
+  const costSummary = useSimulationMetricsStore((s) => s.costSummary)
   const simulationActive = useSimulationStore((s) => s.isActive)
   const startSimulation = useSimulationStore((s) => s.start)
   const stopSimulation = useSimulationStore((s) => s.stop)
@@ -166,18 +181,40 @@ export function Navbar() {
           Blueprints
         </button>
         <button
-          onClick={() => (simulationActive ? stopSimulation() : startSimulation())}
-          disabled={!hasNodes && !simulationActive}
-          className={`flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
-            simulationActive
-              ? 'border-accent bg-accent/15 text-accent'
-              : 'border-white/10 text-gray-300 hover:border-accent/50 hover:text-white'
-          }`}
+          onClick={() => setEvalOpen(true)}
+          className="flex items-center gap-1.5 rounded-md border border-white/10 px-3 py-1.5 text-xs text-gray-300 transition-colors hover:border-accent/50 hover:text-white"
         >
-          {simulationActive ? <Square size={13} /> : <Play size={13} />}
-          {simulationActive ? 'Stop' : 'Simulate'}
+          <FlaskConical size={13} />
+          Eval
         </button>
-        <div className="relative">
+        <button
+          onClick={() => setCostPanelOpen(true)}
+          className="flex items-center gap-1.5 rounded-md border border-white/10 px-3 py-1.5 text-xs text-gray-300 transition-colors hover:border-accent/50 hover:text-white"
+        >
+          <CircleDollarSign size={13} />
+          Cost
+          {costSummary && (
+            <span className="ml-1 text-[10px] tabular-nums text-accent">
+              {formatCost(costSummary.totalCostUsd)}
+            </span>
+          )}
+        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => (simulationActive ? stopSimulation() : startSimulation())}
+            disabled={!hasNodes && !simulationActive}
+            className={`flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+              simulationActive
+                ? 'border-accent bg-accent/15 text-accent'
+                : 'border-white/10 text-gray-300 hover:border-accent/50 hover:text-white'
+            }`}
+          >
+            {simulationActive ? <Square size={13} /> : <Play size={13} />}
+            {simulationActive ? 'Stop' : 'Simulate'}
+          </button>
+          <HintIcon text={HINTS.controls.simulate} />
+        </div>
+        <div className="relative flex items-center gap-1">
           <button
             onClick={toggleLive}
             disabled={simulationActive}
@@ -197,6 +234,7 @@ export function Navbar() {
             <Zap size={13} />
             Live
           </button>
+          <HintIcon text={HINTS.controls.live} />
           {liveError && (
             <div className="absolute right-0 top-full z-50 mt-1.5 whitespace-nowrap rounded-md border border-red-500/40 bg-red-950 px-2.5 py-1.5 text-[10px] text-red-300 shadow-xl">
               {liveError}
@@ -210,21 +248,24 @@ export function Navbar() {
         >
           <Settings size={13} />
         </button>
-        <button
-          onClick={() => setExportOpen(true)}
-          disabled={hasErrors || liveMode}
-          title={
-            hasErrors
-              ? 'Fix validation errors before exporting'
-              : liveMode
-                ? 'Disable Live mode to export'
-                : undefined
-          }
-          className="flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-black transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          <Code2 size={13} />
-          Export Python
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setExportOpen(true)}
+            disabled={hasErrors || liveMode}
+            title={
+              hasErrors
+                ? 'Fix validation errors before exporting'
+                : liveMode
+                  ? 'Disable Live mode to export'
+                  : undefined
+            }
+            className="flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-black transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <Code2 size={13} />
+            Export Python
+          </button>
+          <HintIcon text={HINTS.controls.exportPython} />
+        </div>
         <button
           onClick={() => setShortcutsOpen(true)}
           title="Keyboard shortcuts"

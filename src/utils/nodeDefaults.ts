@@ -48,6 +48,8 @@ export function createDefaultNodeData(type: AgentFlowNodeType): AgentFlowNodeDat
         label: 'Map',
         inputExpression: 'items',
         maxParallel: 10,
+        mapItems: [],
+        mapCount: 3,
       }
     case 'codeExecutor':
       return {
@@ -72,6 +74,7 @@ export function createDefaultNodeData(type: AgentFlowNodeType): AgentFlowNodeDat
         subgraphSummary: 'Describe what this inner graph does.',
         inputMapping: '{}',
         outputMapping: '{}',
+        appendToParent: false,
       }
     case 'longTermStore':
       return {

@@ -95,6 +95,27 @@ export function downloadCanvas(nodes: AgentFlowNode[], edges: AgentFlowEdge[]): 
   URL.revokeObjectURL(url)
 }
 
+/**
+ * Parse a raw canvas JSON string (e.g. from a drag-and-drop file read).
+ * Rejects with a plain string message, suitable for a toast/notification.
+ */
+export function parseCanvas(raw: string): {
+  nodes: AgentFlowNode[]
+  edges: AgentFlowEdge[]
+} {
+  let json: unknown
+  try {
+    json = JSON.parse(raw)
+  } catch {
+    throw 'Not a valid JSON file'
+  }
+  const doc = parseCanvasDocument(json)
+  if (!doc) {
+    throw 'Not a valid AgentFlow canvas file'
+  }
+  return deserializeCanvas(doc)
+}
+
 /** Read and validate a user-provided canvas file; rejects with a message. */
 export async function readCanvasFile(file: File): Promise<CanvasDocument> {
   let raw: unknown

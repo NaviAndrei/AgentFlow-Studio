@@ -55,10 +55,15 @@ describe('parseCanvasDocument', () => {
     expect(parseCanvasDocument(42)).toBeNull()
   })
 
-  it('rejects a node with an unknown type', () => {
+  it('skips a node with an unknown type and keeps the rest', () => {
     const raw = validDoc()
     raw.nodes[0].type = 'teleporter'
-    expect(parseCanvasDocument(raw)).toBeNull()
+    const doc = parseCanvasDocument(raw)
+    expect(doc).not.toBeNull()
+    expect(doc?.nodes).toHaveLength(1)
+    expect(doc?.nodes[0].id).toBe('b')
+    // The dangling edge from the skipped node is dropped too.
+    expect(doc?.edges).toHaveLength(0)
   })
 
   it('rejects a node missing a label', () => {
@@ -73,10 +78,14 @@ describe('parseCanvasDocument', () => {
     expect(parseCanvasDocument(raw)).toBeNull()
   })
 
-  it('rejects edges referencing missing nodes', () => {
+  it('drops edges referencing missing nodes but keeps the rest of the graph', () => {
     const raw = validDoc()
     raw.edges.push({ id: 'e2', source: 'a', target: 'ghost' })
-    expect(parseCanvasDocument(raw)).toBeNull()
+    const doc = parseCanvasDocument(raw)
+    expect(doc).not.toBeNull()
+    expect(doc?.nodes).toHaveLength(2)
+    expect(doc?.edges).toHaveLength(1)
+    expect(doc?.edges[0].id).toBe('e1')
   })
 
   it('rejects children referencing a missing parent frame', () => {
