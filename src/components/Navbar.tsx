@@ -220,6 +220,7 @@ export function Navbar() {
         <button
           onClick={() => setSettingsOpen(true)}
           title="LLM connection settings"
+          aria-label="LLM connection settings"
           className="rounded-md border border-white/10 p-1.5 text-gray-300 transition-colors hover:border-accent/50 hover:text-white"
         >
           <Settings size={13} />
@@ -253,6 +254,7 @@ export function Navbar() {
         <button
           onClick={() => setShortcutsOpen(true)}
           title="Keyboard shortcuts"
+          aria-label="Keyboard shortcuts"
           className="rounded-md border border-white/10 p-1.5 text-gray-300 transition-colors hover:border-accent/50 hover:text-white"
         >
           <HelpCircle size={13} />

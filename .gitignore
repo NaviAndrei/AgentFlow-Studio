@@ -8,3 +8,8 @@ dist/
 .specstory
 .vscode
 AgentFlow Studio - User Documentation.md
+ARCHITECTURE.md
+COMPONENTS.md
+DECISIONS.md
+TASKS.md
+.claudeignore

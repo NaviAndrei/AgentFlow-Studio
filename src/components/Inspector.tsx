@@ -1,8 +1,13 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { PanelRightClose, PanelRightOpen, RotateCcw, Search } from 'lucide-react'
+import { COMPUTER_USE_MODELS } from '../data/modelPricing'
 import { NODE_META } from '../nodes'
 import { ICON_OPTIONS } from '../nodes/iconOptions'
-import { useUIStore } from '../store/uiStore'
+import {
+  INSPECTOR_MAX_WIDTH,
+  INSPECTOR_MIN_WIDTH,
+  useUIStore,
+} from '../store/uiStore'
 import { useCanvasStore } from '../store/canvasStore'
 import { useSimulationStore } from '../store/simulationStore'
 import { isInsecureRemoteUrl } from '../llm'
@@ -634,11 +639,14 @@ function ComputerUseFields({ data, update }: FieldsProps) {
         <span className={labelCls}>Model</span>
         <select
           className={inputCls}
-          value={data.model ?? 'claude-sonnet-4-5'}
+          value={data.model ?? COMPUTER_USE_MODELS[1]}
           onChange={(e) => update({ model: e.target.value })}
         >
-          <option value="claude-sonnet-4-5">claude-sonnet-4-5</option>
-          <option value="claude-opus-4">claude-opus-4</option>
+          {COMPUTER_USE_MODELS.map((model) => (
+            <option key={model} value={model}>
+              {model}
+            </option>
+          ))}
         </select>
       </label>
       <label className="block">
@@ -1658,26 +1666,57 @@ export function Inspector() {
   const inspectorWidth = useUIStore((s) => s.inspectorWidth)
   const setInspectorWidth = useUIStore((s) => s.setInspectorWidth)
   const [tab, setTab] = useState<'config' | 'state'>('config')
+  const asideRef = useRef<HTMLElement>(null)
+  const resizeRef = useRef<{ startX: number; startWidth: number } | null>(null)
 
   // Auto-switch to the state view when a simulation starts, back when it ends.
   useEffect(() => {
     setTab(simActive ? 'state' : 'config')
   }, [simActive])
 
-  // Drag the left edge to resize; width is clamped by the store setter.
-  const onResizeStart = useCallback(
+  // Drag the left edge to resize. Mirrors PanelRail's ref-only hot path: the
+  // width is mutated imperatively per pointermove (no per-frame store write,
+  // which would re-render the Inspector AND PanelRail every frame), then
+  // committed to the store once on pointerup.
+  const handleResizeStart = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
+      if (event.button !== 0) return
       event.preventDefault()
-      const startX = event.clientX
-      const startWidth = useUIStore.getState().inspectorWidth
-      const onMove = (e: PointerEvent) =>
-        setInspectorWidth(startWidth + (startX - e.clientX))
-      const onUp = () => {
-        window.removeEventListener('pointermove', onMove)
-        window.removeEventListener('pointerup', onUp)
+      event.currentTarget.setPointerCapture(event.pointerId)
+      resizeRef.current = {
+        startX: event.clientX,
+        startWidth: useUIStore.getState().inspectorWidth,
       }
-      window.addEventListener('pointermove', onMove)
-      window.addEventListener('pointerup', onUp)
+    },
+    [],
+  )
+
+  const handleResizeMove = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      const drag = resizeRef.current
+      if (!drag || !asideRef.current) return
+      const raw = drag.startWidth + (drag.startX - event.clientX)
+      const clamped = Math.min(
+        INSPECTOR_MAX_WIDTH,
+        Math.max(INSPECTOR_MIN_WIDTH, raw),
+      )
+      asideRef.current.style.width = `${clamped}px`
+      const rail = document.getElementById('panel-rail')
+      if (rail) rail.style.right = `${clamped}px`
+    },
+    [],
+  )
+
+  const handleResizeEnd = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      const drag = resizeRef.current
+      if (!drag) return
+      event.currentTarget.releasePointerCapture(event.pointerId)
+      resizeRef.current = null
+      const committed = asideRef.current
+        ? parseInt(asideRef.current.style.width, 10)
+        : NaN
+      if (!Number.isNaN(committed)) setInspectorWidth(committed)
     },
     [setInspectorWidth],
   )
@@ -1699,6 +1738,7 @@ export function Inspector() {
 
   return (
     <aside
+      ref={asideRef}
       style={{
         width: inspectorWidth,
         // Make room for the fixed playback bar so scrolled content (e.g. the
@@ -1708,9 +1748,15 @@ export function Inspector() {
       className="relative shrink-0 overflow-y-auto border-l border-white/10 bg-surface p-4"
     >
       <div
-        onPointerDown={onResizeStart}
+        onPointerDown={handleResizeStart}
+        onPointerMove={handleResizeMove}
+        onPointerUp={handleResizeEnd}
+        onPointerCancel={handleResizeEnd}
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize inspector"
         title="Drag to resize"
-        className="absolute inset-y-0 left-0 w-1 cursor-col-resize hover:bg-accent/40"
+        className="absolute inset-y-0 left-0 w-1 touch-none cursor-col-resize hover:bg-accent/40"
       />
       <div className="mb-3 flex items-center gap-1 border-b border-white/10 pb-2">
         {simActive ? (

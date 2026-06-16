@@ -1,3 +1,4 @@
+import { COMPUTER_USE_MODELS } from '../data/modelPricing'
 import type { AgentFlowEdge, AgentFlowNode, ValidationIssue } from '../types'
 
 /** Node types that participate in execution flow (notes are annotations). */
@@ -324,11 +325,11 @@ export function validateGraph(
         })
       }
       const model = node.data.model ?? ''
-      if (model !== 'claude-sonnet-4-5' && model !== 'claude-opus-4') {
+      if (!(COMPUTER_USE_MODELS as readonly string[]).includes(model)) {
         issues.push({
           nodeId: node.id,
           level: 'warning',
-          message: 'Computer-Use requires a computer-use-capable model (Claude 3.5+)',
+          message: 'Computer-Use requires a computer-use-capable model',
         })
       }
     }

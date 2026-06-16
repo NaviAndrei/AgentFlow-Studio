@@ -110,7 +110,7 @@ export function createDefaultNodeData(type: AgentFlowNodeType): AgentFlowNodeDat
       return {
         label: 'Computer Use',
         task: 'Navigate to the URL and extract the table',
-        model: 'claude-sonnet-4-5',
+        model: 'claude-sonnet-4-6',
         maxSteps: 10,
         allowedTools: ['screenshot', 'click', 'type', 'scroll'],
       }

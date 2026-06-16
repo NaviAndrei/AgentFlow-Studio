@@ -1095,7 +1095,7 @@ export function exportPython(
         break
       }
       case 'computerUse': {
-        const model = node.data.model ?? 'claude-sonnet-4-5'
+        const model = node.data.model ?? 'claude-sonnet-4-6'
         const maxSteps = node.data.maxSteps ?? 10
         const task = node.data.task ?? 'Complete the assigned task.'
         emit(

@@ -83,7 +83,7 @@ export function CostPanel() {
 
   return (
     <div
-      className={`fixed right-0 top-12 bottom-12 z-20 flex w-80 flex-col border-l border-white/10 bg-surface shadow-2xl transition-transform duration-300 ${
+      className={`fixed right-0 top-12 bottom-0 z-20 flex w-80 flex-col border-l border-white/10 bg-surface shadow-2xl transition-transform duration-300 ${
         open ? 'translate-x-0' : 'translate-x-[calc(100%+1rem)]'
       }`}
     >

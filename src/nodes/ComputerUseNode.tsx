@@ -15,7 +15,7 @@ export function ComputerUseNode({
       data={data}
       selected={selected}
     >
-      <Field k="model" v={data.model ?? 'claude-sonnet-4-5'} />
+      <Field k="model" v={data.model ?? 'claude-sonnet-4-6'} />
       <Field k="max steps" v={String(data.maxSteps ?? 10)} />
     </NodeShell>
   )

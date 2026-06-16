@@ -1008,7 +1008,6 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
     // ABORT GUARD: resolve early if Stop/Pause/Restart bumps runToken mid-wait,
     // instead of always waiting out the full backoff.
     await abortableDelay(backoff, token)
-    if (token !== runToken) return 'retried'
     return 'retried'
   }
 

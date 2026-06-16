@@ -38,7 +38,7 @@
       "data": {
         "label": "Browser Operator",
         "task": "Open the planned URL, navigate to the data, and extract the relevant table or text.",
-        "model": "claude-sonnet-4-5",
+        "model": "claude-sonnet-4-6",
         "maxSteps": 12,
         "allowedTools": ["screenshot", "click", "type", "scroll"]
       }

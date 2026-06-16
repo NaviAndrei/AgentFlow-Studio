@@ -4,6 +4,7 @@ import { useCanvasStore } from './store/canvasStore'
 import { decodeFlow } from './utils/shareUrl'
 import { BlueprintGallery } from './components/BlueprintGallery'
 import { Canvas } from './components/Canvas'
+import { CanvasErrorBoundary } from './components/CanvasErrorBoundary'
 import { CostPanel } from './components/CostPanel'
 import { EvalPanel } from './components/EvalPanel'
 import { ExportModal } from './components/ExportModal'
@@ -42,28 +43,30 @@ export default function App() {
     <ReactFlowProvider>
       <div className="flex h-screen flex-col bg-canvas font-mono text-gray-200">
         <Navbar />
-        <div className="flex min-h-0 flex-1">
-          <Sidebar />
-          <main className="relative min-w-0 flex-1">
-            <ValidationBar />
-            <Canvas />
-            <WelcomeOverlay />
-          </main>
-          <Inspector />
-        </div>
-        <BlueprintGallery />
-        <ExportModal />
-        <ShortcutsModal />
-        <QuickAddPopup />
-        <LLMSettingsModal />
-        <TraceLog />
-        <EvalPanel />
-        <CostPanel />
-        <PromptRegistryPanel />
-        <RunHistoryPanel />
-        <ProblemsPanel />
-        <PanelRail />
-        <MetricsBar />
+        <CanvasErrorBoundary>
+          <div className="flex min-h-0 flex-1">
+            <Sidebar />
+            <main className="relative min-w-0 flex-1">
+              <ValidationBar />
+              <Canvas />
+              <WelcomeOverlay />
+            </main>
+            <Inspector />
+          </div>
+          <BlueprintGallery />
+          <ExportModal />
+          <ShortcutsModal />
+          <QuickAddPopup />
+          <LLMSettingsModal />
+          <TraceLog />
+          <EvalPanel />
+          <CostPanel />
+          <PromptRegistryPanel />
+          <RunHistoryPanel />
+          <ProblemsPanel />
+          <PanelRail />
+          <MetricsBar />
+        </CanvasErrorBoundary>
       </div>
     </ReactFlowProvider>
   )

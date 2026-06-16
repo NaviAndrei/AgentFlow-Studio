@@ -292,7 +292,7 @@ export function fakeOutputFor(node: AgentFlowNode, userInput: string): unknown {
     case 'computerUse':
       return {
         result: 'Task completed: navigated to target and extracted data',
-        model: node.data.model ?? 'claude-sonnet-4-5',
+        model: node.data.model ?? 'claude-sonnet-4-6',
         steps_taken: 4,
         actions: [
           'screenshot',

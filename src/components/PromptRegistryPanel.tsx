@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   BookOpen,
   ChevronDown,
@@ -8,7 +8,10 @@ import {
   Trash2,
 } from 'lucide-react'
 import { usePromptStore } from '../store/promptStore'
+import { getRelativeTime, getAbsoluteTime, hasVisibleNote } from '../utils/dateFormat'
 import type { PromptEntry } from '../types'
+
+const UNDO_MS = 3000
 
 const CATEGORY_DOT: Record<PromptEntry['category'], string> = {
   system: 'bg-accent',
@@ -21,10 +24,58 @@ function EntryRow({ entry }: { entry: PromptEntry }) {
   const [addingVersion, setAddingVersion] = useState(false)
   const [versionContent, setVersionContent] = useState('')
   const [versionNote, setVersionNote] = useState('')
+  // inline undo state for entry deletion
+  const [pendingDelete, setPendingDelete] = useState(false)
+  // which version id triggered a "blocked: active" error
+  const [blockedVersionId, setBlockedVersionId] = useState<string | null>(null)
+  const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const blockedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // refs to each Pin button keyed by version id — used for auto-focus on block
+  const pinRefs = useRef<Map<string, HTMLButtonElement>>(new Map())
+
   const deleteEntry = usePromptStore((s) => s.deleteEntry)
   const pinVersion = usePromptStore((s) => s.pinVersion)
   const deleteVersion = usePromptStore((s) => s.deleteVersion)
   const addVersion = usePromptStore((s) => s.addVersion)
+
+  useEffect(() => {
+    return () => {
+      if (undoTimerRef.current) clearTimeout(undoTimerRef.current)
+      if (blockedTimerRef.current) clearTimeout(blockedTimerRef.current)
+    }
+  }, [])
+
+  const handleDeleteEntryClick = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    setPendingDelete(true)
+    undoTimerRef.current = setTimeout(() => {
+      deleteEntry(entry.id)
+    }, UNDO_MS)
+  }
+
+  const handleUndoDelete = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current)
+    setPendingDelete(false)
+  }
+
+  const handleDeleteVersionClick = (versionId: string, isActive: boolean) => {
+    if (isActive) {
+      setBlockedVersionId(versionId)
+      if (blockedTimerRef.current) clearTimeout(blockedTimerRef.current)
+      blockedTimerRef.current = setTimeout(() => setBlockedVersionId(null), UNDO_MS)
+      // find next non-active version in display order (reversed) and focus its Pin button
+      const reversed = [...entry.versions].reverse()
+      const idx = reversed.findIndex((v) => v.id === versionId)
+      const neighbor = reversed[idx + 1] ?? reversed[idx - 1]
+      if (neighbor) {
+        // defer one frame so the error state renders before focus
+        setTimeout(() => pinRefs.current.get(neighbor.id)?.focus(), 0)
+      }
+      return
+    }
+    deleteVersion(entry.id, versionId)
+  }
 
   const handleAddVersion = () => {
     if (versionContent.trim() === '') return
@@ -35,66 +86,150 @@ function EntryRow({ entry }: { entry: PromptEntry }) {
   }
 
   return (
-    <div className="mb-2 rounded-md border border-white/10 bg-canvas">
+    <div
+      className={`mb-2 rounded-md border bg-canvas transition-colors duration-200 ${
+        pendingDelete ? 'border-red-800/50 bg-red-950/20' : 'border-white/10'
+      }`}
+    >
       <div
-        onClick={() => setExpanded((e) => !e)}
-        className="flex cursor-pointer items-center gap-2 px-2 py-1.5"
+        onClick={() => !pendingDelete && setExpanded((e) => !e)}
+        role="button"
+        tabIndex={pendingDelete ? -1 : 0}
+        onKeyDown={(e) => {
+          if ((e.key === 'Enter' || e.key === ' ') && !pendingDelete) {
+            e.preventDefault()
+            setExpanded((v) => !v)
+          }
+        }}
+        aria-expanded={expanded}
+        aria-controls={`versions-${entry.id}`}
+        className={`flex items-center gap-2 px-2 py-1.5 ${pendingDelete ? 'cursor-default' : 'cursor-pointer'}`}
       >
-        {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+        {expanded && !pendingDelete ? <ChevronDown size={12} /> : <ChevronRight size={12} className={pendingDelete ? 'opacity-30' : ''} />}
         <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${CATEGORY_DOT[entry.category]}`} />
-        <span className="flex-1 truncate text-[11px] text-gray-200">{entry.name}</span>
-        <span className="text-[10px] text-gray-500">
-          ({entry.versions.length} version{entry.versions.length === 1 ? '' : 's'})
-        </span>
-        <button
-          onClick={(e) => {
-            e.stopPropagation()
-            deleteEntry(entry.id)
-          }}
-          aria-label="Delete prompt"
-          className="text-gray-600 hover:text-red-400"
+        <span
+          className={`flex-1 truncate text-[11px] ${pendingDelete ? 'text-red-300/70 line-through' : 'text-gray-200'}`}
+          title={entry.name}
         >
-          <Trash2 size={11} />
-        </button>
+          {entry.name}
+        </span>
+
+        {pendingDelete ? (
+          <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+            <span className="text-[10px] text-red-400">Deleting…</span>
+            <button
+              onClick={handleUndoDelete}
+              className="rounded border border-red-500/40 px-1.5 py-0.5 text-[10px] font-semibold text-red-300 hover:border-red-400 hover:text-red-200"
+            >
+              Undo
+            </button>
+          </div>
+        ) : (
+          <>
+            <span className="text-[10px] text-gray-400">
+              ({entry.versions.length} version{entry.versions.length === 1 ? '' : 's'})
+            </span>
+            <button
+              onClick={handleDeleteEntryClick}
+              aria-label={`Delete prompt "${entry.name}"`}
+              className="p-3 text-gray-600 hover:text-red-400 focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+            >
+              <Trash2 size={11} />
+            </button>
+          </>
+        )}
       </div>
 
-      {expanded && (
-        <div className="space-y-1.5 border-t border-white/5 px-2 py-2">
-          {[...entry.versions].reverse().map((v) => {
+      {expanded && !pendingDelete && (
+        <div id={`versions-${entry.id}`} className="space-y-2 border-t border-white/5 px-2 py-3">
+          {[...entry.versions]
+            .reverse()
+            .sort((a, b) => (b.id === entry.pinnedVersionId ? 1 : 0) - (a.id === entry.pinnedVersionId ? 1 : 0))
+            .map((v) => {
             const isActive = v.id === entry.pinnedVersionId
+            const isBlocked = blockedVersionId === v.id
+            // Visual indicator: left border applies ONLY to active version — not to most recent
+            // This provides clear affordance that the active version is the one in use
             return (
               <div
                 key={v.id}
-                className={`rounded px-2 py-1 ${isActive ? 'border-l-2 border-accent pl-2' : ''}`}
+                className={`rounded transition-colors duration-150 ${
+                  isActive ? 'border-l-2 border-accent pl-3 pr-2 py-2' : 'px-2 py-2'
+                } ${isBlocked ? 'bg-red-950/30' : ''}`}
               >
-                <div className="mb-0.5 flex items-center gap-2">
-                  <span className="text-[10px] text-gray-500">
-                    {new Date(v.createdAt).toLocaleString()}
+                {/* Header row: timestamp + Active label + action buttons */}
+                <div className="mb-1.5 flex items-center gap-1.5">
+                  <span
+                    className="text-[10px] text-gray-500"
+                    title={getAbsoluteTime(v.createdAt)}
+                  >
+                    {getRelativeTime(v.createdAt)}
                   </span>
-                  {v.note && <span className="text-[10px] italic text-gray-500">{v.note}</span>}
-                  <div className="ml-auto flex items-center gap-1.5">
+                  {isActive && (
+                    <span className="inline-block rounded border border-accent/50 bg-accent/10 px-2 py-1 text-[10px] font-semibold text-accent">
+                      • Active
+                    </span>
+                  )}
+                  <div className="ml-auto flex items-center gap-1">
                     {!isActive && (
                       <button
+                        ref={(el) => {
+                          if (el) pinRefs.current.set(v.id, el)
+                          else pinRefs.current.delete(v.id)
+                        }}
                         onClick={() => pinVersion(entry.id, v.id)}
-                        title="Make active"
-                        className="text-gray-500 hover:text-accent"
+                        aria-label={`Set "${v.note && hasVisibleNote(v.note) ? v.note : 'this version'}" as active version`}
+                        title={`Set "${v.note && hasVisibleNote(v.note) ? v.note : 'this version'}" as active version`}
+                        className="p-5 rounded text-gray-500 hover:text-accent focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
                       >
                         <Pin size={10} />
                       </button>
                     )}
                     {entry.versions.length > 1 && (
                       <button
-                        onClick={() => deleteVersion(entry.id, v.id)}
-                        title="Delete version"
-                        className="text-gray-500 hover:text-red-400"
+                        onClick={() => handleDeleteVersionClick(v.id, isActive)}
+                        aria-label={
+                          isActive
+                            ? `Cannot delete active version of "${entry.name}" (${getAbsoluteTime(v.createdAt)}). Activate another version first.`
+                            : `Delete version of "${entry.name}" from ${getAbsoluteTime(v.createdAt)}`
+                        }
+                        aria-disabled={isActive}
+                        title={isActive ? 'Cannot delete the active version — set another version as active first.' : undefined}
+                        className={`p-5 rounded transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-accent ${
+                          isActive
+                            ? 'cursor-not-allowed text-red-700/60'
+                            : 'text-gray-500 hover:text-red-400'
+                        }`}
                       >
                         <Trash2 size={10} />
                       </button>
                     )}
                   </div>
                 </div>
-                <p className="truncate text-[11px] text-gray-400">
-                  {v.content.slice(0, 80)}
+
+                {/* Optional note badge — only renders when note has non-whitespace content */}
+                {hasVisibleNote(v.note) && (
+                  <div className="mb-1.5">
+                    <span className="inline-block rounded bg-white/5 px-2 py-0.5 text-[9px] italic text-gray-500">
+                      {v.note}
+                    </span>
+                  </div>
+                )}
+
+                {/* Error message for blocked deletion */}
+                {isBlocked && (
+                  <p className="mb-1.5 text-[10px] text-red-400">
+                    Activate another version first, then delete this one.
+                  </p>
+                )}
+
+                {/* Primary content preview — readable tier */}
+                <p
+                  className="text-[11px] leading-relaxed text-gray-300"
+                  title={v.content}
+                >
+                  {v.content.slice(0, 120)}
+                  {v.content.length > 120 ? '…' : ''}
                 </p>
               </div>
             )
@@ -170,7 +305,7 @@ export function PromptRegistryPanel() {
 
   return (
     <div
-      className={`fixed right-0 top-12 bottom-12 z-20 flex w-96 flex-col border-l border-white/10 bg-surface shadow-2xl transition-transform duration-300 ${
+      className={`fixed right-0 top-12 bottom-0 z-20 flex w-96 flex-col border-l border-white/10 bg-surface shadow-2xl transition-transform duration-300 ${
         open ? 'translate-x-0' : 'translate-x-[calc(100%+1rem)]'
       }`}
     >
@@ -185,7 +320,7 @@ export function PromptRegistryPanel() {
         <button
           onClick={() => setOpen(false)}
           aria-label="Close prompt registry"
-          className="ml-auto rounded-md p-0.5 text-gray-500 hover:text-gray-300"
+          className="ml-auto rounded-md p-3 text-gray-500 hover:text-gray-300 focus:outline-none focus-visible:ring-1 focus-visible:ring-accent"
         >
           <ChevronRight size={14} />
         </button>
