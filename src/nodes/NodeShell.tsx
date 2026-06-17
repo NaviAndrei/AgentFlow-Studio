@@ -70,13 +70,7 @@ export function NodeShell({
   const outputBadge = useSimulationStore((s) => {
     if (!s.isActive) return null
     const entry = s.trace.filter((e) => e.nodeId === id).at(-1)
-    if (!entry || !entry.output) return null
-    return {
-      status: entry.status,
-      output: entry.output,
-      input: entry.input,
-      durationMs: entry.durationMs,
-    }
+    return entry && entry.output ? entry : null
   })
 
   const Icon = (data.icon ? ICON_OPTIONS[data.icon] : undefined) ?? meta.icon
