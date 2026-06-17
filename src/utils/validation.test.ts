@@ -159,3 +159,73 @@ describe('validateGraph — additive rules', () => {
     )
   })
 })
+
+describe('validateGraph — HTTP Request node', () => {
+  it('errors when URL is empty', () => {
+    const nodes = [node('h', 'httpRequest', { httpUrl: '' })]
+    expect(messages(nodes, [])).toContain('HTTP Request: URL is required')
+  })
+
+  it('errors when URL has no http/https scheme', () => {
+    const nodes = [node('h', 'httpRequest', { httpUrl: 'ftp://example.com' })]
+    expect(messages(nodes, [])).toContain(
+      'HTTP Request: URL must start with http:// or https://',
+    )
+  })
+
+  it('does not flag a valid http URL', () => {
+    const nodes = [
+      node('h', 'httpRequest', { httpUrl: 'http://api.example.com/data' }),
+    ]
+    expect(messages(nodes, [])).not.toContain('HTTP Request: URL is required')
+    expect(messages(nodes, [])).not.toContain(
+      'HTTP Request: URL must start with http:// or https://',
+    )
+  })
+
+  it('does not flag a valid https URL', () => {
+    const nodes = [
+      node('h', 'httpRequest', { httpUrl: 'https://api.example.com/data' }),
+    ]
+    expect(messages(nodes, [])).not.toContain('HTTP Request: URL is required')
+  })
+
+  it('warns when body is set on a GET request', () => {
+    const nodes = [
+      node('h', 'httpRequest', {
+        httpUrl: 'https://api.example.com',
+        httpMethod: 'GET',
+        httpBody: '{"key":"value"}',
+      }),
+    ]
+    expect(messages(nodes, [])).toContain(
+      'HTTP Request: body is ignored for GET/DELETE requests',
+    )
+  })
+
+  it('warns when body is set on a DELETE request', () => {
+    const nodes = [
+      node('h', 'httpRequest', {
+        httpUrl: 'https://api.example.com/item/1',
+        httpMethod: 'DELETE',
+        httpBody: '{"confirm":true}',
+      }),
+    ]
+    expect(messages(nodes, [])).toContain(
+      'HTTP Request: body is ignored for GET/DELETE requests',
+    )
+  })
+
+  it('does not warn when body is set on a POST request', () => {
+    const nodes = [
+      node('h', 'httpRequest', {
+        httpUrl: 'https://api.example.com/items',
+        httpMethod: 'POST',
+        httpBody: '{"name":"test"}',
+      }),
+    ]
+    expect(messages(nodes, [])).not.toContain(
+      'HTTP Request: body is ignored for GET/DELETE requests',
+    )
+  })
+})

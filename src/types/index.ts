@@ -33,6 +33,7 @@ export type AgentFlowNodeType =
   | 'multimodalInput'
   | 'tryCatch'
   | 'retry'
+  | 'httpRequest'
   | 'note'
   | 'group'
 
@@ -139,6 +140,12 @@ export type AgentFlowNodeData = {
   task?: string
   maxSteps?: number
   allowedTools?: string[]
+  /** HTTP Request — make GET/POST/PUT/DELETE/PATCH calls. */
+  httpUrl?: string
+  httpMethod?: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH'
+  httpHeaders?: string
+  httpBody?: string
+  httpTimeoutMs?: number
   /** A2A Remote Agent — call an external agent over the A2A protocol. */
   agentUrl?: string
   agentName?: string

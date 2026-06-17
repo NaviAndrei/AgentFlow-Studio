@@ -173,6 +173,15 @@ export function createDefaultNodeData(type: AgentFlowNodeType): AgentFlowNodeDat
           retryOn: ['error'],
         },
       }
+    case 'httpRequest':
+      return {
+        label: 'HTTP Request',
+        httpUrl: '',
+        httpMethod: 'GET',
+        httpHeaders: '{}',
+        httpBody: '',
+        httpTimeoutMs: 10000,
+      }
     case 'note':
       return { label: 'Note', text: 'Add an annotation…' }
     case 'group':

@@ -67,6 +67,17 @@ export function NodeShell({
   const stream = useSimulationStore((s) =>
     s.isActive ? (s.nodeStreams[id] ?? '') : '',
   )
+  const outputBadge = useSimulationStore((s) => {
+    if (!s.isActive) return null
+    const entry = s.trace.filter((e) => e.nodeId === id).at(-1)
+    if (!entry || !entry.output) return null
+    return {
+      status: entry.status,
+      output: entry.output,
+      input: entry.input,
+      durationMs: entry.durationMs,
+    }
+  })
 
   const Icon = (data.icon ? ICON_OPTIONS[data.icon] : undefined) ?? meta.icon
   const headerColor = data.color ?? meta.color
@@ -128,6 +139,18 @@ export function NodeShell({
           <div className="pointer-events-none absolute inset-0 rounded-lg bg-green-500/10" />
         )}
       </div>
+      {outputBadge && (simStatus === 'completed' || simStatus === 'error') && (
+        <div
+          title={`INPUT:\n${outputBadge.input}\n\nOUTPUT:\n${outputBadge.output}`}
+          className={`nodrag mt-1 w-52 cursor-default truncate rounded border px-2 py-0.5 text-[10px] ${
+            outputBadge.status === 'ok'
+              ? 'border-green-500/60 bg-green-500/10 text-green-300'
+              : 'border-red-500/60 bg-red-500/10 text-red-300'
+          }`}
+        >
+          {outputBadge.output}
+        </div>
+      )}
       {simStatus === 'completed' && (
         <span
           title="Executed"

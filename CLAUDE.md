@@ -40,6 +40,20 @@ No localStorage / sessionStorage.
 - One node type per file in `src/nodes/`
 - `npm run typecheck && npm run build` must pass before every commit
 
+## Node Registration — 9 Locations (not 7)
+ARCHITECTURE.md lists 7; two more are required or typecheck fails:
+- `src/data/hints.ts` — `HINTS.nodes` uses `satisfies Record<AgentFlowNodeType, string>`; every type must have a hint
+- `src/utils/nodeDefaults.ts` — switch must cover every type (exhaustiveness)
+
+## Edit Tool Gotcha — Single-Quoted `.ts` Files
+The Edit tool converts straight single quotes `'` to curly quotes inside replaced blocks.
+TypeScript cannot parse curly quotes as string delimiters (TS1127 "Invalid character").
+Fix: use Python via Bash for any insertion into files that use single-quoted string syntax (e.g. `hints.ts`).
+
+## codeExporter `emit()` — no null args
+`emit(...added: string[])` — passing `null` for conditional lines fails type-check.
+Use `if (cond) emit('...')` instead of `emit(cond ? '...' : null)`.
+
 ## Do Not Touch (see DECISIONS.md)
 - `PanelRail` z-index — z-swap buries the rail
 - `TraceLog bottom-0` — reverting causes 25px rail overlap

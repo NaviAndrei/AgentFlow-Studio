@@ -80,6 +80,7 @@ const GRAPH_NODE_TYPES: AgentFlowNodeType[] = [
   'multimodalInput',
   'tryCatch',
   'retry',
+  'httpRequest',
 ]
 
 const PYTHON_KEYWORDS = new Set([
@@ -303,7 +304,7 @@ export function exportRequirements(nodes: AgentFlowNode[]): string {
   if (nodes.some((n) => n.type === 'computerUse')) {
     lines.push('anthropic')
   }
-  if (nodes.some((n) => n.type === 'a2aAgent')) {
+  if (nodes.some((n) => n.type === 'a2aAgent' || n.type === 'httpRequest')) {
     lines.push('httpx')
   }
   lines.push('python-dotenv')
@@ -446,7 +447,7 @@ export function exportPython(
   if (graphNodes.some((n) => n.type === 'computerUse')) {
     emit('from anthropic import Anthropic')
   }
-  if (graphNodes.some((n) => n.type === 'a2aAgent')) {
+  if (graphNodes.some((n) => n.type === 'a2aAgent' || n.type === 'httpRequest')) {
     emit('import httpx')
   }
   if (graphNodes.some((n) => n.type === 'multimodalInput')) {
@@ -1299,6 +1300,46 @@ export function exportPython(
             '',
           )
         }
+        break
+      }
+      case 'httpRequest': {
+        const url = node.data.httpUrl ?? ''
+        const method = (node.data.httpMethod ?? 'GET').toLowerCase()
+        const timeoutSec = (node.data.httpTimeoutMs ?? 10000) / 1000
+        const hasHeaders =
+          !!node.data.httpHeaders && node.data.httpHeaders.trim() !== '{}'
+        const hasBody =
+          ['post', 'put', 'patch'].includes(method) && !!node.data.httpBody
+        if (options.asyncMode) {
+          emit(
+            `${defKeyword} ${name}(state: State) -> dict:`,
+            `    """HTTP ${method.toUpperCase()} to ${pyDoc(url)}."""`,
+            `    async with httpx.AsyncClient(timeout=${timeoutSec}) as client:`,
+            `        resp = await client.${method}(`,
+            `            ${pyStr(url)},`,
+          )
+          if (hasHeaders) emit(`            headers=${node.data.httpHeaders},`)
+          if (hasBody) emit(`            content=${pyStr(node.data.httpBody ?? '')},`)
+          emit('        )', '    resp.raise_for_status()')
+        } else {
+          emit(
+            `${defKeyword} ${name}(state: State) -> dict:`,
+            `    """HTTP ${method.toUpperCase()} to ${pyDoc(url)}."""`,
+            `    resp = httpx.${method}(`,
+            `        ${pyStr(url)},`,
+          )
+          if (hasHeaders) emit(`        headers=${node.data.httpHeaders},`)
+          if (hasBody) emit(`        content=${pyStr(node.data.httpBody ?? '')},`)
+          emit(`        timeout=${timeoutSec},`, '    )', '    resp.raise_for_status()')
+        }
+        emit(
+          '    try:',
+          '        result = resp.json()',
+          '    except Exception:',
+          '        result = resp.text',
+          '    return {"messages": [{"role": "assistant", "content": str(result)}]}',
+          '',
+        )
         break
       }
     }

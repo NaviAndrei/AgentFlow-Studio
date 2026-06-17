@@ -314,6 +314,42 @@ export function validateGraph(
       }
     }
 
+    // HTTP Request needs a valid URL.
+    if (node.type === 'httpRequest') {
+      const url = (node.data.httpUrl ?? '').trim()
+      if (url === '') {
+        issues.push({
+          nodeId: node.id,
+          level: 'error',
+          message: 'HTTP Request: URL is required',
+        })
+      } else if (!/^https?:\/\//i.test(url)) {
+        issues.push({
+          nodeId: node.id,
+          level: 'error',
+          message: 'HTTP Request: URL must start with http:// or https://',
+        })
+      }
+      const validMethods = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH']
+      if (node.data.httpMethod && !validMethods.includes(node.data.httpMethod)) {
+        issues.push({
+          nodeId: node.id,
+          level: 'error',
+          message: `HTTP Request: invalid method "${node.data.httpMethod}"`,
+        })
+      }
+      if (
+        ['GET', 'DELETE'].includes(node.data.httpMethod ?? 'GET') &&
+        node.data.httpBody
+      ) {
+        issues.push({
+          nodeId: node.id,
+          level: 'warning',
+          message: 'HTTP Request: body is ignored for GET/DELETE requests',
+        })
+      }
+    }
+
     // Computer-Use needs an outgoing edge (its result must flow somewhere) and
     // a computer-use-capable model.
     if (node.type === 'computerUse') {

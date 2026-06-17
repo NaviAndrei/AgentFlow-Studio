@@ -8,6 +8,7 @@ import {
   Gauge,
   GitBranch,
   GitMerge,
+  Globe,
   Group,
   HardDrive,
   Image,
@@ -285,6 +286,14 @@ export const NODE_META: Record<AgentFlowNodeType, NodeMeta> = {
     icon: RefreshCw,
     description: 'Retry the next node with backoff',
   },
+  httpRequest: {
+    type: 'httpRequest',
+    label: 'HTTP Request',
+    category: 'core',
+    color: '#0369a1',
+    icon: Globe,
+    description: 'Make HTTP GET/POST/PUT/DELETE/PATCH requests to external APIs',
+  },
   note: {
     type: 'note',
     label: 'Sticky Note',
@@ -340,7 +349,7 @@ export const PALETTE: { title: string; types: AgentFlowNodeType[] }[] = [
   },
   {
     title: 'Emerging',
-    types: ['multimodalInput', 'computerUse', 'a2aAgent'],
+    types: ['multimodalInput', 'computerUse', 'a2aAgent', 'httpRequest'],
   },
   { title: 'Annotation', types: ['note'] },
 ]

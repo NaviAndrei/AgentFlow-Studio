@@ -143,6 +143,7 @@ const SIMULATED_TYPES: AgentFlowNodeType[] = [
   'multimodalInput',
   'tryCatch',
   'retry',
+  'httpRequest',
 ]
 
 /** Pause between node executions in the continuous run loop. */
@@ -168,6 +169,7 @@ const LIVE_EXECUTED_TYPES: AgentFlowNodeType[] = [
   'evaluator',
   'join',
   'output',
+  'httpRequest',
 ]
 
 interface SimulationState {
@@ -468,6 +470,15 @@ function mergeSubgraphOutput(
   } catch {
     return innerOutput
   }
+}
+
+function resolveHttpTemplate(
+  template: string,
+  nodeOutputs: Record<string, unknown>,
+): string {
+  return template.replace(/\{\{(\w+)\}\}/g, (_, key: string) =>
+    key in nodeOutputs ? String(nodeOutputs[key]) : `{{${key}}}`,
+  )
 }
 
 export const useSimulationStore = create<SimulationState>((set, get) => {
@@ -1189,6 +1200,56 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
         })
         metrics.addTokens(estimateTokens(output.output))
         return output
+      }
+      case 'httpRequest': {
+        const token = runToken
+        const nodeOutputs = get().nodeOutputs
+        const url = resolveHttpTemplate(node.data.httpUrl ?? '', nodeOutputs)
+        const method = node.data.httpMethod ?? 'GET'
+        const timeoutMs = node.data.httpTimeoutMs ?? 10000
+
+        let headers: Record<string, string> = {}
+        try {
+          headers = JSON.parse(node.data.httpHeaders ?? '{}')
+        } catch {
+          // ignore malformed JSON headers
+        }
+
+        let body: string | undefined
+        if (['POST', 'PUT', 'PATCH'].includes(method) && node.data.httpBody) {
+          body = node.data.httpBody
+          headers['Content-Type'] ??= 'application/json'
+        }
+
+        abortController?.abort()
+        abortController = new AbortController()
+        const localController = abortController
+        const timeoutId = setTimeout(() => localController.abort(), timeoutMs)
+
+        let resp: Response
+        try {
+          resp = await fetch(url, {
+            method,
+            headers,
+            body,
+            signal: localController.signal,
+          })
+        } finally {
+          clearTimeout(timeoutId)
+        }
+
+        if (token !== runToken) return undefined
+        if (!resp.ok) throw new Error(`HTTP ${resp.status} ${resp.statusText}`)
+
+        const contentType = resp.headers.get('content-type') ?? ''
+        const text = contentType.includes('application/json')
+          ? JSON.stringify(await resp.json())
+          : await resp.text()
+
+        if (token !== runToken) return undefined
+
+        appendStream(nodeId, text)
+        return { url, method, status: resp.status, output: text }
       }
       case 'condition': {
         // Same predicate evaluation as the simulated engine, against the real

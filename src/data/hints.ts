@@ -37,6 +37,7 @@ export const HINTS = {
     a2aAgent: 'Calls another AI agent running on a different server, using a shared agent-to-agent protocol.',
     tryCatch: 'Watches the branch after it for errors. If something fails, the flow reroutes to the error path instead of stopping.',
     retry: 'Automatically re-runs the next step if it fails or returns nothing, waiting longer between each attempt.',
+    httpRequest: 'Calls an external API directly — GET, POST, PUT, DELETE, or PATCH. Use it to fetch data or send updates to any HTTP service.',
     note: 'A free-text comment on the canvas — doesn’t affect how the flow runs.',
     group: 'A frame you can use to visually organize and collapse a set of nodes.',
   } satisfies Record<AgentFlowNodeType, string>,

@@ -6,6 +6,7 @@ import { ComputerUseNode } from './ComputerUseNode'
 import { ConditionNode } from './ConditionNode'
 import { EvaluatorNode } from './EvaluatorNode'
 import { GroupNode } from './GroupNode'
+import { HttpRequestNode } from './HttpRequestNode'
 import { GuardrailNode } from './GuardrailNode'
 import { HumanInLoopNode } from './HumanInLoopNode'
 import { JoinNode } from './JoinNode'
@@ -61,6 +62,7 @@ export const nodeTypes: NodeTypes = {
   computerUse: ComputerUseNode,
   a2aAgent: A2AAgentNode,
   multimodalInput: MultimodalInputNode,
+  httpRequest: HttpRequestNode,
   tryCatch: TryCatchNode,
   retry: RetryNode,
   note: NoteNode,
