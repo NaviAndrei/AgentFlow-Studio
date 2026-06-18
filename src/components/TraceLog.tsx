@@ -3,7 +3,11 @@ import { useReactFlow } from '@xyflow/react'
 import { ChevronDown, Trash2, Zap } from 'lucide-react'
 import { getNodeMeta } from '../nodes'
 import { useCanvasStore } from '../store/canvasStore'
+import { useDebuggerStore } from '../store/debuggerStore'
+import { useRunHistoryStore } from '../store/runHistoryStore'
 import { useSimulationStore } from '../store/simulationStore'
+import { TimeTravelBar } from './debugger/TimeTravelBar'
+import { SnapshotInspector } from './debugger/SnapshotInspector'
 import { HintIcon } from './HintIcon'
 import { HINTS } from '../data/hints'
 import type { TraceEntry } from '../types'
@@ -96,6 +100,17 @@ export function TraceLog() {
   const { setCenter } = useReactFlow()
   const [filter, setFilter] = useState<TraceFilter>('all')
 
+  const dockTab = useDebuggerStore((s) => s.dockTab)
+  const setDockTab = useDebuggerStore((s) => s.setDockTab)
+  const selectedRunId = useRunHistoryStore((s) => s.selectedRunId)
+  const hasTimeTravel = useRunHistoryStore((s) =>
+    selectedRunId
+      ? (s.runs.find((r) => r.id === selectedRunId)?.snapshots.length ?? 0) > 0
+      : false,
+  )
+  // Time Travel needs a selected run with snapshots; fall back to the trace tab.
+  const tab = dockTab === 'timeTravel' && hasTimeTravel ? 'timeTravel' : 'trace'
+
   const entries = trace.filter((e) => matchesFilter(e, filter))
 
   const focusNode = (entry: TraceEntry) => {
@@ -115,61 +130,89 @@ export function TraceLog() {
       }`}
     >
       <div className="flex shrink-0 items-center gap-2 border-b border-white/10 px-3 py-1.5">
-        <span className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-gray-400">
-          Execution Trace
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setDockTab('trace')}
+            className={`rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider transition-colors ${
+              tab === 'trace' ? 'bg-accent/15 text-accent' : 'text-gray-400 hover:text-gray-200'
+            }`}
+          >
+            Trace Log
+          </button>
           <HintIcon text={HINTS.trace.title} />
-        </span>
-        <div className="ml-2 flex gap-1">
-          {FILTERS.map((f) => (
-            <button
-              key={f.key}
-              onClick={() => setFilter(f.key)}
-              className={`rounded-md px-2 py-0.5 text-[10px] transition-colors ${
-                filter === f.key
-                  ? 'bg-accent/15 text-accent'
-                  : 'text-gray-500 hover:text-gray-300'
-              }`}
-            >
-              {f.label}
-            </button>
-          ))}
+          <button
+            onClick={() => setDockTab('timeTravel')}
+            disabled={!hasTimeTravel}
+            title={hasTimeTravel ? undefined : 'Select a completed run in Run History'}
+            className={`rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider transition-colors disabled:opacity-40 ${
+              tab === 'timeTravel' ? 'bg-accent/15 text-accent' : 'text-gray-400 hover:text-gray-200'
+            }`}
+          >
+            Time Travel
+          </button>
         </div>
-        <span className="flex items-center gap-1 text-[10px] text-gray-500">
-          <Zap size={9} className="text-amber-400" />
-          live
-          <HintIcon text={HINTS.trace.engineLive} />
-        </span>
-        <span className="flex items-center gap-1 text-[10px] text-gray-500">
-          ms
-          <HintIcon text={HINTS.trace.durationMs} />
-        </span>
-        <button
-          onClick={clearTrace}
-          className="ml-auto flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] text-gray-500 transition-colors hover:text-gray-300"
-        >
-          <Trash2 size={11} />
-          Clear
-        </button>
+        {tab === 'trace' && (
+          <>
+            <div className="ml-2 flex gap-1">
+              {FILTERS.map((f) => (
+                <button
+                  key={f.key}
+                  onClick={() => setFilter(f.key)}
+                  className={`rounded-md px-2 py-0.5 text-[10px] transition-colors ${
+                    filter === f.key
+                      ? 'bg-accent/15 text-accent'
+                      : 'text-gray-500 hover:text-gray-300'
+                  }`}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+            <span className="flex items-center gap-1 text-[10px] text-gray-500">
+              <Zap size={9} className="text-amber-400" />
+              live
+              <HintIcon text={HINTS.trace.engineLive} />
+            </span>
+            <span className="flex items-center gap-1 text-[10px] text-gray-500">
+              ms
+              <HintIcon text={HINTS.trace.durationMs} />
+            </span>
+            <button
+              onClick={clearTrace}
+              className="ml-auto flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] text-gray-500 transition-colors hover:text-gray-300"
+            >
+              <Trash2 size={11} />
+              Clear
+            </button>
+          </>
+        )}
         <button
           onClick={() => setTraceOpen(false)}
           aria-label="Close trace log"
-          className="rounded-md p-0.5 text-gray-500 hover:text-gray-300"
+          className={`${tab === 'trace' ? '' : 'ml-auto '}rounded-md p-0.5 text-gray-500 hover:text-gray-300`}
         >
           <ChevronDown size={14} />
         </button>
       </div>
-      <div className="flex-1 overflow-y-auto px-1 py-1">
-        {entries.length === 0 && (
-          <p className="px-2 py-3 text-[11px] text-gray-600">
-            {trace.length === 0
-              ? 'No executions logged yet — run the simulation.'
-              : 'No entries match this filter.'}
-          </p>
-        )}
-        {entries.map((entry) => (
-          <TraceEntryRow key={entry.id} entry={entry} onClick={focusNode} />
-        ))}
-      </div>
+      {tab === 'timeTravel' ? (
+        <div className="flex flex-1 flex-col overflow-hidden">
+          <TimeTravelBar />
+          <SnapshotInspector />
+        </div>
+      ) : (
+        <div className="flex-1 overflow-y-auto px-1 py-1">
+          {entries.length === 0 && (
+            <p className="px-2 py-3 text-[11px] text-gray-600">
+              {trace.length === 0
+                ? 'No executions logged yet — run the simulation.'
+                : 'No entries match this filter.'}
+            </p>
+          )}
+          {entries.map((entry) => (
+            <TraceEntryRow key={entry.id} entry={entry} onClick={focusNode} />
+          ))}
+        </div>
+      )}
     </div>
   )
 }

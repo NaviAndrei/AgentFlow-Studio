@@ -1,6 +1,8 @@
 import { useMemo } from 'react'
 import { ChevronLeft, ChevronRight, History, Search, Trash2 } from 'lucide-react'
 import { useRunHistoryStore } from '../store/runHistoryStore'
+import { useDebuggerStore } from '../store/debuggerStore'
+import { useSimulationStore } from '../store/simulationStore'
 import { CostBreakdown } from './CostPanel'
 import { TraceEntryRow } from './TraceLog'
 import { diffRuns, type NodeDiff } from '../utils/diffRuns'
@@ -108,6 +110,20 @@ export function RunHistoryPanel() {
   const setCompareRunIds = useRunHistoryStore((s) => s.setCompareRunIds)
 
   const selectedRun = runs.find((r) => r.id === selectedRunId) ?? null
+
+  const setDockTab = useDebuggerStore((s) => s.setDockTab)
+  const resetDebugger = useDebuggerStore((s) => s.reset)
+  const setActiveStep = useDebuggerStore((s) => s.setActiveStep)
+  const setTraceOpen = useSimulationStore((s) => s.setTraceOpen)
+
+  // Select a run for inspection and open the bottom dock's Time Travel tab on it.
+  const selectRun = (run: RunRecord) => {
+    setSelectedRunId(run.id)
+    resetDebugger()
+    setActiveStep(0, run.snapshots[0]?.nodeId ?? null)
+    setDockTab('timeTravel')
+    setTraceOpen(true)
+  }
 
   const toggleCompare = (id: string) => {
     if (!compareRunIds) {
@@ -286,7 +302,7 @@ export function RunHistoryPanel() {
             {filtered.map((run) => (
               <div
                 key={run.id}
-                onClick={() => setSelectedRunId(run.id)}
+                onClick={() => selectRun(run)}
                 className={`mb-2 cursor-pointer rounded-lg bg-surface-2 p-3 hover:bg-white/5 ${
                   selectedRunId === run.id ? 'border border-accent/40' : ''
                 }`}

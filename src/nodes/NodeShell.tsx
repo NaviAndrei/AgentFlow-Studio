@@ -5,6 +5,7 @@ import type { ReactNode } from 'react'
 import type { NodeMeta } from './registry'
 import type { AgentFlowNodeData } from '../types'
 import { useCanvasStore } from '../store/canvasStore'
+import { useDebuggerStore } from '../store/debuggerStore'
 import { useSimulationStore } from '../store/simulationStore'
 import { StreamingText } from '../components/StreamingText'
 import { ICON_OPTIONS } from './iconOptions'
@@ -72,6 +73,10 @@ export function NodeShell({
     const entry = s.trace.filter((e) => e.nodeId === id).at(-1)
     return entry && entry.output ? entry : null
   })
+  // T2-2: time-travel highlight — active only outside a live sim run.
+  const ttActive = useDebuggerStore((s) => s.activeStepNodeId === id)
+  const isSimActive = useSimulationStore((s) => s.isActive)
+  const timeTraveling = ttActive && !isSimActive
 
   const Icon = (data.icon ? ICON_OPTIONS[data.icon] : undefined) ?? meta.icon
   const headerColor = data.color ?? meta.color
@@ -84,7 +89,7 @@ export function NodeShell({
           simStatus === 'completed' ? 'opacity-60' : ''
         } ${simStatus === 'skipped' ? 'opacity-35' : ''} ${
           simStatus === 'error' ? 'sim-error' : ''
-        }`}
+        } ${timeTraveling ? 'tt-active' : ''}`}
       >
         <div
           className="flex items-center gap-2 px-3 py-2"

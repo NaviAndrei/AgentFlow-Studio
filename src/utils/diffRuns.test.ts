@@ -34,6 +34,7 @@ function run(overrides: Partial<RunRecord>): RunRecord {
     evalPassCount: null,
     evalTotalCount: null,
     traceSnapshot: [],
+    snapshots: [],
     costSnapshot: null,
     ...overrides,
   }

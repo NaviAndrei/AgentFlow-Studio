@@ -145,6 +145,22 @@ body,
   }
 }
 
+/* Time-Travel Debugger: amber ring on the node of the focused step (T2-2) */
+.tt-active {
+  border-color: #fbbf24 !important;
+  animation: tt-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes tt-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.55);
+  }
+  50% {
+    box-shadow: 0 0 0 7px rgba(251, 191, 36, 0);
+  }
+}
+
 .sim-caret {
   animation: sim-caret-blink 0.8s step-end infinite;
 }
@@ -169,6 +185,11 @@ body,
   .sim-error {
     animation: none;
     box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.4);
+  }
+
+  .tt-active {
+    animation: none;
+    box-shadow: 0 0 0 3px rgba(251, 191, 36, 0.4);
   }
 
   .sim-caret {

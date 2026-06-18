@@ -8,7 +8,7 @@ import { HINTS } from '../data/hints'
  * Minimal recursive JSON renderer with hand-rolled syntax colors:
  * keys cyan (accent), strings amber, numbers violet, booleans pink, null gray.
  */
-function JsonValue({ value }: { value: unknown }) {
+export function JsonValue({ value }: { value: unknown }) {
   if (value === null || value === undefined) {
     return <span className="text-gray-500">null</span>
   }

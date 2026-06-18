@@ -5,6 +5,39 @@
 
 ---
 
+## Handoff — 2026-06-19
+
+### What was completed
+- **Time-Travel Debugger (T2-2) ✅**
+  - `StepSnapshot` type + `RunRecord.snapshots` (`src/types/index.ts`)
+  - `simulationStore.ts`: `snapshots` state, `makeSnapshot()` helper capturing untruncated
+    input (`resolveCacheInput`) + output at every primary trace-entry site (ok/cached/error/
+    retry/tryCatch/map); cleared in `resetRunState`/`stop`; archived via `structuredClone` in `recordRunHistory`
+  - New `debuggerStore.ts` — ephemeral playback state (`dockTab`, `activeStepIndex`, `isPlaying`,
+    `playbackSpeed`, `activeStepNodeId`, `showDiff`)
+  - New `components/debugger/TimeTravelBar.tsx` (scrubber/controls/speed; Fork stub disabled) +
+    `SnapshotInspector.tsx` (input/output state, diff highlight; reuses `JsonValue`)
+  - `TraceLog.tsx` gained **Trace Log | Time Travel** tabs; `RunHistoryPanel.tsx` selecting a run
+    opens the Time Travel tab; `NodeShell.tsx` + `.tt-active` CSS give the active step an amber ring
+  - Highlight uses a store selector (NOT `updateNodeData`) to avoid dirtying the canvas/undo
+  - **Deferred**: "Fork from here" (re-seeding the engine mid-state) — button is a disabled stub
+- **Node search in palette (Task B) ✅** — `Sidebar.tsx`: debounced (150ms) search, hides empty
+  groups, ↑/↓ highlight, Enter adds first match at canvas center (`addNode`), Esc clears
+
+### Current state
+- typecheck: clean ✅ · build: clean ✅ (pre-existing fflate/chunk warnings only)
+- tests: **203/203 passing** ✅ (192 prior + 11 new: snapshots ×3 wait, debuggerStore ×5, TimeTravelBar ×3)
+- Browser-verified: build Sequential Pipeline → run → select run → step through snapshots; active
+  node ring, step counter, scrubber, untruncated input/output state all work; Task B filter/Enter/Esc work
+- Note: no jsdom/testing-library in repo (node env + window stub), so the TimeTravelBar test is the
+  project's non-rendering smoke+store-integration style, not a DOM render test
+
+### Next steps
+1. [ ] "Fork from here" — re-seed `simulationStore` (nodeOutputs/visitCounts) from a snapshot and run onward
+2. [ ] Follow-ons A (streaming LLM output) and C (canvas undo/redo) from the T2-2 session brief
+
+---
+
 ## Handoff — 2026-06-18
 
 ### What was completed

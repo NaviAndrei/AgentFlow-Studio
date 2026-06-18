@@ -37,6 +37,7 @@ import type {
   ExecutionEngine,
   NodeCostEntry,
   RunCostSummary,
+  StepSnapshot,
   TraceEntry,
 } from '../types'
 
@@ -193,6 +194,8 @@ interface SimulationState {
   nodeStreams: Record<string, string>
   erroredNodeIds: string[]
   trace: TraceEntry[]
+  /** T2-2: per-step state captures for the Time-Travel Debugger. */
+  snapshots: StepSnapshot[]
   traceOpen: boolean
   /** Set when a Human-in-Loop node has executed and is awaiting approval. */
   pendingApproval: { nodeId: string } | null
@@ -534,6 +537,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
         : null,
       evalTotalCount: evalRun ? evalRun.results.length : null,
       traceSnapshot: structuredClone(trace),
+      snapshots: structuredClone(get().snapshots),
       costSnapshot: structuredClone(costSummary),
     })
   }
@@ -1965,6 +1969,23 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
         input: truncate(input, 80),
         output: truncate(JSON.stringify(output), 120),
       })
+      // T2-2: capture a full (untruncated) state snapshot alongside the trace
+      // entry so the Time-Travel Debugger can replay this step. stepIndex is read
+      // at build time; each call site appends exactly one snapshot in one set().
+      const makeSnapshot = (
+        entry: TraceEntry,
+        fullOutput: unknown,
+      ): StepSnapshot => ({
+        stepIndex: get().snapshots.length,
+        nodeId: entry.nodeId,
+        nodeName: entry.nodeName,
+        nodeType: entry.nodeType,
+        inputState: resolveCacheInput(nodeId, node) as Record<string, unknown>,
+        outputState: fullOutput,
+        at: entry.at,
+        durationMs: entry.durationMs,
+        status: entry.status,
+      })
 
       // Try/Catch: does not execute itself. Mark the onSuccess subgraph as
       // "guarded" and enqueue only the onSuccess target; the onError branch
@@ -1975,6 +1996,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
         guardedRemaining.set(nodeId, new Set(guarded))
         const tcOutput = { guarding: [...guarded] }
         const guardResult = checkGuardSuccess(nodeId, get().skippedNodeIds)
+        const tcEntry = makeEntry('ok', tcOutput)
         const nextIdxTc = currentNodeIndex + 1
         const tcTargets =
           onSuccessTarget && flowNodeIds().has(onSuccessTarget) ? [onSuccessTarget] : []
@@ -1990,7 +2012,8 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
           },
           nodeOutputs: { ...get().nodeOutputs, [nodeId]: tcOutput },
           nodeEngines: { ...get().nodeEngines, [nodeId]: 'simulated' },
-          trace: [...get().trace, makeEntry('ok', tcOutput), ...guardResult.skipEntries],
+          trace: [...get().trace, tcEntry, ...guardResult.skipEntries],
+          snapshots: [...get().snapshots, makeSnapshot(tcEntry, tcOutput)],
           executedIds: new Set(get().executedIds).add(nodeId),
           skippedNodeIds: guardResult.skipped,
           executionQueue: nextQueueTc,
@@ -2013,6 +2036,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
           retryAttempts.set(nodeId, 1)
         }
         const retryOutput = { maxAttempts: cfg.maxAttempts, wrapping: target ?? null }
+        const retryEntry = makeEntry('ok', retryOutput)
         const nextIdxR = currentNodeIndex + 1
         const rTargets = target && flowNodeIds().has(target) ? [target] : []
         const grownR = enqueueTargets(executionQueue, nextIdxR, get().skippedNodeIds, rTargets)
@@ -2020,7 +2044,8 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
           retryStatus: { ...get().retryStatus, [nodeId]: { attempt: 1, max: cfg.maxAttempts } },
           nodeOutputs: { ...get().nodeOutputs, [nodeId]: retryOutput },
           nodeEngines: { ...get().nodeEngines, [nodeId]: 'simulated' },
-          trace: [...get().trace, makeEntry('ok', retryOutput)],
+          trace: [...get().trace, retryEntry],
+          snapshots: [...get().snapshots, makeSnapshot(retryEntry, retryOutput)],
           executedIds: new Set(get().executedIds).add(nodeId),
           executionQueue: grownR,
           currentNodeIndex: nextIdxR,
@@ -2209,6 +2234,10 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
             erroredNodeIds: [...get().erroredNodeIds, nodeId],
             nodeOutputs: { ...get().nodeOutputs, [nodeId]: { error: message } },
             trace: [...get().trace, makeEntry('error', { error: message })],
+            snapshots: [
+              ...get().snapshots,
+              makeSnapshot(makeEntry('error', { error: message }), { error: message }),
+            ],
           })
           metrics.pauseTimer()
           if (get().liveMode) {
@@ -2267,6 +2296,10 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
               },
             },
             trace: [...get().trace, makeEntry('error', { error: message }), ...skipEntries],
+            snapshots: [
+              ...get().snapshots,
+              makeSnapshot(makeEntry('error', { error: message }), { error: message }),
+            ],
             skippedNodeIds: skipped,
             executionQueue: nextQueueTc,
             currentNodeIndex: nextIndexTc,
@@ -2389,6 +2422,10 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
               makeEntry('ok', mapOutput),
               ...skipTrace,
             ],
+            snapshots: [
+              ...get().snapshots,
+              makeSnapshot(makeEntry('ok', mapOutput), mapOutput),
+            ],
             executedIds: new Set(get().executedIds).add(nodeId),
             skippedNodeIds: newSkipped,
             executionQueue: grown,
@@ -2419,6 +2456,12 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
             isRunning: false,
             erroredNodeIds: [...get().erroredNodeIds, nodeId],
             trace: [...get().trace, makeEntry('error', { error: 'empty output after retries' })],
+            snapshots: [
+              ...get().snapshots,
+              makeSnapshot(makeEntry('error', { error: 'empty output after retries' }), {
+                error: 'empty output after retries',
+              }),
+            ],
           })
           metrics.pauseTimer()
           return
@@ -2483,6 +2526,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
         nodeOutputs: { ...get().nodeOutputs, [nodeId]: output },
         nodeEngines: { ...get().nodeEngines, [nodeId]: engine },
         trace: [...get().trace, taggedEntry, ...skipEntries, ...nestedTrace],
+        snapshots: [...get().snapshots, makeSnapshot(taggedEntry, output)],
         executedIds: new Set(get().executedIds).add(nodeId),
         skippedNodeIds: skipped,
         executionQueue: nextQueue,
@@ -2536,6 +2580,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
       nodeStreams: {},
       erroredNodeIds: [],
       trace: [],
+      snapshots: [],
       pendingApproval: null,
       tryCatchStatus: {},
       retryStatus: {},
@@ -2561,6 +2606,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
     nodeStreams: {},
     erroredNodeIds: [],
     trace: [],
+    snapshots: [],
     traceOpen: false,
     pendingApproval: null,
     tryCatchStatus: {},
@@ -2616,6 +2662,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
         nodeStreams: {},
         erroredNodeIds: [],
         trace: [],
+        snapshots: [],
         pendingApproval: null,
         tryCatchStatus: {},
         retryStatus: {},

@@ -213,6 +213,27 @@ export interface TraceEntry {
   parentNodeId?: string
 }
 
+/**
+ * T2-2: A full state capture for one executed node, in execution order.
+ * Powers the Time-Travel Debugger — unlike TraceEntry (truncated strings),
+ * a snapshot keeps the untruncated input/output state for step-by-step replay.
+ */
+export interface StepSnapshot {
+  /** 0-based position in execution order. */
+  stepIndex: number
+  nodeId: string
+  nodeName: string
+  nodeType: string
+  /** State entering the node: its config + upstream outputs + run-level knobs. */
+  inputState: Record<string, unknown>
+  /** Full, untruncated output the node produced. */
+  outputState: unknown
+  /** Epoch ms when the node finished. */
+  at: number
+  durationMs: number
+  status: 'ok' | 'error' | 'skipped' | 'cached'
+}
+
 export type ValidationLevel = 'error' | 'warning'
 
 export interface ValidationIssue {
@@ -353,5 +374,7 @@ export interface RunRecord {
   evalPassCount: number | null
   evalTotalCount: number | null
   traceSnapshot: TraceEntry[]
+  /** T2-2: per-step state captures for the Time-Travel Debugger. */
+  snapshots: StepSnapshot[]
   costSnapshot: RunCostSummary | null
 }
