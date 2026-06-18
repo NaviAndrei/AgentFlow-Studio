@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { topologicalSort } from '../utils/topologicalSort'
+import { hashNodeInput } from '../utils/hashNodeInput'
 import {
   estimateTokens,
   fakeOutputFor,
@@ -199,6 +200,12 @@ interface SimulationState {
   tryCatchStatus: Record<string, 'watching' | 'success' | 'error'>
   /** Retry attempt counters, keyed by the Retry node's id. */
   retryStatus: Record<string, { attempt: number; max: number }>
+  /** Hash of each cache-eligible node's resolved input from its last run. */
+  nodeInputHashCache: Map<string, string>
+  /** Clears the input-hash and output cache (called on stop() / full reset). */
+  clearHashCache: () => void
+  /** Records the resolved-input hash for a node after it runs. */
+  setCachedHash: (nodeId: string, hash: string) => void
   setLiveMode: (on: boolean) => void
   setUserInput: (value: string) => void
   setTraceOpen: (open: boolean) => void
@@ -273,6 +280,16 @@ function clearVirtualState() {
   virtualParents = new Map()
   virtualMeta = new Map()
 }
+
+// Node output caching: the real (untruncated) output of the last successful
+// run for each cache-eligible node, keyed by node id. Paired with
+// nodeInputHashCache (Zustand state) — a hit requires both the hash to match
+// AND an entry to exist here (entries are only written after a real 'ok'
+// completion, so "exists" already implies "last run succeeded").
+let nodeOutputCache = new Map<string, unknown>()
+
+/** Node types that never participate in output caching — see plan notes. */
+const CACHE_INELIGIBLE_TYPES: AgentFlowNodeType[] = ['subgraph', 'map', 'humanInLoop']
 
 function abortInFlight() {
   abortController?.abort()
@@ -537,7 +554,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
     if (evalStore.testCases.length > 0) {
       const outputTrace = [...trace]
         .reverse()
-        .find((e) => e.nodeType === 'output' && e.status === 'ok')
+        .find((e) => e.nodeType === 'output' && (e.status === 'ok' || e.status === 'cached'))
       const lastAssistant = [...messages]
         .reverse()
         .find((m) => m.role === 'assistant')
@@ -686,6 +703,26 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
       .map((e) => e.source)
     const virtual = virtualJoinSources.get(nodeId)
     return virtual ? [...canvas, ...virtual] : canvas
+  }
+
+  /**
+   * Approximates "this node's input" for cache-hash purposes: its own
+   * config plus every upstream node's current output, plus the run-level
+   * knobs (userInput, liveMode) that can change a node's output without
+   * changing its own data. Pure read — no side effects.
+   */
+  const resolveCacheInput = (nodeId: string, node: AgentFlowNode): unknown => {
+    const outputs = get().nodeOutputs
+    const upstream = flowSources(nodeId)
+      .slice()
+      .sort()
+      .map((id) => ({ id, output: outputs[id] }))
+    return {
+      data: node.data,
+      upstream,
+      userInput: get().userInput,
+      liveMode: get().liveMode,
+    }
   }
 
   /**
@@ -1997,6 +2034,25 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
       // Trace entries from a Subgraph node's inner sub-walker, appended to
       // the parent trace alongside this node's own entry.
       let nestedTrace: TraceEntry[] = []
+
+      // Only a node's first visit within a run is cache-eligible — loop/cycle
+      // revisits within the same run must always re-execute (the walker's
+      // visit-budget semantics, e.g. MAX_NODE_VISITS forcing the else branch,
+      // depend on each revisit actually running).
+      const cacheEligible =
+        node.type !== undefined &&
+        !CACHE_INELIGIBLE_TYPES.includes(node.type) &&
+        !virtualMeta.has(nodeId) &&
+        (visitCounts.get(nodeId) ?? 1) <= 1
+      const inputHash = cacheEligible ? hashNodeInput(resolveCacheInput(nodeId, node)) : null
+      const cacheHit =
+        inputHash !== null &&
+        get().nodeInputHashCache.get(nodeId) === inputHash &&
+        nodeOutputCache.has(nodeId)
+
+      if (cacheHit) {
+        output = nodeOutputCache.get(nodeId)
+      } else {
       try {
         if (node.type === 'subgraph') {
           // Subgraph runs its own inner walker regardless of liveMode — the
@@ -2235,9 +2291,15 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
         }
         return
       }
+      }
 
       // Stopped or restarted while this node was executing — discard.
       if (token !== runToken) return
+
+      if (cacheEligible && inputHash !== null && !cacheHit) {
+        nodeOutputCache.set(nodeId, output)
+        get().setCachedHash(nodeId, inputHash)
+      }
 
       // Loop nodes report their actual visit as the iteration (both modes).
       if (node.type === 'loop') {
@@ -2407,7 +2469,9 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
       const errored = get().erroredNodeIds
       // Stamp parentNodeId on a virtual node's trace entry (Map per-item
       // branch) so the trace can be grouped by its originating Map node.
-      const baseEntry = makeEntry('ok', output)
+      const baseEntry = cacheHit
+        ? { ...makeEntry('cached', output), durationMs: 0 }
+        : makeEntry('ok', output)
       const parentMapId = virtualParents.get(nodeId)
       const taggedEntry: TraceEntry = parentMapId
         ? { ...baseEntry, parentNodeId: parentMapId }
@@ -2501,11 +2565,20 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
     pendingApproval: null,
     tryCatchStatus: {},
     retryStatus: {},
+    nodeInputHashCache: new Map<string, string>(),
 
     setLiveMode: (liveMode) => set({ liveMode }),
     setUserInput: (userInput) => set({ userInput }),
     setTraceOpen: (traceOpen) => set({ traceOpen }),
     clearTrace: () => set({ trace: [] }),
+    clearHashCache: () => {
+      nodeOutputCache = new Map()
+      set({ nodeInputHashCache: new Map() })
+    },
+    setCachedHash: (nodeId, hash) =>
+      set({
+        nodeInputHashCache: new Map(get().nodeInputHashCache).set(nodeId, hash),
+      }),
 
     start: () => {
       const executionQueue = buildSeeds()
@@ -2518,6 +2591,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
 
     stop: () => {
       runToken++
+      get().clearHashCache()
       abortInFlight()
       discardPendingStreams()
       visitCounts = new Map()

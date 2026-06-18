@@ -203,7 +203,7 @@ export interface TraceEntry {
   nodeId: string
   nodeName: string
   nodeType: string
-  status: 'ok' | 'error' | 'skipped'
+  status: 'ok' | 'error' | 'skipped' | 'cached'
   /** Absent for skipped entries (the node never executed). */
   engine?: ExecutionEngine
   durationMs: number

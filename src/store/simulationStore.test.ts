@@ -714,3 +714,55 @@ describe('simulation queue walker — Subgraph live execution', () => {
     expect(s.messages[s.messages.length - 1]?.role).toBe('assistant')
   })
 })
+
+describe('simulation queue walker — node output caching', () => {
+  const linear = () =>
+    loadGraph(
+      [node('s', 'start'), node('t', 'tool', { toolName: 'fetch' }), node('o', 'output')],
+      [edge('s', 't'), edge('t', 'o')],
+    )
+
+  it('clearHashCache resets all cached entries', () => {
+    useSimulationStore.getState().setCachedHash('x', 'abc123')
+    expect(useSimulationStore.getState().nodeInputHashCache.get('x')).toBe('abc123')
+    useSimulationStore.getState().clearHashCache()
+    expect(useSimulationStore.getState().nodeInputHashCache.size).toBe(0)
+  })
+
+  it('caches node output on identical re-run', async () => {
+    linear()
+    const s1 = await runToEnd()
+    expect(s1.trace.filter((t) => t.status === 'ok')).toHaveLength(3)
+
+    const s2 = await runToEnd()
+    const cached = s2.trace.filter((t) => t.status === 'cached')
+    expect(cached.map((t) => t.nodeId).sort()).toEqual(['o', 's', 't'])
+    expect(cached.every((t) => t.durationMs === 0)).toBe(true)
+    expect(s2.trace.filter((t) => t.status === 'ok')).toHaveLength(0)
+  })
+
+  it('re-executes node when upstream output changes', async () => {
+    linear()
+    await runToEnd()
+
+    useCanvasStore.getState().updateNodeData('t', { toolName: 'different-tool' })
+    const s2 = await runToEnd()
+
+    const statusOf = (id: string) =>
+      s2.trace.find((t) => t.nodeId === id)?.status
+    expect(statusOf('s')).toBe('cached')
+    expect(statusOf('t')).toBe('ok')
+    expect(statusOf('o')).toBe('ok')
+  })
+
+  it('clearHashCache forces full re-execution on the next run', async () => {
+    linear()
+    await runToEnd()
+
+    useSimulationStore.getState().clearHashCache()
+    const s2 = await runToEnd()
+
+    expect(s2.trace.filter((t) => t.status === 'cached')).toHaveLength(0)
+    expect(s2.trace.filter((t) => t.status === 'ok')).toHaveLength(3)
+  })
+})

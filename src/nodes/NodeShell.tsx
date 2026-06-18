@@ -137,12 +137,14 @@ export function NodeShell({
         <div
           title={`INPUT:\n${outputBadge.input}\n\nOUTPUT:\n${outputBadge.output}`}
           className={`nodrag mt-1 w-52 cursor-default truncate rounded border px-2 py-0.5 text-[10px] ${
-            outputBadge.status === 'ok'
-              ? 'border-green-500/60 bg-green-500/10 text-green-300'
-              : 'border-red-500/60 bg-red-500/10 text-red-300'
+            outputBadge.status === 'cached'
+              ? 'border-gray-500/60 bg-gray-500/10 text-gray-300'
+              : outputBadge.status === 'ok'
+                ? 'border-green-500/60 bg-green-500/10 text-green-300'
+                : 'border-red-500/60 bg-red-500/10 text-red-300'
           }`}
         >
-          {outputBadge.output}
+          {outputBadge.status === 'cached' ? `⚡ cached: ${outputBadge.output}` : outputBadge.output}
         </div>
       )}
       {simStatus === 'completed' && (

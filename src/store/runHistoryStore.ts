@@ -10,6 +10,7 @@ interface RunHistoryState {
   filterStatus: 'all' | 'done' | 'error' | 'stopped'
   filterMode: 'all' | 'simulated' | 'live'
   selectedRunId: string | null
+  compareRunIds: [string, string] | null
 
   setPanelOpen: (open: boolean) => void
   addRun: (run: RunRecord) => void
@@ -19,6 +20,7 @@ interface RunHistoryState {
   setFilterStatus: (f: RunHistoryState['filterStatus']) => void
   setFilterMode: (f: RunHistoryState['filterMode']) => void
   setSelectedRunId: (id: string | null) => void
+  setCompareRunIds: (ids: [string, string] | null) => void
 }
 
 export const useRunHistoryStore = create<RunHistoryState>((set, get) => ({
@@ -28,6 +30,7 @@ export const useRunHistoryStore = create<RunHistoryState>((set, get) => ({
   filterStatus: 'all',
   filterMode: 'all',
   selectedRunId: null,
+  compareRunIds: null,
 
   setPanelOpen: (panelOpen) => set({ panelOpen }),
   addRun: (run) => set({ runs: [run, ...get().runs].slice(0, MAX_RUNS) }),
@@ -41,4 +44,5 @@ export const useRunHistoryStore = create<RunHistoryState>((set, get) => ({
   setFilterStatus: (filterStatus) => set({ filterStatus }),
   setFilterMode: (filterMode) => set({ filterMode }),
   setSelectedRunId: (selectedRunId) => set({ selectedRunId }),
+  setCompareRunIds: (compareRunIds) => set({ compareRunIds }),
 }))

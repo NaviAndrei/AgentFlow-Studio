@@ -64,7 +64,9 @@ export function TraceEntryRow({
               ? 'bg-red-500'
               : entry.status === 'skipped'
                 ? 'bg-gray-600'
-                : 'bg-green-500'
+                : entry.status === 'cached'
+                  ? 'bg-gray-400'
+                  : 'bg-green-500'
           }`}
         />
         <span className={`truncate ${entry.status === 'skipped' ? 'text-gray-500' : ''}`}>

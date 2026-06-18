@@ -1,7 +1,9 @@
+import { useMemo } from 'react'
 import { ChevronLeft, ChevronRight, History, Search, Trash2 } from 'lucide-react'
 import { useRunHistoryStore } from '../store/runHistoryStore'
 import { CostBreakdown } from './CostPanel'
 import { TraceEntryRow } from './TraceLog'
+import { diffRuns, type NodeDiff } from '../utils/diffRuns'
 import type { RunRecord } from '../types'
 
 function formatRelativeTime(ts: number): string {
@@ -37,6 +39,57 @@ function matchesSearch(run: RunRecord, query: string): boolean {
   return run.traceSnapshot.some((e) => e.output?.toLowerCase().includes(q))
 }
 
+function DiffTable({ diff }: { diff: NodeDiff[] }) {
+  return (
+    <div className="max-h-48 overflow-y-auto rounded border border-white/10">
+      <table className="w-full text-[10px]">
+        <thead className="sticky top-0 bg-surface-2 text-gray-400">
+          <tr>
+            <th className="px-2 py-1 text-left">Node</th>
+            <th className="px-2 py-1 text-left">Status A→B</th>
+            <th className="px-2 py-1 text-left">Output A</th>
+            <th className="px-2 py-1 text-left">Output B</th>
+            <th className="px-2 py-1 text-right">Δ Duration</th>
+          </tr>
+        </thead>
+        <tbody>
+          {diff.map((d) => {
+            const improved = d.statusA === 'error' && d.statusB === 'ok'
+            const degraded = d.statusA === 'ok' && d.statusB === 'error'
+            return (
+              <tr
+                key={d.nodeId}
+                className={
+                  improved
+                    ? 'bg-green-500/10 text-green-300'
+                    : degraded
+                      ? 'bg-red-500/10 text-red-300'
+                      : 'text-gray-400'
+                }
+              >
+                <td className="truncate px-2 py-1">{d.nodeLabel}</td>
+                <td className="px-2 py-1">
+                  {d.statusA ?? '—'} → {d.statusB ?? '—'}
+                </td>
+                <td className="max-w-[160px] truncate px-2 py-1">
+                  {(d.outputA ?? '—').slice(0, 120)}
+                </td>
+                <td className="max-w-[160px] truncate px-2 py-1">
+                  {(d.outputB ?? '—').slice(0, 120)}
+                </td>
+                <td className="px-2 py-1 text-right tabular-nums">
+                  {d.durationDeltaMs > 0 ? '+' : ''}
+                  {d.durationDeltaMs}ms
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 export function RunHistoryPanel() {
   const open = useRunHistoryStore((s) => s.panelOpen)
   const setOpen = useRunHistoryStore((s) => s.setPanelOpen)
@@ -51,8 +104,33 @@ export function RunHistoryPanel() {
   const setFilterMode = useRunHistoryStore((s) => s.setFilterMode)
   const selectedRunId = useRunHistoryStore((s) => s.selectedRunId)
   const setSelectedRunId = useRunHistoryStore((s) => s.setSelectedRunId)
+  const compareRunIds = useRunHistoryStore((s) => s.compareRunIds)
+  const setCompareRunIds = useRunHistoryStore((s) => s.setCompareRunIds)
 
   const selectedRun = runs.find((r) => r.id === selectedRunId) ?? null
+
+  const toggleCompare = (id: string) => {
+    if (!compareRunIds) {
+      setCompareRunIds([id, id])
+      return
+    }
+    const [first, second] = compareRunIds
+    if (id === first || id === second) {
+      setCompareRunIds(null)
+      return
+    }
+    setCompareRunIds([first, id])
+  }
+
+  const diff = useMemo(() => {
+    if (!compareRunIds) return null
+    const [idA, idB] = compareRunIds
+    if (idA === idB) return null
+    const runA = runs.find((r) => r.id === idA)
+    const runB = runs.find((r) => r.id === idB)
+    if (!runA || !runB) return null
+    return diffRuns(runA, runB)
+  }, [compareRunIds, runs])
 
   const filtered = runs.filter(
     (r) =>
@@ -214,6 +292,20 @@ export function RunHistoryPanel() {
                 }`}
               >
                 <div className="mb-1 flex items-center gap-2 text-[10px] text-gray-500">
+                  <input
+                    type="checkbox"
+                    className="nodrag"
+                    title="Select to compare"
+                    checked={
+                      !!compareRunIds &&
+                      (compareRunIds[0] === run.id || compareRunIds[1] === run.id)
+                    }
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={(e) => {
+                      e.stopPropagation()
+                      toggleCompare(run.id)
+                    }}
+                  />
                   <span>{formatRelativeTime(run.startedAt)}</span>
                   <span
                     className={`rounded px-1 py-0.5 ${
@@ -256,6 +348,21 @@ export function RunHistoryPanel() {
               </div>
             ))}
           </div>
+
+          {diff && (
+            <div className="shrink-0 border-t border-white/10 p-2">
+              <div className="mb-1 flex items-center justify-between text-[10px] text-gray-400">
+                <span>Comparing 2 runs</span>
+                <button
+                  onClick={() => setCompareRunIds(null)}
+                  className="text-gray-500 hover:text-gray-300"
+                >
+                  Clear
+                </button>
+              </div>
+              <DiffTable diff={diff} />
+            </div>
+          )}
         </>
       )}
     </div>
