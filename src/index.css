@@ -171,7 +171,27 @@ body,
   }
 }
 
+/* Toast notification slide/fade in */
+.animate-toast-in {
+  animation: toast-in 0.2s ease-out;
+}
+
+@keyframes toast-in {
+  0% {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .animate-toast-in {
+    animation: none;
+  }
+
   .sim-active {
     animation: none;
     box-shadow: 0 0 0 3px rgba(0, 196, 204, 0.35);

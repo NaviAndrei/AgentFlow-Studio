@@ -14,6 +14,8 @@ import {
 import { useCanvasStore } from '../../store/canvasStore'
 import { useDebuggerStore, type PlaybackSpeed } from '../../store/debuggerStore'
 import { useRunHistoryStore } from '../../store/runHistoryStore'
+import { useSimulationStore } from '../../store/simulationStore'
+import { useToastStore } from '../../store/toastStore'
 
 /** Base dwell per step at 1× (ms); divided by the playback speed. */
 const BASE_STEP_MS = 900
@@ -37,6 +39,9 @@ export function TimeTravelBar() {
   const setSpeed = useDebuggerStore((s) => s.setSpeed)
 
   const selectOnly = useCanvasStore((s) => s.selectOnly)
+  const forkFromSnapshot = useSimulationStore((s) => s.forkFromSnapshot)
+  const setDockTab = useDebuggerStore((s) => s.setDockTab)
+  const pushToast = useToastStore((s) => s.pushToast)
   const { setCenter } = useReactFlow()
 
   const snapshots = useMemo(() => run?.snapshots ?? [], [run])
@@ -115,6 +120,15 @@ export function TimeTravelBar() {
 
   const atFirst = activeStepIndex <= 0
   const atLast = activeStepIndex >= total - 1
+
+  const handleFork = () => {
+    const snap = snapshots[activeStepIndex]
+    if (!snap) return
+    forkFromSnapshot(snapshots, activeStepIndex)
+    setDockTab('trace')
+    pushToast(`Forking run from step ${activeStepIndex + 1} — ${snap.nodeName}`)
+  }
+
   const btn =
     'flex h-7 w-7 items-center justify-center rounded-md text-gray-400 transition-colors hover:bg-surface-2 hover:text-white disabled:opacity-30 disabled:hover:bg-transparent'
 
@@ -173,9 +187,14 @@ export function TimeTravelBar() {
       </div>
 
       <button
-        disabled
-        title="Fork from here — coming soon"
-        className="ml-1 flex items-center gap-1 rounded-md border border-white/10 px-2 py-0.5 text-[10px] text-gray-600 opacity-50"
+        onClick={handleFork}
+        disabled={atLast}
+        title={
+          atLast
+            ? 'Nothing to fork onward from the last step'
+            : 'Fork from here — start a new run resuming at this step'
+        }
+        className="ml-1 flex items-center gap-1 rounded-md border border-white/10 px-2 py-0.5 text-[10px] text-gray-400 transition-colors hover:bg-surface-2 hover:text-white disabled:opacity-30 disabled:hover:bg-transparent"
       >
         <GitBranch size={11} />
         Fork

@@ -21,6 +21,8 @@ import { validateGraph } from '../utils/validation'
 interface Snapshot {
   nodes: AgentFlowNode[]
   edges: AgentFlowEdge[]
+  /** Human-readable description of the action being undone/redone — drives toast text. */
+  label: string
 }
 
 interface CanvasState {
@@ -44,8 +46,10 @@ interface CanvasState {
   selectOnly: (id: string) => void
   clearCanvas: () => void
   loadGraph: (nodes: AgentFlowNode[], edges: AgentFlowEdge[]) => void
-  undo: () => void
-  redo: () => void
+  /** Returns the label of the action undone, or null if there was nothing to undo. */
+  undo: () => string | null
+  /** Returns the label of the action redone, or null if there was nothing to redo. */
+  redo: () => string | null
   deleteSelected: () => void
   duplicateSelected: () => void
   selectAll: () => void
@@ -118,10 +122,10 @@ let lastDataSnapshotAt = 0
 let dragInProgress = false
 
 export const useCanvasStore = create<CanvasState>((set, get) => {
-  const pushHistory = () => {
+  const pushHistory = (label: string) => {
     const { nodes, edges, history } = get()
     set({
-      history: [...history.slice(-(HISTORY_LIMIT - 1)), { nodes, edges }],
+      history: [...history.slice(-(HISTORY_LIMIT - 1)), { nodes, edges, label }],
       future: [],
     })
   }
@@ -138,11 +142,13 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
 
     onNodesChange: (changes) => {
       const dragChange = changes.find(
-        (c) => c.type === 'position' && c.dragging === true,
+        (c): c is NodeChange<AgentFlowNode> & { type: 'position'; id: string } =>
+          c.type === 'position' && c.dragging === true,
       )
       if (dragChange && !dragInProgress) {
         dragInProgress = true
-        pushHistory()
+        const draggedNode = get().nodes.find((n) => n.id === dragChange.id)
+        pushHistory(draggedNode ? `Move ${draggedNode.data.label}` : 'Move node')
       }
       if (changes.some((c) => c.type === 'position' && c.dragging === false)) {
         dragInProgress = false
@@ -175,7 +181,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
         changes.filter((c) => c.type === 'remove').map((c) => c.id),
       )
       if (removeIds.size > 0) {
-        pushHistory()
+        pushHistory(removeIds.size > 1 ? `Delete ${removeIds.size} nodes` : 'Delete node')
       }
       const removedGroups = new Map(
         get()
@@ -200,13 +206,15 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
 
     onEdgesChange: (changes) => {
       if (changes.some((c) => c.type === 'remove')) {
-        pushHistory()
+        pushHistory('Disconnect edge')
       }
       set({ ...validated(get().nodes, applyEdgeChanges(changes, get().edges)), isDirty: true })
     },
 
     onConnect: (connection) => {
-      pushHistory()
+      const sourceLabel = get().nodes.find((n) => n.id === connection.source)?.data.label ?? connection.source
+      const targetLabel = get().nodes.find((n) => n.id === connection.target)?.data.label ?? connection.target
+      pushHistory(`Connect ${sourceLabel} → ${targetLabel}`)
       // Named source handles (router routes, guardrail pass/fail) carry their
       // name in sourceHandle; adopt it as the edge label so routing config
       // binds to topology without the user typing labels. Plain handles
@@ -229,7 +237,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
     },
 
     addNode: (type, position) => {
-      pushHistory()
+      pushHistory(`Add ${type} node`)
       const node: AgentFlowNode = {
         id: `${type}-${crypto.randomUUID().slice(0, 8)}`,
         type,
@@ -242,7 +250,8 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
     updateNodeData: (id, patch) => {
       const now = Date.now()
       if (now - lastDataSnapshotAt > 800) {
-        pushHistory()
+        const target = get().nodes.find((n) => n.id === id)
+        pushHistory(target ? `Edit ${target.data.label}` : 'Edit node')
         lastDataSnapshotAt = now
       }
       const nodes = get().nodes.map((n) =>
@@ -263,42 +272,49 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
       }),
 
     clearCanvas: () => {
-      pushHistory()
+      pushHistory('Clear canvas')
       // Clearing the canvas is treated as a deliberate fresh start — not dirty.
       set({ ...validated([], []), selectedNodeId: null, isDirty: false })
     },
 
     loadGraph: (nodes, edges) => {
-      pushHistory()
-      // Loading a saved graph resets the dirty flag — it's a clean baseline.
+      // A loaded graph is a fresh baseline — no history through the boundary.
       // GROUP RESTORE: loadGraph bypasses releaseOrphans — confirmed safe
-      set({ ...validated(nodes, edges), selectedNodeId: null, isDirty: false })
+      set({
+        ...validated(nodes, edges),
+        selectedNodeId: null,
+        isDirty: false,
+        history: [],
+        future: [],
+      })
     },
 
     undo: () => {
       const { history, future, nodes, edges } = get()
       const previous = history[history.length - 1]
-      if (!previous) return
+      if (!previous) return null
       set({
         ...validated(previous.nodes, previous.edges),
         history: history.slice(0, -1),
-        future: [...future, { nodes, edges }],
+        future: [...future, { nodes, edges, label: previous.label }],
         selectedNodeId: null,
         isDirty: true,
       })
+      return previous.label
     },
 
     redo: () => {
       const { history, future, nodes, edges } = get()
       const next = future[future.length - 1]
-      if (!next) return
+      if (!next) return null
       set({
         ...validated(next.nodes, next.edges),
-        history: [...history.slice(-(HISTORY_LIMIT - 1)), { nodes, edges }],
+        history: [...history.slice(-(HISTORY_LIMIT - 1)), { nodes, edges, label: next.label }],
         future: future.slice(0, -1),
         selectedNodeId: null,
         isDirty: true,
       })
+      return next.label
     },
 
     deleteSelected: () => {
@@ -310,7 +326,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
         edges.filter((e) => e.selected).map((e) => e.id),
       )
       if (nodeIds.size === 0 && edgeIds.size === 0) return
-      pushHistory()
+      pushHistory(nodeIds.size > 1 ? `Delete ${nodeIds.size} nodes` : 'Delete node')
       const removedGroups = new Map(
         nodes
           .filter((n) => n.type === 'group' && nodeIds.has(n.id))
@@ -338,7 +354,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
       // Group frames are skipped: duplicating one would need child remapping.
       const targets = nodes.filter((n) => n.selected && n.type !== 'group')
       if (targets.length === 0) return
-      pushHistory()
+      pushHistory(targets.length > 1 ? `Duplicate ${targets.length} nodes` : 'Duplicate node')
       const idMap = new Map<string, string>()
       const clones: AgentFlowNode[] = targets.map((n) => {
         const cloneId = `${n.type}-${crypto.randomUUID().slice(0, 8)}`
@@ -378,7 +394,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
     updateEdgeLabel: (id, label) => {
       const now = Date.now()
       if (now - lastDataSnapshotAt > 800) {
-        pushHistory()
+        pushHistory('Edit edge label')
         lastDataSnapshotAt = now
       }
       const edges = get().edges.map((e) => (e.id === id ? { ...e, label } : e))
@@ -386,7 +402,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
     },
 
     setEdgeKind: (id, kind) => {
-      pushHistory()
+      pushHistory('Change edge type')
       set({
         edges: get().edges.map((e) =>
           e.id === id
@@ -402,7 +418,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
     },
 
     removeEdge: (id) => {
-      pushHistory()
+      pushHistory('Disconnect edge')
       set({
         ...validated(
           get().nodes,
@@ -419,7 +435,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
         (n) => n.selected && n.type !== 'group' && !n.parentId,
       )
       if (targets.length < 2) return
-      pushHistory()
+      pushHistory('Group nodes')
       const PAD = 48
       const HEADER = 64
       const FALLBACK_W = 208
@@ -466,8 +482,8 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
       const { nodes, edges } = get()
       const group = nodes.find((n) => n.id === id)
       if (!group || group.type !== 'group') return
-      pushHistory()
       const collapsing = group.data.collapsed !== true
+      pushHistory(collapsing ? 'Collapse group' : 'Expand group')
       const childIds = new Set(
         nodes.filter((n) => n.parentId === id).map((n) => n.id),
       )

@@ -219,6 +219,9 @@ interface SimulationState {
   pause: () => void
   step: () => void
   restart: () => void
+  /** Re-seed the run from a recorded step and resume execution from that node
+   *  onward, reusing prior steps' outputs instead of re-running them. */
+  forkFromSnapshot: (snapshots: StepSnapshot[], stepIndex: number) => void
   /** Resume past a Human-in-Loop gate. */
   approve: () => void
   /** Reject at a Human-in-Loop gate: skip the downstream and end the run. */
@@ -1982,6 +1985,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
         nodeType: entry.nodeType,
         inputState: resolveCacheInput(nodeId, node) as Record<string, unknown>,
         outputState: fullOutput,
+        messagesState: structuredClone(get().messages),
         at: entry.at,
         durationMs: entry.durationMs,
         status: entry.status,
@@ -2708,6 +2712,43 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
       runToken++
       abortInFlight()
       resetRunState(buildSeeds())
+      get().play()
+    },
+
+    forkFromSnapshot: (snapshots, stepIndex) => {
+      if (get().isRunning) return
+      const target = snapshots[stepIndex]
+      if (!target) return
+      const priorSnapshots = snapshots.slice(0, stepIndex)
+
+      runToken++
+      abortInFlight()
+      set({ isActive: true })
+      resetRunState([target.nodeId])
+
+      for (const s of priorSnapshots) {
+        visitCounts.set(s.nodeId, (visitCounts.get(s.nodeId) ?? 0) + 1)
+      }
+
+      const nodeOutputs: Record<string, unknown> = {}
+      const executedIds = new Set<string>()
+      const erroredNodeIds: string[] = []
+      const skippedNodeIds = new Set<string>()
+      for (const s of priorSnapshots) {
+        nodeOutputs[s.nodeId] = s.outputState
+        if (s.status === 'ok' || s.status === 'cached') executedIds.add(s.nodeId)
+        else if (s.status === 'error') erroredNodeIds.push(s.nodeId)
+        else if (s.status === 'skipped') skippedNodeIds.add(s.nodeId)
+      }
+      const lastPrior = priorSnapshots[priorSnapshots.length - 1]
+      set({
+        nodeOutputs,
+        executedIds,
+        erroredNodeIds,
+        skippedNodeIds,
+        messages: lastPrior?.messagesState ?? [],
+      })
+
       get().play()
     },
 

@@ -5,6 +5,68 @@
 
 ---
 
+## Handoff — 2026-06-19 (Fork from Here + Undo/Redo polish)
+
+### What was completed
+- **Important discovery before any code was written**: the session brief asked for
+  three workstreams (Fork from Here, streaming LLM output, canvas undo/redo).
+  Codebase exploration found that **streaming LLM output and the undo/redo engine
+  already existed** from prior sessions — `simulationStore.nodeStreams[id]` +
+  `<StreamingText>` (typewriter + blinking caret, reduced-motion handled) covers
+  streaming in both live and simulated mode already; `canvasStore.history`/`future`
+  + `pushHistory()` + Ctrl+Z/Ctrl+Shift+Z/Ctrl+Y were already fully wired. Confirmed
+  scope with the user before implementing — streaming was skipped entirely, undo/redo
+  was reduced to closing the real gaps only. **If a future brief asks for either of
+  these again, check the existing code first** — `nodeStreams`/`StreamingText` in
+  `NodeShell.tsx` and `history`/`future` in `canvasStore.ts`.
+- **Toast notification system (new) ✅** — `src/store/toastStore.ts` (ephemeral
+  `toasts: ToastMessage[]`, `pushToast`/`dismissToast`, 3s auto-dismiss) +
+  `src/components/ToastHost.tsx` (fixed top-right stack, `z-[60]`, click to dismiss),
+  mounted in `App.tsx`. First feedback mechanism in the app beyond `window.alert()`.
+- **Fork from Here (T2-2 follow-on) ✅** — the disabled stub button in
+  `TimeTravelBar.tsx` now works. `StepSnapshot` gained `messagesState?: ChatMessage[]`
+  (captured via `structuredClone(get().messages)` in `makeSnapshot()`) so a fork can
+  restore the exact chat transcript at the fork point. New `simulationStore.
+  forkFromSnapshot(snapshots, stepIndex)` action: reuses `resetRunState([targetNodeId])`
+  (same shape as `start()`), pre-seeds `nodeOutputs`/`visitCounts`/`executedIds`/
+  `erroredNodeIds`/`skippedNodeIds` from the snapshots before the fork point, then
+  calls `play()`. **No `forkFromNodeId` execution guard was added** — the engine is a
+  dynamic forward walker (`executionQueue` grows via `enqueueTargets` as nodes
+  execute), so seeding `visitCounts` alone reproduces correct `MAX_NODE_VISITS`
+  semantics without needing a separate skip-guard. Browser-verified: forking from a
+  mid-run step on the Sequential Pipeline blueprint correctly re-executed only the
+  fork node onward while pre-fork nodes stayed marked completed on canvas.
+- **Undo/redo gap-closing ✅** — `canvasStore.Snapshot` gained a `label: string`
+  field, stamped at all 15 `pushHistory()` call sites (`Add llm node`, `Delete node`,
+  `Connect A → B`, etc.). `undo()`/`redo()` now return `string | null` (the label, or
+  null if there was nothing to undo/redo) instead of `void`. `useKeyboardShortcuts.ts`
+  now pushes a toast (`Undone: <label>` / `Redone: <label>`) and skips Ctrl+Z/Shift+Z/Y
+  entirely while `simulationStore.isRunning` is true. `loadGraph()` now hard-clears
+  `history`/`future` instead of pushing one snapshot before loading. Browser-verified:
+  add/undo/redo a node — toast text and canvas state both correct.
+
+### Current state
+- typecheck: clean ✅ · build: clean ✅ (pre-existing fflate/chunk warnings only)
+- tests: **203/203 passing** ✅ (no new tests added — this was scoped as gap-closing
+  on top of an already-tested engine; consider adding `forkFromSnapshot` and the
+  `Snapshot.label` plumbing to the test suite next session if more confidence is
+  wanted before touching this code again)
+- Browser-verified live via preview tools: blueprint load → run → Time Travel → Fork
+  from a mid-step (Sequential Pipeline, 6-node chain) → new run resumes correctly;
+  separately, add node → Ctrl+Z → toast "Undone: Add output node" → Ctrl+Shift+Z →
+  toast "Redone: ..." → node restored.
+
+### Next steps
+1. [ ] Consider adding unit tests for `forkFromSnapshot` (step-0 degenerate case,
+   mid-run re-seed, visit-count carry-over for loop nodes) and for the `Snapshot.label`
+   plumbing in `canvasStore` — neither has direct test coverage yet.
+2. [ ] Toast stacking on rapid-fire undo (holding Ctrl+Z) wasn't checked under load —
+   if it turns out visually noisy, coalesce repeats by id instead of queuing each one.
+3. [ ] Original T2-2 follow-ons (Follow-on A: streaming — confirmed already done,
+   Follow-on C: canvas undo/redo — confirmed already done) are now both closed out.
+
+---
+
 ## Handoff — 2026-06-19
 
 ### What was completed

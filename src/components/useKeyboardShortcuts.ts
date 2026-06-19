@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { useUIStore } from '../store/uiStore'
 import { useCanvasStore } from '../store/canvasStore'
 import { useSimulationStore } from '../store/simulationStore'
+import { useToastStore } from '../store/toastStore'
 
 function isEditableTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false
@@ -38,11 +39,18 @@ export function useKeyboardShortcuts() {
         const key = event.key.toLowerCase()
         if (key === 'z') {
           event.preventDefault()
-          if (event.shiftKey) canvas.redo()
-          else canvas.undo()
+          if (useSimulationStore.getState().isRunning) return
+          const label = event.shiftKey ? canvas.redo() : canvas.undo()
+          if (label) {
+            useToastStore
+              .getState()
+              .pushToast(`${event.shiftKey ? 'Redone' : 'Undone'}: ${label}`)
+          }
         } else if (key === 'y') {
           event.preventDefault()
-          canvas.redo()
+          if (useSimulationStore.getState().isRunning) return
+          const label = canvas.redo()
+          if (label) useToastStore.getState().pushToast(`Redone: ${label}`)
         } else if (key === 'd') {
           event.preventDefault()
           canvas.duplicateSelected()

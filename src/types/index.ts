@@ -228,6 +228,9 @@ export interface StepSnapshot {
   inputState: Record<string, unknown>
   /** Full, untruncated output the node produced. */
   outputState: unknown
+  /** Chat transcript immediately after this step finished — lets "Fork from
+   *  Here" restore the exact conversational state a forked run should resume from. */
+  messagesState?: ChatMessage[]
   /** Epoch ms when the node finished. */
   at: number
   durationMs: number

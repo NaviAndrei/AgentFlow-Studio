@@ -19,6 +19,7 @@ import { PromptRegistryPanel } from './components/PromptRegistryPanel'
 import { RunHistoryPanel } from './components/RunHistoryPanel'
 import { ShortcutsModal } from './components/ShortcutsModal'
 import { Sidebar } from './components/Sidebar'
+import { ToastHost } from './components/ToastHost'
 import { TraceLog } from './components/TraceLog'
 import { useKeyboardShortcuts } from './components/useKeyboardShortcuts'
 import { ValidationBar } from './components/ValidationBar'
@@ -66,6 +67,7 @@ export default function App() {
           <ProblemsPanel />
           <PanelRail />
           <MetricsBar />
+          <ToastHost />
         </CanvasErrorBoundary>
       </div>
     </ReactFlowProvider>
