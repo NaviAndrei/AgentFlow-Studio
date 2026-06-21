@@ -3,6 +3,7 @@ import { BaseEdge, EdgeLabelRenderer, getBezierPath } from '@xyflow/react'
 import type { EdgeProps } from '@xyflow/react'
 import { X } from 'lucide-react'
 import { useCanvasStore } from '../store/canvasStore'
+import { useUIStore } from '../store/uiStore'
 import {
   prefersReducedMotion,
   useSimulationStore,
@@ -125,6 +126,7 @@ export function FlowEdge({
     if (source === s.activeId && sourceType === 'supervisor') return 'fanout'
     return null
   })
+  const animatedEdgesEnabled = useUIStore((s) => s.animatedEdgesEnabled)
 
   const [edgePath, labelX, labelY] = getBezierPath({
     sourceX,
@@ -178,6 +180,9 @@ export function FlowEdge({
         path={edgePath}
         markerStart={markerStart}
         markerEnd={markerEnd}
+        className={
+          animatedEdgesEnabled && particleRole === null ? 'edge-flow-animated' : undefined
+        }
         style={{
           ...KIND_STYLES[kind],
           ...(edgeErrored

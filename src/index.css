@@ -171,6 +171,27 @@ body,
   }
 }
 
+/* Animated edge flow mode (Task C): subtle marching-dashes "data in motion" */
+@keyframes edge-flow {
+  from {
+    stroke-dashoffset: 0;
+  }
+  to {
+    stroke-dashoffset: -28;
+  }
+}
+
+/*
+ * !important: every edge already carries React Flow's own `animated: true`
+ * flag (`.react-flow__edge.animated path`, from the library's bundled CSS),
+ * whose 2-class selector outranks a single custom class. Without this, the
+ * library's stroke-dasharray/animation silently wins and the toggle no-ops.
+ */
+.edge-flow-animated {
+  stroke-dasharray: 8 6 !important;
+  animation: edge-flow 1.2s linear infinite !important;
+}
+
 /* Toast notification slide/fade in */
 .animate-toast-in {
   animation: toast-in 0.2s ease-out;
@@ -214,6 +235,10 @@ body,
 
   .sim-caret {
     animation: none;
+  }
+
+  .edge-flow-animated {
+    animation: none !important;
   }
 
   .react-flow__edge.animated path {

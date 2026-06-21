@@ -301,6 +301,8 @@ export interface CanvasDocument {
   schemaVersion: number
   nodes: CanvasDocumentNode[]
   edges: CanvasDocumentEdge[]
+  /** Pan/zoom state at save time; absent for documents saved before this field existed. */
+  viewport?: { x: number; y: number; zoom: number }
 }
 
 export interface EvalTestCase {

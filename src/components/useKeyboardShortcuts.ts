@@ -17,6 +17,13 @@ function isEditableTarget(target: EventTarget | null): boolean {
 export function useKeyboardShortcuts() {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      // Ctrl+K is the universal command-palette shortcut — it must fire even
+      // while focus sits in a text input elsewhere on the page.
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        useUIStore.getState().setCommandPaletteOpen(true)
+        return
+      }
       if (isEditableTarget(event.target)) return
       const canvas = useCanvasStore.getState()
       const ui = useUIStore.getState()
@@ -64,6 +71,22 @@ export function useKeyboardShortcuts() {
           )
           const live = useSimulationStore.getState().liveMode
           if (!hasErrors && !live) ui.setExportOpen(true)
+        } else if (key === 'r') {
+          // Prevent the browser page-reload shortcut regardless of state.
+          event.preventDefault()
+          const sim = useSimulationStore.getState()
+          if (sim.isActive) {
+            sim.stop()
+          } else if (canvas.nodes.length > 0) {
+            sim.start()
+          }
+        } else if (key === 'l') {
+          event.preventDefault()
+          if (useSimulationStore.getState().isRunning) return
+          canvas.applyAutoLayout('TB')
+        } else if (key === 's' && event.shiftKey) {
+          event.preventDefault()
+          ui.setSnapshotOpen(true)
         }
         return
       }
@@ -73,6 +96,12 @@ export function useKeyboardShortcuts() {
       } else if (event.key === '/') {
         event.preventDefault()
         ui.setQuickAddOpen(true)
+      } else if (event.key === '?') {
+        event.preventDefault()
+        ui.setShortcutsOpen(true)
+      } else if (event.key.toLowerCase() === 'g') {
+        event.preventDefault()
+        ui.setGalleryOpen(!ui.galleryOpen)
       }
     }
 

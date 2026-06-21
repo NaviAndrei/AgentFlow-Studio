@@ -5,9 +5,12 @@ import { decodeFlow } from './utils/shareUrl'
 import { BlueprintGallery } from './components/BlueprintGallery'
 import { Canvas } from './components/Canvas'
 import { CanvasErrorBoundary } from './components/CanvasErrorBoundary'
+import { CommandPalette } from './components/CommandPalette'
+import { PanelErrorBoundary } from './components/PanelErrorBoundary'
 import { CostPanel } from './components/CostPanel'
 import { EvalPanel } from './components/EvalPanel'
 import { ExportModal } from './components/ExportModal'
+import { HumanInLoopModal } from './components/HumanInLoopModal'
 import { Inspector } from './components/Inspector'
 import { LLMSettingsModal } from './components/LLMSettingsModal'
 import { Navbar } from './components/Navbar'
@@ -19,6 +22,7 @@ import { PromptRegistryPanel } from './components/PromptRegistryPanel'
 import { RunHistoryPanel } from './components/RunHistoryPanel'
 import { ShortcutsModal } from './components/ShortcutsModal'
 import { Sidebar } from './components/Sidebar'
+import { SnapshotModal } from './components/SnapshotModal'
 import { ToastHost } from './components/ToastHost'
 import { TraceLog } from './components/TraceLog'
 import { useKeyboardShortcuts } from './components/useKeyboardShortcuts'
@@ -52,21 +56,30 @@ export default function App() {
               <Canvas />
               <WelcomeOverlay />
             </main>
-            <Inspector />
+            <PanelErrorBoundary name="Inspector">
+              <Inspector />
+            </PanelErrorBoundary>
           </div>
           <BlueprintGallery />
           <ExportModal />
           <ShortcutsModal />
+          <SnapshotModal />
           <QuickAddPopup />
           <LLMSettingsModal />
-          <TraceLog />
+          <PanelErrorBoundary name="Debugger">
+            <TraceLog />
+          </PanelErrorBoundary>
           <EvalPanel />
           <CostPanel />
           <PromptRegistryPanel />
-          <RunHistoryPanel />
+          <PanelErrorBoundary name="Run History">
+            <RunHistoryPanel />
+          </PanelErrorBoundary>
           <ProblemsPanel />
           <PanelRail />
           <MetricsBar />
+          <HumanInLoopModal />
+          <CommandPalette />
           <ToastHost />
         </CanvasErrorBoundary>
       </div>

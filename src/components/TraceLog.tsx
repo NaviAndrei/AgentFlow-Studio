@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useReactFlow } from '@xyflow/react'
 import { ChevronDown, Trash2, Zap } from 'lucide-react'
 import { getNodeMeta } from '../nodes'
@@ -23,6 +23,10 @@ const FILTERS: { key: TraceFilter; label: string }[] = [
 
 const LLM_TYPES = ['llm', 'agent', 'supervisor', 'swarmWorker', 'router', 'guardrail']
 const TOOL_TYPES = ['tool', 'retriever', 'mcpServer']
+
+const ROW_HEIGHT = 28
+const OVERSCAN = 10
+const VIRTUALIZE_THRESHOLD = 50
 
 function matchesFilter(entry: TraceEntry, filter: TraceFilter): boolean {
   switch (filter) {
@@ -99,6 +103,15 @@ export function TraceLog() {
   const selectOnly = useCanvasStore((s) => s.selectOnly)
   const { setCenter } = useReactFlow()
   const [filter, setFilter] = useState<TraceFilter>('all')
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const [scrollTop, setScrollTop] = useState(0)
+  const [viewportHeight, setViewportHeight] = useState(0)
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      setViewportHeight(scrollRef.current.clientHeight)
+    }
+  }, [traceOpen])
 
   const dockTab = useDebuggerStore((s) => s.dockTab)
   const setDockTab = useDebuggerStore((s) => s.setDockTab)
@@ -200,7 +213,11 @@ export function TraceLog() {
           <SnapshotInspector />
         </div>
       ) : (
-        <div className="flex-1 overflow-y-auto px-1 py-1">
+        <div
+          ref={scrollRef}
+          onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
+          className="flex-1 overflow-y-auto px-1 py-1"
+        >
           {entries.length === 0 && (
             <p className="px-2 py-3 text-[11px] text-gray-600">
               {trace.length === 0
@@ -208,9 +225,38 @@ export function TraceLog() {
                 : 'No entries match this filter.'}
             </p>
           )}
-          {entries.map((entry) => (
-            <TraceEntryRow key={entry.id} entry={entry} onClick={focusNode} />
-          ))}
+          {entries.length > VIRTUALIZE_THRESHOLD ? (
+            (() => {
+              const container = scrollRef.current
+              const height = viewportHeight || container?.clientHeight || 0
+              const startIdx = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN)
+              const visibleCount = Math.ceil(height / ROW_HEIGHT) + OVERSCAN * 2
+              const endIdx = Math.min(entries.length, startIdx + visibleCount)
+              const visible = entries.slice(startIdx, endIdx)
+              return (
+                <div style={{ position: 'relative', height: entries.length * ROW_HEIGHT }}>
+                  {visible.map((entry, i) => (
+                    <div
+                      key={entry.id}
+                      style={{
+                        position: 'absolute',
+                        top: (startIdx + i) * ROW_HEIGHT,
+                        left: 0,
+                        right: 0,
+                        height: ROW_HEIGHT,
+                      }}
+                    >
+                      <TraceEntryRow entry={entry} onClick={focusNode} />
+                    </div>
+                  ))}
+                </div>
+              )
+            })()
+          ) : (
+            entries.map((entry) => (
+              <TraceEntryRow key={entry.id} entry={entry} onClick={focusNode} />
+            ))
+          )}
         </div>
       )}
     </div>

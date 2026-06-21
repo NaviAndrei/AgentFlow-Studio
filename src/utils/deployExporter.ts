@@ -1,14 +1,13 @@
 import { zipSync, strToU8 } from 'fflate'
 import type { AgentFlowEdge, AgentFlowNode } from '../types'
-import { exportPython, exportRequirements } from './codeExporter'
+import { exportEnvVars, exportPython, exportRequirements } from './codeExporter'
 
 const SERVER_PY = `"""FastAPI server wrapping the LangGraph flow."""
 from fastapi import FastAPI
 from pydantic import BaseModel
-from main import build_graph
+from main import graph
 
 app = FastAPI()
-graph = build_graph()
 
 class InvokeRequest(BaseModel):
     input: str
@@ -65,11 +64,19 @@ Set environment variables (e.g. \`OPENAI_API_KEY\`) in the Railway dashboard.
 
 ## Files
 
-- \`main.py\` — exported LangGraph flow + \`build_graph()\` entry point.
+- \`main.py\` — exported LangGraph flow; compiles a module-level \`graph\`.
 - \`server.py\` — FastAPI wrapper exposing \`POST /invoke\`.
 - \`requirements.txt\` — Python dependencies.
 - \`Dockerfile\` / \`docker-compose.yml\` — container build + local orchestration.
+- \`.env.example\` — API keys this flow needs at runtime.
+- \`blueprint.json\` — the raw canvas (nodes/edges) this bundle was exported from.
 `
+
+function buildEnvExample(nodes: AgentFlowNode[]): string {
+  const vars = exportEnvVars(nodes)
+  if (vars.length === 0) return '# No API keys required by this flow.\n'
+  return vars.map((v) => `${v}=`).join('\n') + '\n'
+}
 
 export function generateDeployZip(
   nodes: AgentFlowNode[],
@@ -78,6 +85,7 @@ export function generateDeployZip(
 ): Blob {
   const mainPy = exportPython(nodes, edges, { asyncMode })
   const requirements = exportRequirements(nodes)
+  const blueprintJson = JSON.stringify({ nodes, edges }, null, 2)
   const zipped = zipSync({
     'main.py': strToU8(mainPy),
     'requirements.txt': strToU8(requirements),
@@ -85,6 +93,8 @@ export function generateDeployZip(
     Dockerfile: strToU8(DOCKERFILE),
     'docker-compose.yml': strToU8(DOCKER_COMPOSE),
     'README.md': strToU8(README),
+    '.env.example': strToU8(buildEnvExample(nodes)),
+    'blueprint.json': strToU8(blueprintJson),
   })
   return new Blob([zipped], { type: 'application/zip' })
 }

@@ -14,6 +14,8 @@ interface UIState {
   exportOpen: boolean
   quickAddOpen: boolean
   shortcutsOpen: boolean
+  snapshotOpen: boolean
+  commandPaletteOpen: boolean
   /** Left palette / right inspector panel visibility (collapsible on small screens). */
   sidebarOpen: boolean
   inspectorOpen: boolean
@@ -22,12 +24,23 @@ interface UIState {
   problemsPanelOpen: boolean
   /** Vertical drag offset (px) for the PanelRail, relative to its centered default. */
   railOffsetPx: number
+  /** Blueprint landing overlay dismissed for the current empty-canvas session (Esc / Start blank). */
+  landingDismissed: boolean
+  /** Canvas minimap visibility toggle (Zustand-only — not persisted to storage). */
+  minimapVisible: boolean
+  /** Global CSS marching-dashes effect on edges, independent of simulation. */
+  animatedEdgesEnabled: boolean
   setGalleryOpen: (open: boolean) => void
   setExportOpen: (open: boolean) => void
   setQuickAddOpen: (open: boolean) => void
   setShortcutsOpen: (open: boolean) => void
+  setSnapshotOpen: (open: boolean) => void
+  setCommandPaletteOpen: (open: boolean) => void
   setCostPanelOpen: (open: boolean) => void
   setProblemsPanelOpen: (open: boolean) => void
+  setLandingDismissed: (dismissed: boolean) => void
+  toggleMinimap: () => void
+  toggleAnimatedEdges: () => void
   setRailOffsetPx: (offset: number) => void
   toggleSidebar: () => void
   toggleInspector: () => void
@@ -45,20 +58,30 @@ export const useUIStore = create<UIState>((set, get) => ({
   exportOpen: false,
   quickAddOpen: false,
   shortcutsOpen: false,
+  snapshotOpen: false,
+  commandPaletteOpen: false,
   sidebarOpen: widePanelDefault,
   inspectorOpen: widePanelDefault,
   inspectorWidth: 300,
   costPanelOpen: false,
   problemsPanelOpen: false,
   railOffsetPx: 0,
+  landingDismissed: false,
+  minimapVisible: true,
+  animatedEdgesEnabled: false,
 
   setRailOffsetPx: (railOffsetPx) => set({ railOffsetPx }),
   setGalleryOpen: (galleryOpen) => set({ galleryOpen }),
   setExportOpen: (exportOpen) => set({ exportOpen }),
   setQuickAddOpen: (quickAddOpen) => set({ quickAddOpen }),
   setShortcutsOpen: (shortcutsOpen) => set({ shortcutsOpen }),
+  setSnapshotOpen: (snapshotOpen) => set({ snapshotOpen }),
+  setCommandPaletteOpen: (commandPaletteOpen) => set({ commandPaletteOpen }),
   setCostPanelOpen: (costPanelOpen) => set({ costPanelOpen }),
   setProblemsPanelOpen: (problemsPanelOpen) => set({ problemsPanelOpen }),
+  setLandingDismissed: (landingDismissed) => set({ landingDismissed }),
+  toggleMinimap: () => set({ minimapVisible: !get().minimapVisible }),
+  toggleAnimatedEdges: () => set({ animatedEdgesEnabled: !get().animatedEdgesEnabled }),
   toggleSidebar: () => set({ sidebarOpen: !get().sidebarOpen }),
   toggleInspector: () => set({ inspectorOpen: !get().inspectorOpen }),
   setInspectorWidth: (width) =>
@@ -74,6 +97,8 @@ export const useUIStore = create<UIState>((set, get) => ({
       exportOpen: false,
       quickAddOpen: false,
       shortcutsOpen: false,
+      snapshotOpen: false,
+      commandPaletteOpen: false,
       costPanelOpen: false,
       problemsPanelOpen: false,
     })

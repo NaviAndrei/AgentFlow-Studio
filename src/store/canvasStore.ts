@@ -17,6 +17,8 @@ import type {
 import { markersForKind } from '../utils/edgeKinds'
 import { createDefaultNodeData } from '../utils/nodeDefaults'
 import { validateGraph } from '../utils/validation'
+import { getLayoutedElements, type LayoutDirection } from '../utils/autoLayout'
+import { getRfInstance } from '../utils/rfInstance'
 
 interface Snapshot {
   nodes: AgentFlowNode[]
@@ -45,7 +47,11 @@ interface CanvasState {
   /** Select exactly one node (used by the trace log to highlight entries). */
   selectOnly: (id: string) => void
   clearCanvas: () => void
-  loadGraph: (nodes: AgentFlowNode[], edges: AgentFlowEdge[]) => void
+  loadGraph: (
+    nodes: AgentFlowNode[],
+    edges: AgentFlowEdge[],
+    viewport?: { x: number; y: number; zoom: number },
+  ) => void
   /** Returns the label of the action undone, or null if there was nothing to undo. */
   undo: () => string | null
   /** Returns the label of the action redone, or null if there was nothing to redo. */
@@ -59,6 +65,10 @@ interface CanvasState {
   removeEdge: (id: string) => void
   groupSelected: () => void
   toggleGroupCollapse: (id: string) => void
+  /** Arrange all nodes into a clean DAG (dagre) and fit the viewport. Undoable. */
+  applyAutoLayout: (direction?: LayoutDirection) => void
+  /** Derived: validation issues grouped by node id (graph-level issues omitted). */
+  getProblemsByNodeId: () => Map<string, ValidationIssue[]>
   /** Call after a successful Save to clear the dirty flag. */
   markClean: () => void
 }
@@ -277,7 +287,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
       set({ ...validated([], []), selectedNodeId: null, isDirty: false })
     },
 
-    loadGraph: (nodes, edges) => {
+    loadGraph: (nodes, edges, viewport) => {
       // A loaded graph is a fresh baseline — no history through the boundary.
       // GROUP RESTORE: loadGraph bypasses releaseOrphans — confirmed safe
       set({
@@ -287,6 +297,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
         history: [],
         future: [],
       })
+      if (viewport) getRfInstance()?.setViewport(viewport)
     },
 
     undo: () => {
@@ -530,6 +541,28 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
         ),
         selectedNodeId: null,
       })
+    },
+
+    applyAutoLayout: (direction = 'TB') => {
+      const { nodes, edges } = get()
+      if (nodes.length === 0) return
+      pushHistory('Auto-layout')
+      const layouted = getLayoutedElements(nodes, edges, direction)
+      set({ ...validated(layouted.nodes, layouted.edges), isDirty: true })
+      // Nodes must commit to the React Flow store before fitView can measure
+      // them, so defer one tick.
+      setTimeout(() => getRfInstance()?.fitView({ duration: 300 }), 0)
+    },
+
+    getProblemsByNodeId: () => {
+      const map = new Map<string, ValidationIssue[]>()
+      for (const issue of get().validationIssues) {
+        if (issue.nodeId === undefined) continue
+        const list = map.get(issue.nodeId)
+        if (list) list.push(issue)
+        else map.set(issue.nodeId, [issue])
+      }
+      return map
     },
 
     markClean: () => set({ isDirty: false }),

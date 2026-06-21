@@ -336,6 +336,94 @@ describe('simulation queue walker — loop semantics', () => {
   })
 })
 
+describe('simulation — forkFromSnapshot', () => {
+  // Same ReAct-style loop fixture as the loop-semantics block above:
+  // start → cond, cond →(continue) a → cond, cond →(done) b.
+  const loop = (input: string) => {
+    loadGraph(
+      [
+        node('s', 'start'),
+        node('c', 'condition', { branches: ['continue', 'done'] }),
+        node('a', 'llm'),
+        node('b', 'output'),
+      ],
+      [
+        edge('s', 'c'),
+        edge('c', 'a', 'continue'),
+        edge('c', 'b', 'done'),
+        edge('a', 'c'),
+      ],
+    )
+    useSimulationStore.getState().setUserInput(input)
+  }
+
+  it('forks from the very first snapshot (step 0) and re-runs the whole graph', async () => {
+    loop('please continue')
+    const original = await runToEnd()
+    expect(original.snapshots.length).toBeGreaterThan(0)
+
+    useSimulationStore.getState().forkFromSnapshot(original.snapshots, 0)
+    await vi.waitFor(() => {
+      const st = useSimulationStore.getState()
+      expect(st.currentNodeIndex).toBeGreaterThanOrEqual(st.executionQueue.length)
+    })
+    const s = useSimulationStore.getState()
+    // Nothing was seeded (stepIndex 0 has no prior steps), so every node —
+    // including the fork target itself — was freshly (re-)executed.
+    expect(s.executedIds.has('s')).toBe(true)
+    expect(s.executedIds.has('b')).toBe(true)
+    expect(s.trace.some((t) => t.nodeId === 's')).toBe(true)
+  })
+
+  it('mid-run fork seeds pre-fork nodes as executed and starts the fork node clean', async () => {
+    loop('please continue')
+    const original = await runToEnd()
+    // executionQueue is [s, c, a, c, b]; fork from the 'a' step (index 2).
+    expect(original.executionQueue[2]).toBe('a')
+
+    useSimulationStore.getState().forkFromSnapshot(original.snapshots, 2)
+    await vi.waitFor(() => {
+      const st = useSimulationStore.getState()
+      expect(st.currentNodeIndex).toBeGreaterThanOrEqual(st.executionQueue.length)
+    })
+    const s = useSimulationStore.getState()
+    // Pre-fork nodes (s, c) are seeded as already executed and are NOT
+    // re-run (no fresh trace entry); the fork node ('a') starts clean and
+    // does get a fresh trace entry.
+    expect(s.executedIds.has('s')).toBe(true)
+    expect(s.executedIds.has('c')).toBe(true)
+    expect(s.trace.some((t) => t.nodeId === 's')).toBe(false)
+    expect(s.executedIds.has('a')).toBe(true)
+    expect(s.trace.some((t) => t.nodeId === 'a')).toBe(true)
+  })
+
+  it('carries visit counts over so the loop budget still forces termination', async () => {
+    loop('please continue')
+    const original = await runToEnd()
+    // executionQueue is [s, c, a, c, b]; the second 'c' (index 3) is the
+    // forced-else visit that ends the loop in the original run.
+    expect(original.executionQueue[3]).toBe('c')
+
+    // Fork from just before that second 'c' visit, seeding one prior visit
+    // each to s/c/a via the pre-fork snapshots.
+    useSimulationStore.getState().forkFromSnapshot(original.snapshots, 3)
+
+    await vi.waitFor(() => {
+      const st = useSimulationStore.getState()
+      expect(st.currentNodeIndex).toBeGreaterThanOrEqual(st.executionQueue.length)
+    })
+    const s = useSimulationStore.getState()
+    // If the carried-over visit count were dropped, this fresh 'c' execution
+    // would not hit MAX_NODE_VISITS and would take "continue" again instead
+    // of being forced to "done" — the run would not reach 'b'.
+    const secondCondRun = s.trace.find(
+      (t) => t.nodeId === 'c' && t.status === 'ok' && t.output?.includes('forced_else'),
+    )
+    expect(secondCondRun).toBeDefined()
+    expect(s.executedIds.has('b')).toBe(true)
+  })
+})
+
 describe('simulation — human-in-loop gate', () => {
   const gated = () =>
     loadGraph(
@@ -367,7 +455,7 @@ describe('simulation — human-in-loop gate', () => {
     expect(s.nodeOutputs.h).toMatchObject({ approved: true })
   })
 
-  it('skips the downstream and ends the run on reject', async () => {
+  it('skips the downstream, marks the gate errored, and ends the run on reject', async () => {
     gated()
     await runUntilPending()
     useSimulationStore.getState().reject()
@@ -376,6 +464,24 @@ describe('simulation — human-in-loop gate', () => {
     expect(s.skippedNodeIds.has('o')).toBe(true)
     expect(s.executedIds.has('o')).toBe(false)
     expect(s.nodeOutputs.h).toMatchObject({ approved: false })
+    expect(s.erroredNodeIds).toContain('h')
+  })
+
+  it('resumes and injects the typed response on submitHumanInput', async () => {
+    gated()
+    await runUntilPending()
+    useSimulationStore.getState().submitHumanInput('looks good, proceed')
+    await vi.waitFor(() => {
+      const st = useSimulationStore.getState()
+      expect(st.currentNodeIndex).toBeGreaterThanOrEqual(st.executionQueue.length)
+    })
+    const s = useSimulationStore.getState()
+    expect(s.pendingApproval).toBeNull()
+    expect(s.executedIds.has('o')).toBe(true)
+    expect(s.nodeOutputs.h).toMatchObject({
+      approved: true,
+      userResponse: 'looks good, proceed',
+    })
   })
 
   it('ignores step while awaiting approval', async () => {

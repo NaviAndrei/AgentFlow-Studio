@@ -16,6 +16,7 @@ import { markersForKind } from './edgeKinds'
 export function serializeCanvas(
   nodes: AgentFlowNode[],
   edges: AgentFlowEdge[],
+  viewport?: { x: number; y: number; zoom: number },
 ): CanvasDocument {
   const docNodes: CanvasDocumentNode[] = nodes
     .filter((n): n is AgentFlowNode & { type: NonNullable<AgentFlowNode['type']> } =>
@@ -46,12 +47,14 @@ export function serializeCanvas(
     schemaVersion: CANVAS_SCHEMA_VERSION,
     nodes: docNodes,
     edges: docEdges,
+    ...(viewport && { viewport }),
   }
 }
 
 export function deserializeCanvas(doc: CanvasDocument): {
   nodes: AgentFlowNode[]
   edges: AgentFlowEdge[]
+  viewport?: { x: number; y: number; zoom: number }
 } {
   const nodes: AgentFlowNode[] = doc.nodes.map((n) => ({
     id: n.id,
@@ -77,12 +80,16 @@ export function deserializeCanvas(doc: CanvasDocument): {
       ...(e.hidden === true && { hidden: true }),
     }
   })
-  return { nodes, edges }
+  return { nodes, edges, ...(doc.viewport && { viewport: doc.viewport }) }
 }
 
 /** Trigger a browser download of the current canvas as a .json file. */
-export function downloadCanvas(nodes: AgentFlowNode[], edges: AgentFlowEdge[]): void {
-  const doc = serializeCanvas(nodes, edges)
+export function downloadCanvas(
+  nodes: AgentFlowNode[],
+  edges: AgentFlowEdge[],
+  viewport?: { x: number; y: number; zoom: number },
+): void {
+  const doc = serializeCanvas(nodes, edges, viewport)
   const blob = new Blob([JSON.stringify(doc, null, 2)], {
     type: 'application/json',
   })
@@ -102,6 +109,7 @@ export function downloadCanvas(nodes: AgentFlowNode[], edges: AgentFlowEdge[]): 
 export function parseCanvas(raw: string): {
   nodes: AgentFlowNode[]
   edges: AgentFlowEdge[]
+  viewport?: { x: number; y: number; zoom: number }
 } {
   let json: unknown
   try {

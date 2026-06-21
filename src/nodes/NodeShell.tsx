@@ -89,7 +89,13 @@ export function NodeShell({
           simStatus === 'completed' ? 'opacity-60' : ''
         } ${simStatus === 'skipped' ? 'opacity-35' : ''} ${
           simStatus === 'error' ? 'sim-error' : ''
-        } ${timeTraveling ? 'tt-active' : ''}`}
+        } ${timeTraveling ? 'tt-active' : ''} ${
+          issueLevel === 'error'
+            ? 'ring-2 ring-red-500'
+            : issueLevel === 'warning'
+              ? 'ring-2 ring-yellow-400'
+              : ''
+        }`}
       >
         <div
           className="flex items-center gap-2 px-3 py-2"

@@ -37,6 +37,23 @@ function isPosition(value: unknown): value is { x: number; y: number } {
   )
 }
 
+function parseViewport(
+  value: unknown,
+): { x: number; y: number; zoom: number } | undefined {
+  if (
+    isRecord(value) &&
+    typeof value.x === 'number' &&
+    Number.isFinite(value.x) &&
+    typeof value.y === 'number' &&
+    Number.isFinite(value.y) &&
+    typeof value.zoom === 'number' &&
+    Number.isFinite(value.zoom)
+  ) {
+    return { x: value.x, y: value.y, zoom: value.zoom }
+  }
+  return undefined
+}
+
 /** 'unknown-type' lets callers skip forward-incompatible nodes instead of rejecting the whole document. */
 function parseNode(raw: unknown): CanvasDocumentNode | null | 'unknown-type' {
   if (!isRecord(raw)) return null
@@ -160,7 +177,12 @@ export function parseCanvasDocument(raw: unknown): CanvasDocument | null {
     console.warn('Canvas import rejected: malformed nodes or edges')
     return null
   }
-  return { schemaVersion: CANVAS_SCHEMA_VERSION, ...graph }
+  const viewport = parseViewport(migrated.viewport)
+  return {
+    schemaVersion: CANVAS_SCHEMA_VERSION,
+    ...graph,
+    ...(viewport && { viewport }),
+  }
 }
 
 /** Validate a bundled blueprint; null (with a warning) if invalid. */

@@ -12,8 +12,10 @@ import type { DragEvent, MouseEvent as ReactMouseEvent } from 'react'
 import { ArrowLeftRight, ArrowRight, GitBranch, Trash2 } from 'lucide-react'
 import { nodeTypes, getNodeMeta, NODE_META } from '../nodes'
 import { useCanvasStore } from '../store/canvasStore'
+import { useUIStore } from '../store/uiStore'
 import type { AgentFlowEdge, AgentFlowNode, AgentFlowNodeType, EdgeKind } from '../types'
 import { deserializeCanvas, readCanvasFile } from '../utils/canvasSerializer'
+import { setRfInstance } from '../utils/rfInstance'
 import { FlowEdge, ParticleDefs } from './FlowEdge'
 import { SelectionToolbar } from './SelectionToolbar'
 
@@ -43,6 +45,7 @@ export function Canvas() {
   const addNode = useCanvasStore((s) => s.addNode)
   const setEdgeKind = useCanvasStore((s) => s.setEdgeKind)
   const removeEdge = useCanvasStore((s) => s.removeEdge)
+  const minimapVisible = useUIStore((s) => s.minimapVisible)
   const { screenToFlowPosition } = useReactFlow()
   const [edgeMenu, setEdgeMenu] = useState<EdgeMenuState | null>(null)
 
@@ -59,8 +62,8 @@ export function Canvas() {
       if (file && file.name.toLowerCase().endsWith('.json')) {
         void readCanvasFile(file)
           .then((doc) => {
-            const { nodes, edges } = deserializeCanvas(doc)
-            useCanvasStore.getState().loadGraph(nodes, edges)
+            const { nodes, edges, viewport } = deserializeCanvas(doc)
+            useCanvasStore.getState().loadGraph(nodes, edges, viewport)
           })
           .catch((error: unknown) => {
             window.alert(
@@ -124,6 +127,7 @@ export function Canvas() {
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
+        onInit={setRfInstance}
         isValidConnection={isValidConnection}
         onPaneClick={() => setEdgeMenu(null)}
         onEdgeContextMenu={onEdgeContextMenu}
@@ -143,12 +147,17 @@ export function Canvas() {
           color="rgba(255,255,255,0.08)"
         />
         <Controls position="bottom-left" />
-        <MiniMap
-          position="bottom-right"
-          pannable
-          zoomable
-          nodeColor={(node) => getNodeMeta(node.type)?.color ?? '#3a4150'}
-        />
+        {minimapVisible && (
+          <MiniMap
+            position="bottom-right"
+            pannable
+            zoomable
+            nodeColor={(node) => getNodeMeta(node.type)?.color ?? '#3a4150'}
+            bgColor="#0d0e10"
+            maskColor="rgba(13,14,16,0.6)"
+            className="!border !border-white/10"
+          />
+        )}
       </ReactFlow>
       {edgeMenu && (
         <div className="fixed inset-0 z-40" onClick={() => setEdgeMenu(null)}>

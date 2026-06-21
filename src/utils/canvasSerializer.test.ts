@@ -36,6 +36,19 @@ describe('canvasSerializer', () => {
     expect(typeof caught).toBe('string')
   })
 
+  it('round-trips the viewport (pan/zoom) alongside nodes and edges', () => {
+    const viewport = { x: 120, y: -40, zoom: 1.5 }
+    const doc = serializeCanvas(sampleNodes, sampleEdges, viewport)
+    const result = parseCanvas(JSON.stringify(doc))
+    expect(result.viewport).toEqual(viewport)
+  })
+
+  it('omits viewport when none was provided', () => {
+    const doc = serializeCanvas(sampleNodes, sampleEdges)
+    const result = parseCanvas(JSON.stringify(doc))
+    expect(result.viewport).toBeUndefined()
+  })
+
   it('skips a node with an unknown type and parses the rest', () => {
     const doc = serializeCanvas(sampleNodes, sampleEdges)
     const raw = JSON.stringify({

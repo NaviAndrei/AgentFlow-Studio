@@ -224,6 +224,9 @@ interface SimulationState {
   forkFromSnapshot: (snapshots: StepSnapshot[], stepIndex: number) => void
   /** Resume past a Human-in-Loop gate. */
   approve: () => void
+  /** Resume past a Human-in-Loop gate, injecting the user's typed response
+   *  into the gate node's output before continuing. */
+  submitHumanInput: (value: string) => void
   /** Reject at a Human-in-Loop gate: skip the downstream and end the run. */
   reject: () => void
 }
@@ -2767,6 +2770,20 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
       get().play()
     },
 
+    submitHumanInput: (value) => {
+      const pending = get().pendingApproval
+      if (!pending) return
+      const prev = get().nodeOutputs[pending.nodeId]
+      set({
+        pendingApproval: null,
+        nodeOutputs: {
+          ...get().nodeOutputs,
+          [pending.nodeId]: { ...(prev as object), approved: true, userResponse: value },
+        },
+      })
+      get().play()
+    },
+
     reject: () => {
       const pending = get().pendingApproval
       if (!pending) return
@@ -2796,9 +2813,11 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
       }
       const prev = get().nodeOutputs[hilId]
       const queue = get().executionQueue
+      const errored = get().erroredNodeIds
       set({
         pendingApproval: null,
         skippedNodeIds: skipped,
+        erroredNodeIds: errored.includes(hilId) ? errored : [...errored, hilId],
         nodeOutputs: {
           ...get().nodeOutputs,
           [hilId]: { ...(prev as object), approved: false },

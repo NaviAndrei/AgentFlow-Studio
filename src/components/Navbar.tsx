@@ -1,28 +1,41 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
+  Bookmark,
+  Camera,
   Check,
+  ChevronDown,
   Code2,
   Download,
   FilePlus2,
   FolderOpen,
   HelpCircle,
+  LayoutGrid,
+  Map,
   Play,
   Settings,
   Share2,
   Square,
+  Waves,
   Workflow,
   Zap,
 } from 'lucide-react'
+import { useReactFlow } from '@xyflow/react'
 import { useCanvasStore } from '../store/canvasStore'
 import { useUIStore } from '../store/uiStore'
 import { useLLMConfigStore } from '../store/llmConfigStore'
 import { useSimulationStore } from '../store/simulationStore'
+import { useToastStore } from '../store/toastStore'
 import {
   deserializeCanvas,
   downloadCanvas,
   readCanvasFile,
 } from '../utils/canvasSerializer'
 import { encodeFlow } from '../utils/shareUrl'
+import { estimatePreRunCost } from '../utils/estimateCost'
+import {
+  downloadCanvasScreenshot,
+  downloadFullGraphScreenshot,
+} from '../utils/screenshotCanvas'
 import { PROVIDERS, listOllamaModels } from '../llm'
 import { ConfirmDialog } from './Modal'
 import { HintIcon } from './HintIcon'
@@ -31,12 +44,26 @@ import { HINTS } from '../data/hints'
 export function Navbar() {
   const clearCanvas = useCanvasStore((s) => s.clearCanvas)
   const markClean = useCanvasStore((s) => s.markClean)
-  const hasNodes = useCanvasStore((s) => s.nodes.length > 0)
+  const applyAutoLayout = useCanvasStore((s) => s.applyAutoLayout)
+  const { getViewport } = useReactFlow()
+  const nodes = useCanvasStore((s) => s.nodes)
+  const hasNodes = nodes.length > 0
   const hasErrors = useCanvasStore((s) =>
     s.validationIssues.some((i) => i.level === 'error'),
   )
+  const minimapVisible = useUIStore((s) => s.minimapVisible)
+  const toggleMinimap = useUIStore((s) => s.toggleMinimap)
+  const animatedEdgesEnabled = useUIStore((s) => s.animatedEdgesEnabled)
+  const toggleAnimatedEdges = useUIStore((s) => s.toggleAnimatedEdges)
+  const activeProvider = useLLMConfigStore((s) => s.activeProvider)
+  const globalModel = useLLMConfigStore((s) => s.settings[s.activeProvider]?.model ?? '')
+  const costEstimate = useMemo(
+    () => estimatePreRunCost(nodes, globalModel),
+    [nodes, globalModel, activeProvider],
+  )
   const setExportOpen = useUIStore((s) => s.setExportOpen)
   const setShortcutsOpen = useUIStore((s) => s.setShortcutsOpen)
+  const setSnapshotOpen = useUIStore((s) => s.setSnapshotOpen)
   const simulationActive = useSimulationStore((s) => s.isActive)
   const startSimulation = useSimulationStore((s) => s.start)
   const stopSimulation = useSimulationStore((s) => s.stop)
@@ -87,6 +114,7 @@ export function Navbar() {
 
   const [confirmNewOpen, setConfirmNewOpen] = useState(false)
   const [shareCopied, setShareCopied] = useState(false)
+  const [screenshotMenuOpen, setScreenshotMenuOpen] = useState(false)
 
   const handleShare = async () => {
     const { nodes, edges } = useCanvasStore.getState()
@@ -113,16 +141,36 @@ export function Navbar() {
 
   const handleSave = () => {
     const { nodes, edges } = useCanvasStore.getState()
-    downloadCanvas(nodes, edges)
+    downloadCanvas(nodes, edges, getViewport())
     // Mark the canvas clean once the download has been triggered.
     markClean()
+  }
+
+  const toastError = (error: unknown, fallback: string) => {
+    useToastStore
+      .getState()
+      .pushToast(error instanceof Error ? error.message : fallback, 'warning')
+  }
+
+  const handleScreenshotViewport = () => {
+    setScreenshotMenuOpen(false)
+    void downloadCanvasScreenshot().catch((error: unknown) =>
+      toastError(error, 'Could not capture the canvas'),
+    )
+  }
+
+  const handleScreenshotFull = () => {
+    setScreenshotMenuOpen(false)
+    void downloadFullGraphScreenshot(useCanvasStore.getState().nodes).catch(
+      (error: unknown) => toastError(error, 'Could not capture the canvas'),
+    )
   }
 
   const handleOpenFile = (file: File) => {
     void readCanvasFile(file)
       .then((doc) => {
-        const { nodes, edges } = deserializeCanvas(doc)
-        useCanvasStore.getState().loadGraph(nodes, edges)
+        const { nodes, edges, viewport } = deserializeCanvas(doc)
+        useCanvasStore.getState().loadGraph(nodes, edges, viewport)
       })
       .catch((error: unknown) => {
         window.alert(
@@ -150,11 +198,62 @@ export function Navbar() {
         <button
           onClick={handleSave}
           disabled={!hasNodes}
-          title="Download the canvas as JSON"
+          title="Download the canvas as JSON (nodes, edges, viewport)"
           className="flex items-center gap-1.5 rounded-md border border-white/10 px-3 py-1.5 text-xs text-gray-300 transition-colors hover:border-accent/50 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
         >
           <Download size={13} />
           Save
+        </button>
+        <div className="relative flex items-center">
+          <button
+            onClick={handleScreenshotViewport}
+            disabled={!hasNodes}
+            title="Download a PNG of the current viewport"
+            className="flex items-center gap-1.5 rounded-l-md border border-white/10 px-3 py-1.5 text-xs text-gray-300 transition-colors hover:border-accent/50 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <Camera size={13} />
+            Screenshot
+          </button>
+          <button
+            onClick={() => setScreenshotMenuOpen((open) => !open)}
+            disabled={!hasNodes}
+            aria-label="Screenshot options"
+            aria-expanded={screenshotMenuOpen}
+            className="rounded-r-md border border-l-0 border-white/10 px-1.5 py-1.5 text-gray-300 transition-colors hover:border-accent/50 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <ChevronDown size={13} />
+          </button>
+          {screenshotMenuOpen && (
+            <>
+              <div
+                className="fixed inset-0 z-40"
+                onClick={() => setScreenshotMenuOpen(false)}
+              />
+              <div className="absolute left-0 top-full z-50 mt-1 w-40 rounded-lg border border-white/10 bg-surface p-1 shadow-2xl">
+                <button
+                  onClick={handleScreenshotViewport}
+                  className="block w-full rounded-md px-2 py-1.5 text-left text-xs text-gray-300 transition-colors hover:bg-surface-2"
+                >
+                  Viewport
+                </button>
+                <button
+                  onClick={handleScreenshotFull}
+                  className="block w-full rounded-md px-2 py-1.5 text-left text-xs text-gray-300 transition-colors hover:bg-surface-2"
+                >
+                  Full Graph
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+        <button
+          onClick={() => applyAutoLayout('TB')}
+          disabled={!hasNodes}
+          title="Auto-layout (Ctrl+L)"
+          aria-label="Auto-layout"
+          className="rounded-md border border-white/10 p-1.5 text-gray-300 transition-colors hover:border-accent/50 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          <LayoutGrid size={13} />
         </button>
         <button
           onClick={() => fileInputRef.current?.click()}
@@ -179,6 +278,11 @@ export function Navbar() {
           <button
             onClick={() => (simulationActive ? stopSimulation() : startSimulation())}
             disabled={!hasNodes && !simulationActive}
+            title={
+              !simulationActive && costEstimate.count > 0
+                ? `~$${costEstimate.estimatedCostUsd.toFixed(4)} estimated across ${costEstimate.count} LLM node${costEstimate.count > 1 ? 's' : ''}`
+                : undefined
+            }
             className={`flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
               simulationActive
                 ? 'border-accent bg-accent/15 text-accent'
@@ -188,6 +292,11 @@ export function Navbar() {
             {simulationActive ? <Square size={13} /> : <Play size={13} />}
             {simulationActive ? 'Stop' : 'Simulate'}
           </button>
+          {!simulationActive && costEstimate.count > 0 && (
+            <span className="whitespace-nowrap rounded-full border border-accent/30 bg-accent/10 px-2 py-0.5 text-[10px] text-accent">
+              ~${costEstimate.estimatedCostUsd.toFixed(4)} estimated
+            </span>
+          )}
           <HintIcon text={HINTS.controls.simulate} />
         </div>
         <div className="relative flex items-center gap-1">
@@ -217,6 +326,40 @@ export function Navbar() {
             </div>
           )}
         </div>
+        <button
+          onClick={toggleMinimap}
+          title={minimapVisible ? 'Hide minimap' : 'Show minimap'}
+          aria-label={minimapVisible ? 'Hide minimap' : 'Show minimap'}
+          aria-pressed={minimapVisible}
+          className={`rounded-md border p-1.5 transition-colors ${
+            minimapVisible
+              ? 'border-accent bg-accent/15 text-accent'
+              : 'border-white/10 text-gray-300 hover:border-accent/50 hover:text-white'
+          }`}
+        >
+          <Map size={13} />
+        </button>
+        <button
+          onClick={toggleAnimatedEdges}
+          title="Animated edges"
+          aria-label="Animated edges"
+          aria-pressed={animatedEdgesEnabled}
+          className={`rounded-md border p-1.5 transition-colors ${
+            animatedEdgesEnabled
+              ? 'border-accent bg-accent/15 text-accent'
+              : 'border-white/10 text-gray-500 hover:border-accent/50 hover:text-white'
+          }`}
+        >
+          <Waves size={13} />
+        </button>
+        <button
+          onClick={() => setSnapshotOpen(true)}
+          title="Snapshot manager (Ctrl+Shift+S)"
+          aria-label="Snapshot manager"
+          className="rounded-md border border-white/10 p-1.5 text-gray-300 transition-colors hover:border-accent/50 hover:text-white"
+        >
+          <Bookmark size={13} />
+        </button>
         <button
           onClick={() => setSettingsOpen(true)}
           title="LLM connection settings"
