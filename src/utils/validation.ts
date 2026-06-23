@@ -25,6 +25,96 @@ function reachableFrom(
   return seen
 }
 
+export interface CycleResult {
+  hasCycle: boolean
+  /** Ordered node ids forming the cycle, closed on itself (e.g. [A, B, C, A]); empty when acyclic. */
+  cyclePath: string[]
+}
+
+interface DfsFrame {
+  id: string
+  next: number
+}
+
+/**
+ * Detects a directed cycle via iterative DFS with grey/black coloring.
+ * Read-only: builds no store state and mutates no inputs. Returns the
+ * offending path for canvas highlighting. Dangling edges (endpoints not
+ * present in `nodes`) are ignored rather than crashing.
+ */
+export function detectCycle(
+  nodes: AgentFlowNode[],
+  edges: AgentFlowEdge[],
+): CycleResult {
+  const nodeIds = new Set<string>(nodes.map((n) => n.id))
+
+  const adjacency = new Map<string, string[]>()
+  for (const id of nodeIds) adjacency.set(id, [])
+  for (const e of edges) {
+    if (nodeIds.has(e.source) && nodeIds.has(e.target)) {
+      adjacency.get(e.source)!.push(e.target)
+    }
+  }
+
+  const onPath = new Set<string>()
+  const visited = new Set<string>()
+
+  for (const root of nodes) {
+    if (visited.has(root.id) || onPath.has(root.id)) continue
+
+    const stack: DfsFrame[] = [{ id: root.id, next: 0 }]
+    const path: string[] = [root.id]
+    onPath.add(root.id)
+
+    while (stack.length > 0) {
+      const frame = stack[stack.length - 1]
+      const neighbors = adjacency.get(frame.id) ?? []
+
+      if (frame.next < neighbors.length) {
+        const child = neighbors[frame.next]
+        frame.next += 1
+
+        if (onPath.has(child)) {
+          const start = path.indexOf(child)
+          return { hasCycle: true, cyclePath: [...path.slice(start), child] }
+        }
+        if (!visited.has(child)) {
+          onPath.add(child)
+          path.push(child)
+          stack.push({ id: child, next: 0 })
+        }
+      } else {
+        visited.add(frame.id)
+        onPath.delete(frame.id)
+        path.pop()
+        stack.pop()
+      }
+    }
+  }
+
+  return { hasCycle: false, cyclePath: [] }
+}
+
+// Node types whose outgoing edges are conditional by design — a cycle that
+// passes through one of these has a real exit path. Agent/llm/retriever/tool
+// always forward unconditionally, so a cycle made only of those types has no
+// way out other than the engine's MAX_NODE_VISITS budget.
+export const ESCAPE_NODE_TYPES = new Set<string>(['router', 'condition', 'guardrail'])
+
+export function hasEscapeOnCycle(
+  cyclePath: string[],
+  nodes: AgentFlowNode[],
+  escapeTypes: Set<string>,
+): boolean {
+  const typeById = new Map<string, string | undefined>(
+    nodes.map((n) => [n.id, n.type]),
+  )
+  return cyclePath.some((id) => {
+    const type = typeById.get(id)
+    return type !== undefined && escapeTypes.has(type)
+  })
+}
+
 export function validateGraph(
   nodes: AgentFlowNode[],
   edges: AgentFlowEdge[],
@@ -515,6 +605,17 @@ export function validateGraph(
       }
     }
   }
+
+  const { hasCycle, cyclePath } = detectCycle(nodes, edges)
+  if (hasCycle && !hasEscapeOnCycle(cyclePath, nodes, ESCAPE_NODE_TYPES)) {
+    issues.push({
+      level: 'warning',
+      message:
+        `Unguarded cycle detected: ${cyclePath.join(' → ')}. ` +
+        `Add a router or condition node to provide an exit path, or rely on MAX_NODE_VISITS.`,
+    })
+  }
+  // Guarded cycles (router/condition/guardrail on path) are valid — no issue pushed.
 
   return issues
 }

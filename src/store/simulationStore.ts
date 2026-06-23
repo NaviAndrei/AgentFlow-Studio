@@ -26,7 +26,9 @@ import { useSimulationMetricsStore } from './simulationMetricsStore'
 import { computeQualityScore, scoreTestCase } from '../utils/evalScorer'
 import { getPricing } from '../data/modelPricing'
 import { resolveNodePrompts } from '../utils/resolvePrompts'
+import { detectCycle, ESCAPE_NODE_TYPES, hasEscapeOnCycle } from '../utils/validation'
 import { useRunHistoryStore } from './runHistoryStore'
+import { useToastStore } from './toastStore'
 import type {
   AgentFlowEdge,
   AgentFlowNode,
@@ -157,6 +159,14 @@ const LOOP_GAP_MS = 250
  * and then terminates instead of running forever.
  */
 const MAX_NODE_VISITS = 2
+
+/**
+ * Token budget for agent-type nodes' real LLM calls in the default: branch.
+ * AgentFlowNodeData has no maxTokens field and StreamFn takes no such param,
+ * so this is carried as return metadata only — not yet wired into the
+ * transport call.
+ */
+const MAX_TOKENS_DEFAULT = 1024
 
 /**
  * Node types that touch the real provider/transcript in Live mode; everything
@@ -1199,21 +1209,56 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
           content: truncate(full, 400),
           model: node.data.model ?? '—',
           temperature: node.data.temperature ?? 0.7,
+          maxTokens: node.data.maxTokens ?? MAX_TOKENS_DEFAULT,
         }
       }
       case 'tool':
       case 'retriever': {
-        // Stubbed in Live mode: mock data flows into the message history so
-        // downstream LLM calls see a realistic transcript.
-        const output = fakeOutputFor(node, get().userInput)
-        const summary = `[${node.data.label}] ${truncate(JSON.stringify(output), 160)}`
-        appendStream(nodeId, JSON.stringify(output, null, 2))
-        set({
-          messages: [...get().messages, { role: 'user', content: summary }],
-        })
-        metrics.addTokens(estimateTokens(summary))
-        await delay(600)
-        return output
+        // Tool/retriever nodes call the real provider in Live mode, mirroring
+        // the default: branch's agent pattern. Falls back to a toast +
+        // { error } on failure so a single bad call can't crash the run.
+        try {
+          const base = useLLMConfigStore.getState().getConfig()
+          const explicitModel =
+            (node.data.model ?? '').trim() || (node.data.modelOverride ?? '').trim()
+          const config =
+            explicitModel === '' || explicitModel === base.settings.model
+              ? base
+              : { ...base, settings: { ...base.settings, model: explicitModel } }
+          const { systemPrompt: resolvedPrompt } = resolveNodePrompts(node.data)
+          const systemPrompt =
+            resolvedPrompt || `You are a ${node.type} agent. Complete your task.`
+          const temperature = node.data.temperature ?? 0.7
+          const chat: ChatMessage[] = [
+            { role: 'system', content: systemPrompt },
+            ...get().messages,
+          ]
+          set({ nodeStreams: { ...get().nodeStreams, [nodeId]: '' } })
+          abortController?.abort()
+          abortController = new AbortController()
+          const full = await streamChat(
+            config,
+            chat,
+            (chunk) => appendStream(nodeId, chunk),
+            abortController.signal,
+          )
+          flushStreams()
+          set({
+            messages: [...get().messages, { role: 'assistant', content: full }],
+          })
+          metrics.addTokens(estimateTokens(full))
+          return {
+            role: 'assistant',
+            content: truncate(full, 400),
+            model: config.settings.model,
+            temperature,
+            maxTokens: node.data.maxTokens ?? MAX_TOKENS_DEFAULT,
+          }
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err)
+          useToastStore.getState().pushToast(`${node.data.label}: ${message}`, 'warning')
+          return { error: message }
+        }
       }
       case 'mcpServer': {
         // Parse a tool-call request out of the upstream LLM node's output. If
@@ -1453,14 +1498,52 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
         return { final_reply: truncate(lastAssistant?.content ?? '', 400) }
       }
       default: {
-        // Agents, supervisors, loops etc. stay simulated in Live mode.
-        const streamText = fakeStreamTextFor(node)
-        if (streamText) {
-          set({ nodeStreams: { ...get().nodeStreams, [nodeId]: streamText } })
+        // Agents, supervisors, loops etc. call the real provider in Live
+        // mode, mirroring the 'llm' case with a role-flavored fallback
+        // system prompt. Falls back to a toast + { error } on failure so a
+        // single bad call can't crash the run.
+        try {
+          const base = useLLMConfigStore.getState().getConfig()
+          const explicitModel =
+            (node.data.model ?? '').trim() || (node.data.modelOverride ?? '').trim()
+          const config =
+            explicitModel === '' || explicitModel === base.settings.model
+              ? base
+              : { ...base, settings: { ...base.settings, model: explicitModel } }
+          const { systemPrompt: resolvedPrompt } = resolveNodePrompts(node.data)
+          const systemPrompt =
+            resolvedPrompt || `You are a ${node.type} agent. Complete your task.`
+          const temperature = node.data.temperature ?? 0.7
+          const chat: ChatMessage[] = [
+            { role: 'system', content: systemPrompt },
+            ...get().messages,
+          ]
+          set({ nodeStreams: { ...get().nodeStreams, [nodeId]: '' } })
+          abortController?.abort()
+          abortController = new AbortController()
+          const full = await streamChat(
+            config,
+            chat,
+            (chunk) => appendStream(nodeId, chunk),
+            abortController.signal,
+          )
+          flushStreams()
+          set({
+            messages: [...get().messages, { role: 'assistant', content: full }],
+          })
+          metrics.addTokens(estimateTokens(full))
+          return {
+            role: 'assistant',
+            content: truncate(full, 400),
+            model: config.settings.model,
+            temperature,
+            maxTokens: node.data.maxTokens ?? MAX_TOKENS_DEFAULT,
+          }
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err)
+          useToastStore.getState().pushToast(`${node.data.label}: ${message}`, 'warning')
+          return { error: message }
         }
-        await delay(nodeStepDurationMs(node.type))
-        metrics.addTokens(fakeTokensFor(node))
-        return fakeOutputFor(node, get().userInput)
       }
     }
   }
@@ -2636,6 +2719,19 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
     start: () => {
       const executionQueue = buildSeeds()
       if (executionQueue.length === 0) return
+
+      // Unguarded-cycle warning — does NOT block execution. Guarded cycles
+      // (router/condition/guardrail on the cycle path) are valid by design;
+      // MAX_NODE_VISITS remains the real runtime safety net either way.
+      const { nodes: cycleNodes, edges: cycleEdges } = useCanvasStore.getState()
+      const { hasCycle, cyclePath } = detectCycle(cycleNodes, cycleEdges)
+      if (hasCycle && !hasEscapeOnCycle(cyclePath, cycleNodes, ESCAPE_NODE_TYPES)) {
+        useToastStore.getState().pushToast(
+          `Unguarded cycle detected: ${cyclePath.join(' → ')}. Execution continues with MAX_NODE_VISITS guard.`,
+          'warning',
+        )
+      }
+
       runToken++
       set({ isActive: true })
       resetRunState(executionQueue)

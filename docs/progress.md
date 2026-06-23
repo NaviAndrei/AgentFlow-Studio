@@ -5,6 +5,293 @@
 
 ---
 
+---
+
+## Handoff — 2026-06-23 (Session 10 — Prompts 9 & 10: DRY cleanup + pre-push CI)
+
+### Prompt 9 — DRY Debt Resolution & Test Isolation Fix ✅
+
+**Step 1 — `vitest.config.ts` global mock isolation**
+- Added `clearMocks: true` and `restoreMocks: true` inside the `test: {}` block.
+- Root cause: `vi.spyOn` on an already-mocked method returns the same spy instance — without
+  global clear/restore, call counts leak across tests in the same describe block.
+  Bug was first observed in the `start() unguarded-cycle warning` describe block (Session 10,
+  Task C): Test B showed 1 call when it should have been 0 because Test A's `pushToast` call
+  leaked into the shared spy instance.
+- Fix impact: zero double-clear failures, no regressions.
+- Test result: **264/264 passing** (24 files) after this step alone.
+
+**Step 2 — Export `ESCAPE_NODE_TYPES` + `hasEscapeOnCycle` from `validation.ts`**
+
+Step 2a — `src/utils/validation.ts` diff:
+-const ESCAPE_NODE_TYPES = new Set<string>(['router', 'condition', 'guardrail'])
++export const ESCAPE_NODE_TYPES = new Set<string>(['router', 'condition', 'guardrail'])
+
+-function hasEscapeOnCycle(
++export function hasEscapeOnCycle(
+
+
+Step 2b — `src/store/simulationStore.ts` diff:
+// Line 29
+-import { detectCycle } from '../utils/validation'
++import { detectCycle, ESCAPE_NODE_TYPES, hasEscapeOnCycle } from '../utils/validation'
+
+// Lines 2727–2734 (formerly hand-inlined .some() lambda)
+
+const ESCAPE_TYPES = new Set(['router', 'condition', 'guardrail'])
+
+const cycleTypeById = new Map(cycleNodes.map((n) => [n.id, n.type]))
+
+const hasEscape = cyclePath.some((id) => {
+
+const t = cycleTypeById.get(id)
+
+return t !== undefined && ESCAPE_TYPES.has(t)
+
+})
+
+if (hasCycle && !hasEscape) {
+
+if (hasCycle && !hasEscapeOnCycle(cyclePath, cycleNodes, ESCAPE_NODE_TYPES)) {
+
+
+- DRY debt from Session 10 Task C fully resolved — inline escape-check lambda replaced with
+  the canonical `hasEscapeOnCycle` import. No logic change, pure deduplication.
+- `ESCAPE_NODE_TYPES` is now the single source of truth; adding a new escape-capable node type
+  (e.g. `evaluator`, `tryCatch`, `retry`) only requires one change in `validation.ts`.
+
+**Build & Test Status (Prompt 9)**
+| Check | Result |
+|---|---|
+| `npm run typecheck` | ✅ clean |
+| `npm run test` | ✅ **264/264 passing** (24 files) |
+| Test delta vs. Session 9 | +17 (247 → 264) |
+
+**Known decisions / debt carried forward**
+- `vitest.config.ts` previously had no `clearMocks`/`restoreMocks` — any test written before
+  this fix that relied on shared spy state across tests may now behave differently. None were
+  found in this sweep; re-verify if flakes appear on pre-Prompt-9 describe blocks.
+
+---
+
+### Prompt 10 — Pre-Push CI Script ✅
+
+**New file: `scripts/pre-push-check.ps1`**
+
+Features implemented:
+- ✅ **Safety checks**: Node ≥ 18, npm exists, `package.json` in cwd (fail-fast on missing prerequisites)
+- ✅ **Sequential pipeline**: `typecheck → build → tests` with fail-fast on any step
+- ✅ **Build size report**: total dist KB + gzip estimate printed on success
+- ✅ **`-DryRun` switch**: prints `[DRY RUN] Would run: <cmd>` for all 3 steps, exits 0 — no side effects
+- ✅ **Timestamped logging**: `[HH:mm:ss]` prefix on every major action line
+- ✅ **Emoji output**: emitted via `[char]` / `[char]::ConvertFromUtf32()` (no literal Unicode — avoids
+  PowerShell encoding issues on Windows terminals with non-UTF-8 codepage)
+
+**Key design decision — `Invoke-Npm` stderr handling:**
+Vite writes build progress to stderr. PowerShell strict mode (`$ErrorActionPreference = 'Stop'`)
+treats any stderr output as a terminating error, which would false-fail every build step.
+Fix: `Invoke-Npm` helper temporarily sets `$ErrorActionPreference = 'SilentlyContinue'`
+during the Vite build step only, then restores it — so real npm failures (non-zero exit code)
+still terminate the script correctly.
+
+**Dry-Run output (verified):**
+[22:23:02] Starting AgentFlow Studio pre-push checks...
+[22:23:02] Node.js v20.19.5 detected (>= v18 OK)
+[22:23:02] npm v10.8.2 detected
+[22:23:02] package.json found
+[22:23:02] === DRY RUN MODE ===
+[DRY RUN] Would run: npm run typecheck
+[DRY RUN] Would run: npm run build
+[DRY RUN] Would run: npm run test -- --run
+[22:23:02] Dry run complete. No commands executed.
+
+
+**Full-run output (verified):**
+[22:25:33] Starting AgentFlow Studio pre-push checks...
+[22:25:40] Typecheck passed
+[22:25:56] Build passed (✓ built in 10.01s)
+[22:26:03] Tests passed (264 passed, 5.34s)
+📦 Build size: 965 KB (gzip estimate: ~338 KB)
+✅ AgentFlow Studio pre-push check passed.
+Typecheck ✅ | Build ✅ | Tests ✅
+
+
+**Build & Test Status (Prompt 10)**
+| Check | Result |
+|---|---|
+| `npm run typecheck` | ✅ clean |
+| `npm run build` | ✅ 965 KB / ~338 KB gzip |
+| `npm run test` | ✅ 264/264 passing |
+| Script dry-run | ✅ exits 0, no commands executed |
+| Script full-run | ✅ all 3 steps pass, size report printed |
+
+**Next steps / wiring options**
+- [ ] Wire as a Git pre-push hook: `cp scripts/pre-push-check.ps1 .git/hooks/pre-push` (or a
+  thin `.git/hooks/pre-push` shell wrapper that calls `pwsh -File scripts/pre-push-check.ps1`)
+- [ ] Add as a GitHub Actions step by calling `pwsh -File scripts/pre-push-check.ps1` in a
+  `windows-latest` runner, or adapt the same logic to a `run: |` bash block for `ubuntu-latest`
+- [ ] Consider a `-StepOnly typecheck|build|test` param for faster targeted runs during development
+
+
+
+## Handoff — 2026-06-23 (Session 10: cycle detection, unguarded-cycle warning, start() gate)
+
+### Task A — detectCycle utility ✅
+- New `detectCycle(nodes, edges): CycleResult` in `src/utils/validation.ts` (line 45, exported).
+- Algorithm: iterative DFS with grey/black coloring (no recursion — safe on large graphs).
+- Time O(V+E), space O(V) auxiliary + O(E) adjacency index.
+- Handles: self-loops, disconnected subgraphs, triangle cycles, multi-path cycles.
+- 4 unit tests appended to `src/utils/validation.test.ts`.
+- **Correction made during implementation**: task brief said "drop beside `validateGraph` in
+  `canvasStore.ts`" — but `validateGraph` actually lives in `src/utils/validation.ts`; `canvasStore.ts:19`
+  only imports it. Implementation correctly targets `validation.ts`.
+
+### Task B — hasEscapeOnCycle + unguarded-cycle warning in validateGraph ✅
+- **Critical discovery**: first integration attempt wired `detectCycle` as a hard error + blocked
+  `start()`. This broke 8 previously-green tests including core loop semantics, forkFromSnapshot,
+  and the blueprint gallery validation check.
+- **Root cause**: `MAX_NODE_VISITS = 2` (simulationStore.ts:159) is the engine's actual cycle
+  safety net. Cycles are a first-class supported pattern — `corrective-rag.json` is a deliberately
+  cyclic blueprint (retriever→guardrail→router→llm→retriever, self-correcting RAG). A hard block
+  on all cycles violates this design.
+- **Correct invariant**: a cycle is **unsafe** only if no `router`/`condition`/`guardrail` node
+  sits on the cycle path (no possible escape). A cycle with an escape node is valid by design.
+- New `hasEscapeOnCycle(cyclePath, nodes, escapeTypes)` and `ESCAPE_NODE_TYPES` constant added
+  to `src/utils/validation.ts` — both **unexported** (export decision deferred, see DRY debt below).
+- `validateGraph` now pushes a **warning** (not an error) when a cycle has no escape node.
+  Guarded cycles push nothing.
+- 5 new tests in `src/utils/validation.test.ts`:
+  - A: unguarded triangle → 1 warning
+  - B: guarded triangle (router on path) → 0 warnings
+  - C: corrective-rag pattern → 0 warnings ✅ confirmed
+  - D: self-loop on agent node → 1 warning
+  - E: linear chain → 0 warnings
+- `corrective-rag.json` triggers 0 cycle warnings — confirmed by Test C and by the existing
+  blueprint-gallery error-check test staying green.
+
+### Task C — start() unguarded-cycle toast gate ✅
+- Added to `src/store/simulationStore.ts` after the `executionQueue.length === 0` guard:
+  - Reads `{ nodes, edges }` from `useCanvasStore.getState()`
+  - Calls `detectCycle`, inlines escape-check (see DRY debt)
+  - Pushes `useToastStore.getState().pushToast(..., 'warning')` if unguarded cycle detected
+  - **Does NOT block execution** — `MAX_NODE_VISITS` is the runtime guard
+- Two new imports added (lines 29–31 area):
+  - `import { detectCycle } from '../utils/validation'`
+  - `import { useToastStore } from './toastStore'`
+- 2 new tests in `src/store/simulationStore.test.ts` (describe: `start() unguarded-cycle warning`):
+  - A: all-agent triangle → pushToast called once with 'warning' tone, isActive true ✅
+  - B: router on cycle path → pushToast NOT called, isActive true ✅
+- **Bug caught during test writing**: Vitest's `vi.spyOn` returns the same mock instance when
+  re-spying an already-mocked method (no `clearMocks` in `vitest.config.ts`). Test B initially
+  showed 1 call (leaked from Test A). Fix: `pushToast.mockClear()` after each `vi.spyOn`. See
+  DRY/debt note below.
+
+### Build & Test Status
+| Check | Result |
+|---|---|
+| `npm run typecheck` | ✅ clean |
+| `npm run build` | ✅ clean (pre-existing chunk warnings only) |
+| `npm run test` | ✅ 254/254 passing (24 files) |
+| Test delta | 247 → 254 (+7 net across 3 tasks) |
+
+### Pre-flight Audit — executeLiveNode (Prompt 6 readiness, 2026-06-23)
+
+Seven questions answered before wiring real LLM calls into non-LLM node types.
+All findings are ground-truth from direct file inspection — not assumptions.
+
+**Q1 — executeLiveNode signature**
+- File: `src/store/simulationStore.ts`, lines 1156–1159
+- Signature: `const executeLiveNode = async (node: AgentFlowNode, nodeId: string): Promise<unknown>`
+- Return: `Promise<unknown>` — every branch returns a node output object stored into `nodeOutputs`.
+  Not `Promise<void>`.
+
+**Q2 — What is still faked in Live mode**
+- `case 'llm'` (line 1168): **real** — calls `streamChat()` abstraction, no fake helpers.
+- `case 'tool'` / `case 'retriever'` (lines 1206–1207): **stubbed** — `fakeOutputFor(node, get().userInput)`.
+- `default:` branch (line 1457): **stubbed** — `fakeStreamTextFor(node)`, `fakeTokensFor(node)`,
+  `fakeOutputFor(node, get().userInput)`. Covers `agent`, `supervisor`, `loop`, and all unhandled types.
+
+**Q3 — Full switch branch list in executeLiveNode**
+`start` (1162) · `llm` (1168) · `tool`/`retriever` (1206–1207, fall-through) · `mcpServer` (1220) ·
+`httpRequest` (1253) · `condition` (1303) · `router` (1309) · `guardrail` (1346) · `evaluator` (1386) ·
+`join` (1435) · `output` (1450) · `default` (1457)
+
+**Q4 — llmConfigStore is NOT a stub**
+- Fully implemented. State: `activeProvider`, `settings: Record<ProviderId, ProviderSettings>`,
+  `ollamaModels`, `settingsOpen`, `liveError`.
+- Key accessor: `getConfig(): ResolvedLLMConfig` (lines 53–56) — returns
+  `{ provider, settings: { ...settings[activeProvider] } }`.
+- API key is at `config.settings.apiKey` (field on `ProviderSettings` in `src/llm/types.ts:28`),
+  not a separate store method.
+- `refreshOllamaModels()` makes a real `listOllamaModels()` fetch to `/api/tags`.
+- **Correction**: the previous session brief that called this "a stub" was incorrect.
+  It is already wired for real provider config and is consumed by the `'llm'` case today.
+
+**Q5 — evalStore is NOT a stub, but is scoped to test-case evaluation only**
+- State: `testCases: EvalTestCase[]`, `runs: EvalRun[]`, `evalOpen: boolean`.
+- `addRun(run: EvalRun)` records a whole scored eval pass — not per-node trace entries.
+- Per-node trace recording lives in `simulationStore`'s own trace state.
+- **evalStore is not the right target for per-node execution results.**
+  Any new node-result recording should go into `simulationStore`'s existing trace mechanism.
+
+**Q6 — Only one real `fetch()` inside executeLiveNode — NOT an LLM call**
+- Line 1280, inside `case 'httpRequest'`: `resp = await fetch(url, { method, headers, body, signal })`
+- This is the user-configured HTTP Request node (arbitrary endpoint), not an LLM provider.
+- Actual LLM traffic goes through `streamChat()` (line 1188) in `src/llm/` — executeLiveNode
+  itself contains no direct fetch to any LLM endpoint.
+
+**Q7 — AgentFlowNodeData LLM fields (src/types/index.ts:54)**
+| Field | Line | Status |
+|---|---|---|
+| `model?: string` | 59 | ✅ exists |
+| `modelOverride?: string` | 61 | ✅ exists (Live-mode per-node override) |
+| `systemPrompt?: string` | 62 | ✅ exists |
+| `temperature?: number` | 63 | ✅ exists |
+| `maxTokens` | — | ❌ does NOT exist — zero matches across whole file |
+
+- **Action required before Prompt 6**: any code that needs a per-node token cap must either
+  add `maxTokens?: number` to `AgentFlowNodeData` or use a module-level default constant.
+  No per-node knob for it exists today.
+
+**Next: Prompt 6 — wire real LLM calls into non-LLM node types inside executeLiveNode.**
+Primary targets: `default:` branch (agent/supervisor/loop), then optionally `tool`/`retriever`.
+`llm` case is already real — do not touch it.
+
+### Decisions & Known Debt
+
+**Decision: ESCAPE_NODE_TYPES and hasEscapeOnCycle are not exported from validation.ts**
+- Both remain unexported (`const`, not `export const`) — export surface change deferred.
+- `simulationStore.ts` inlines a local `ESCAPE_TYPES = new Set(['router', 'condition', 'guardrail'])`
+  and a local escape-check lambda instead of importing them.
+- **DRY debt**: if `ESCAPE_NODE_TYPES` ever expands (candidates: `evaluator`, `tryCatch`, `retry` —
+  all branch conditionally per NodeType union), the inline copy in `simulationStore.ts` must be
+  updated manually alongside `validation.ts`.
+- **Resolution path**: export both symbols in a targeted PR, replace inline copy.
+
+**Decision: no `clearMocks: true` in vitest.config.ts**
+- `vi.spyOn` on an already-mocked method returns the same spy instance — call counts leak across
+  tests in the same describe block unless `mockClear()` is called explicitly after each `vi.spyOn`.
+- **Resolution path**: add `clearMocks: true` to `vitest.config.ts` in a housekeeping PR. Low risk,
+  high benefit — prevents this class of false-positive flake globally.
+
+**Note on NodeType escape candidates (from pre-flight)**
+- Full `NodeType` union (src/types/index.ts:5–38):
+  `start · llm · agent · tool · memory · output · condition · router · guardrail · join · loop ·
+  humanInLoop · supervisor · swarmWorker · retriever · mcpServer · structuredOutput · map ·
+  codeExecutor · evaluator · subgraph · longTermStore · memoryWriter · planner · subagent ·
+  computerUse · a2aAgent · multimodalInput · tryCatch · retry · httpRequest · note · group`
+- `evaluator`, `tryCatch`, `retry` branch conditionally and could be added to `ESCAPE_NODE_TYPES`
+  in a future pass if users report false-positive warnings on graphs using those node types as
+  cycle guards.
+
+### Known edge cases / deferred
+- `detectCycle` is unwired from `start()` directly — only the warning toast uses it indirectly.
+  The hard-block path was intentionally removed (see Task B discovery note).
+- `vitest.config.ts` `clearMocks` housekeeping PR deferred to a future session.
+- ESCAPE_NODE_TYPES export deferred — inline DRY copy in `simulationStore.ts` is the current state.
+
+---
+
 ## Handoff — 2026-06-21 (Session 9: snapshots, command palette, animated edges, Python export)
 > Note: the session brief that kicked this off called itself "Session 8" — renumbered to 9
 > here since a Session 8 entry (full-graph PNG/auto-layout/JSON I/O) already existed below.
@@ -464,108 +751,4 @@ JSON" (Task C, native React Flow format) back into the pre-existing "Save / Open
   (captured via `structuredClone(get().messages)` in `makeSnapshot()`) so a fork can
   restore the exact chat transcript at the fork point. New `simulationStore.
   forkFromSnapshot(snapshots, stepIndex)` action: reuses `resetRunState([targetNodeId])`
-  (same shape as `start()`), pre-seeds `nodeOutputs`/`visitCounts`/`executedIds`/
-  `erroredNodeIds`/`skippedNodeIds` from the snapshots before the fork point, then
-  calls `play()`. **No `forkFromNodeId` execution guard was added** — the engine is a
-  dynamic forward walker (`executionQueue` grows via `enqueueTargets` as nodes
-  execute), so seeding `visitCounts` alone reproduces correct `MAX_NODE_VISITS`
-  semantics without needing a separate skip-guard. Browser-verified: forking from a
-  mid-run step on the Sequential Pipeline blueprint correctly re-executed only the
-  fork node onward while pre-fork nodes stayed marked completed on canvas.
-- **Undo/redo gap-closing ✅** — `canvasStore.Snapshot` gained a `label: string`
-  field, stamped at all 15 `pushHistory()` call sites (`Add llm node`, `Delete node`,
-  `Connect A → B`, etc.). `undo()`/`redo()` now return `string | null` (the label, or
-  null if there was nothing to undo/redo) instead of `void`. `useKeyboardShortcuts.ts`
-  now pushes a toast (`Undone: <label>` / `Redone: <label>`) and skips Ctrl+Z/Shift+Z/Y
-  entirely while `simulationStore.isRunning` is true. `loadGraph()` now hard-clears
-  `history`/`future` instead of pushing one snapshot before loading. Browser-verified:
-  add/undo/redo a node — toast text and canvas state both correct.
-
-### Current state
-- typecheck: clean ✅ · build: clean ✅ (pre-existing fflate/chunk warnings only)
-- tests: **203/203 passing** ✅ (no new tests added — this was scoped as gap-closing
-  on top of an already-tested engine; consider adding `forkFromSnapshot` and the
-  `Snapshot.label` plumbing to the test suite next session if more confidence is
-  wanted before touching this code again)
-- Browser-verified live via preview tools: blueprint load → run → Time Travel → Fork
-  from a mid-step (Sequential Pipeline, 6-node chain) → new run resumes correctly;
-  separately, add node → Ctrl+Z → toast "Undone: Add output node" → Ctrl+Shift+Z →
-  toast "Redone: ..." → node restored.
-
-### Next steps
-1. [ ] Consider adding unit tests for `forkFromSnapshot` (step-0 degenerate case,
-   mid-run re-seed, visit-count carry-over for loop nodes) and for the `Snapshot.label`
-   plumbing in `canvasStore` — neither has direct test coverage yet.
-2. [ ] Toast stacking on rapid-fire undo (holding Ctrl+Z) wasn't checked under load —
-   if it turns out visually noisy, coalesce repeats by id instead of queuing each one.
-3. [ ] Original T2-2 follow-ons (Follow-on A: streaming — confirmed already done,
-   Follow-on C: canvas undo/redo — confirmed already done) are now both closed out.
-
----
-
-## Handoff — 2026-06-19
-
-### What was completed
-- **Time-Travel Debugger (T2-2) ✅**
-  - `StepSnapshot` type + `RunRecord.snapshots` (`src/types/index.ts`)
-  - `simulationStore.ts`: `snapshots` state, `makeSnapshot()` helper capturing untruncated
-    input (`resolveCacheInput`) + output at every primary trace-entry site (ok/cached/error/
-    retry/tryCatch/map); cleared in `resetRunState`/`stop`; archived via `structuredClone` in `recordRunHistory`
-  - New `debuggerStore.ts` — ephemeral playback state (`dockTab`, `activeStepIndex`, `isPlaying`,
-    `playbackSpeed`, `activeStepNodeId`, `showDiff`)
-  - New `components/debugger/TimeTravelBar.tsx` (scrubber/controls/speed; Fork stub disabled) +
-    `SnapshotInspector.tsx` (input/output state, diff highlight; reuses `JsonValue`)
-  - `TraceLog.tsx` gained **Trace Log | Time Travel** tabs; `RunHistoryPanel.tsx` selecting a run
-    opens the Time Travel tab; `NodeShell.tsx` + `.tt-active` CSS give the active step an amber ring
-  - Highlight uses a store selector (NOT `updateNodeData`) to avoid dirtying the canvas/undo
-  - **Deferred**: "Fork from here" (re-seeding the engine mid-state) — button is a disabled stub
-- **Node search in palette (Task B) ✅** — `Sidebar.tsx`: debounced (150ms) search, hides empty
-  groups, ↑/↓ highlight, Enter adds first match at canvas center (`addNode`), Esc clears
-
-### Current state
-- typecheck: clean ✅ · build: clean ✅ (pre-existing fflate/chunk warnings only)
-- tests: **203/203 passing** ✅ (192 prior + 11 new: snapshots ×3 wait, debuggerStore ×5, TimeTravelBar ×3)
-- Browser-verified: build Sequential Pipeline → run → select run → step through snapshots; active
-  node ring, step counter, scrubber, untruncated input/output state all work; Task B filter/Enter/Esc work
-- Note: no jsdom/testing-library in repo (node env + window stub), so the TimeTravelBar test is the
-  project's non-rendering smoke+store-integration style, not a DOM render test
-
-### Next steps
-1. [ ] "Fork from here" — re-seed `simulationStore` (nodeOutputs/visitCounts) from a snapshot and run onward
-2. [ ] Follow-ons A (streaming LLM output) and C (canvas undo/redo) from the T2-2 session brief
-
----
-
-## Handoff — 2026-06-18
-
-### What was completed
-- **Node output caching + partial re-execution (T3-1) ✅**
-  - `src/utils/hashNodeInput.ts` — pure djb2 hash over deep-sorted-key `JSON.stringify`, no crypto API
-  - `simulationStore.ts`: `nodeInputHashCache` (Zustand state) + module-level `nodeOutputCache` (real, untruncated output) + `clearHashCache()`/`setCachedHash()` actions
-  - Cache check wired into `executeCurrent`: hashes `{ node.data, sorted upstream outputs, userInput, liveMode }`, skips the executor on a hit, replays the cached output into a `'cached'`-status trace entry (`durationMs: 0`)
-  - Cache eligibility: excludes `subgraph`/`map`/`humanInLoop`, virtual (Map-per-item) nodes, and — critically — any node beyond its **first visit in a run** (loop/cycle revisits always fully re-execute, so `MAX_NODE_VISITS` semantics stay intact)
-  - Cache persists across `start()`/`restart()` (re-runs), cleared only by `stop()` via `clearHashCache()`
-  - `TraceEntry.status` gained `'cached'`; grey "⚡ cached" badge in `NodeShell.tsx`, grey dot in `TraceLog.tsx`; eval-scoring lookup in `finishRun()` now accepts cached Output nodes
-  - 4 new tests in `simulationStore.test.ts` (state plumbing + 3 execution-skip scenarios)
-
-- **Run diff UI in Run History (T1-2) ✅**
-  - `src/utils/diffRuns.ts` — pure `diffRuns(runA, runB): NodeDiff[]`, compares last-per-node trace entries (status/output/duration delta)
-  - `runHistoryStore.ts`: `compareRunIds: [string, string] | null` + `setCompareRunIds`
-  - `RunHistoryPanel.tsx`: per-run checkbox (caps at a pair), inline `DiffTable` (sub-80-line component), row coloring (green = error→ok improvement, red = ok→error degradation, grey = unchanged); `diffRuns()` called inside `useMemo`, never inside a store selector
-
-### Current state
-- typecheck: clean ✅
-- build: clean ✅ (pre-existing fflate dynamic/static import warning + >500kB chunk warning, unrelated to this work)
-- tests: **192/192 passing** ✅ (188 prior + 4 new `diffRuns` tests; T3-1's 4 tests already included in the 188)
-- grep confirms no inline-object Zustand selectors introduced
-
-### Next steps (from feature analysis)
-1. [ ] Time-travel debugger (T2-2) — snapshot per step for backward inspection
-
-### What to load at resume
-```
-@CLAUDE.md @docs/progress.md
-```
-Components work → also `@COMPONENTS.md`
-Stores/simulation → also `@ARCHITECTURE.md`
-Something seems wrong → check `@DECISIONS.md` first
+  (same shape as `start()`), pre-seeds `nodeOutput

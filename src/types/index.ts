@@ -61,6 +61,7 @@ export type AgentFlowNodeData = {
   modelOverride?: string
   systemPrompt?: string
   temperature?: number
+  maxTokens?: number
   /** Agent */
   tools?: string[]
   maxIterations?: number

@@ -228,4 +228,60 @@ describe('validateGraph — HTTP Request node', () => {
       'HTTP Request: body is ignored for GET/DELETE requests',
     )
   })
+
+  it('warns on an unguarded cycle made only of agent nodes', () => {
+    const nodes = [node('A', 'agent'), node('B', 'agent'), node('C', 'agent')]
+    const edges = [edge('A', 'B'), edge('B', 'C'), edge('C', 'A')]
+    const cycleMessages = messages(nodes, edges).filter((m) =>
+      m.includes('Unguarded cycle'),
+    )
+    expect(cycleMessages).toHaveLength(1)
+    expect(cycleMessages[0]).toContain('Unguarded cycle')
+  })
+
+  it('does not warn on a cycle guarded by a router node', () => {
+    const nodes = [node('A', 'agent'), node('B', 'router'), node('C', 'agent')]
+    const edges = [edge('A', 'B'), edge('B', 'C'), edge('C', 'A')]
+    const cycleMessages = messages(nodes, edges).filter((m) =>
+      m.includes('Unguarded cycle'),
+    )
+    expect(cycleMessages).toHaveLength(0)
+  })
+
+  it('does not warn on the corrective-rag retriever→guardrail→router→llm loop', () => {
+    const nodes = [
+      node('retriever-1', 'retriever'),
+      node('guardrail-1', 'guardrail'),
+      node('router-1', 'router'),
+      node('llm-2', 'llm', { model: 'gemini-2.5-flash' }),
+    ]
+    const edges = [
+      edge('retriever-1', 'guardrail-1'),
+      edge('guardrail-1', 'router-1', 'fail'),
+      edge('router-1', 'llm-2', 'rewrite'),
+      edge('llm-2', 'retriever-1', 'retry'),
+    ]
+    const cycleMessages = messages(nodes, edges).filter((m) =>
+      m.includes('Unguarded cycle'),
+    )
+    expect(cycleMessages).toHaveLength(0)
+  })
+
+  it('warns on a self-loop on a pure agent node', () => {
+    const nodes = [node('A', 'agent')]
+    const edges = [edge('A', 'A')]
+    const cycleMessages = messages(nodes, edges).filter((m) =>
+      m.includes('Unguarded cycle'),
+    )
+    expect(cycleMessages).toHaveLength(1)
+  })
+
+  it('does not warn on a linear chain with no cycle', () => {
+    const nodes = [node('A', 'agent'), node('B', 'agent'), node('C', 'agent')]
+    const edges = [edge('A', 'B'), edge('B', 'C')]
+    const cycleMessages = messages(nodes, edges).filter((m) =>
+      m.includes('Unguarded cycle'),
+    )
+    expect(cycleMessages).toHaveLength(0)
+  })
 })

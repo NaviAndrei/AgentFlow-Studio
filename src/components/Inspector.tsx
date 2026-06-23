@@ -18,7 +18,7 @@ import { HINTS } from '../data/hints'
 import { MODEL_PRESETS } from '../utils/exportModels'
 import { usePromptStore } from '../store/promptStore'
 import { ExternalLink, Link as LinkIcon, X } from 'lucide-react'
-import type { AgentFlowNodeData, MemoryType } from '../types'
+import type { AgentFlowNodeData, AgentFlowNodeType, MemoryType } from '../types'
 
 const inputCls =
   'w-full rounded-md border border-white/10 bg-surface-2 px-2 py-1.5 text-xs text-gray-200 focus:border-accent focus:outline-none'
@@ -178,6 +178,34 @@ function LLMFields({ data, update }: FieldsProps) {
         />
       </label>
     </>
+  )
+}
+
+const MAX_TOKENS_FIELD_TYPES: AgentFlowNodeType[] = [
+  'llm',
+  'agent',
+  'tool',
+  'retriever',
+  'supervisor',
+  'swarmWorker',
+  'planner',
+  'subagent',
+]
+
+function MaxTokensField({ data, update }: FieldsProps) {
+  return (
+    <label className="block">
+      <span className={labelCls}>Max Tokens</span>
+      <input
+        type="number"
+        min={1}
+        max={8192}
+        step={1}
+        className={inputCls}
+        value={data.maxTokens ?? 1024}
+        onChange={(e) => update({ maxTokens: Number(e.target.value) })}
+      />
+    </label>
   )
 }
 
@@ -1650,6 +1678,7 @@ function ConfigPanel() {
         )}
         {nodeType === 'tryCatch' && <TryCatchFields {...props} />}
         {nodeType === 'retry' && <RetryFields {...props} />}
+        {MAX_TOKENS_FIELD_TYPES.includes(nodeType) && <MaxTokensField {...props} />}
         {nodeType === 'note' && <NoteFields {...props} />}
         {nodeType !== 'note' && nodeType !== 'group' && (
           <AppearanceFields {...props} />

@@ -9,6 +9,7 @@ import type {
 } from '../types'
 import { useCanvasStore } from './canvasStore'
 import { useSimulationStore } from './simulationStore'
+import { useToastStore } from './toastStore'
 import { useSimulationMetricsStore } from './simulationMetricsStore'
 import { streamChat } from '../llm'
 
@@ -870,5 +871,219 @@ describe('simulation queue walker — node output caching', () => {
 
     expect(s2.trace.filter((t) => t.status === 'cached')).toHaveLength(0)
     expect(s2.trace.filter((t) => t.status === 'ok')).toHaveLength(3)
+  })
+})
+describe('start() unguarded-cycle warning', () => {
+  it('pushes a warning toast for an unguarded all-agent cycle but does not block execution', () => {
+    loadGraph(
+      [node('a', 'agent'), node('b', 'agent'), node('c', 'agent')],
+      [edge('a', 'b'), edge('b', 'c'), edge('c', 'a')],
+    )
+    const pushToast = vi.spyOn(useToastStore.getState(), 'pushToast')
+    pushToast.mockClear()
+
+    useSimulationStore.getState().start()
+
+    expect(pushToast).toHaveBeenCalledTimes(1)
+    const [message, tone] = pushToast.mock.calls[0]
+    expect(message).toContain('Unguarded cycle')
+    expect(tone).toBe('warning')
+    expect(useSimulationStore.getState().isActive).toBe(true)
+  })
+
+  it('does not warn when a router node sits on the cycle path', () => {
+    loadGraph(
+      [node('a', 'agent'), node('b', 'router', { routes: ['x'] }), node('c', 'agent')],
+      [edge('a', 'b'), edge('b', 'c', 'x'), edge('c', 'a')],
+    )
+    const pushToast = vi.spyOn(useToastStore.getState(), 'pushToast')
+    pushToast.mockClear()
+
+    useSimulationStore.getState().start()
+
+    expect(pushToast).not.toHaveBeenCalled()
+    expect(useSimulationStore.getState().isActive).toBe(true)
+  })
+})
+
+describe("executeLiveNode â default branch real LLM", () => {
+  it("calls streamChat with the node's model and system prompt, and surfaces temperature in the output", async () => {
+    useSimulationStore.getState().setLiveMode(true)
+    loadGraph(
+      [
+        node("s", "start"),
+        node("a", "agent", {
+          model: "custom-model",
+          systemPrompt: "Be the agent.",
+          temperature: 0.3,
+        }),
+        node("o", "output"),
+      ],
+      [edge("s", "a"), edge("a", "o")],
+    )
+    const s = await runToEnd()
+
+    expect(streamChat).toHaveBeenCalledTimes(1)
+    const [config, chat] = vi.mocked(streamChat).mock.calls[0]
+    expect(config.settings.model).toBe("custom-model")
+    expect(chat[0]).toEqual({ role: "system", content: "Be the agent." })
+    expect(s.nodeOutputs.a).toMatchObject({ model: "custom-model", temperature: 0.3 })
+  })
+
+  it("on streamChat rejection, pushes a warning toast and keeps the run from crashing", async () => {
+    vi.mocked(streamChat).mockRejectedValue(new Error("provider unreachable"))
+    useSimulationStore.getState().setLiveMode(true)
+    loadGraph(
+      [node("s", "start"), node("a", "agent"), node("o", "output")],
+      [edge("s", "a"), edge("a", "o")],
+    )
+    const pushToast = vi.spyOn(useToastStore.getState(), "pushToast")
+    pushToast.mockClear()
+
+    const s = await runToEnd()
+
+    expect(pushToast).toHaveBeenCalledTimes(1)
+    const [message, tone] = pushToast.mock.calls[0]
+    expect(message).toContain("provider unreachable")
+    expect(tone).toBe("warning")
+    expect(s.nodeOutputs.a).toMatchObject({ error: "provider unreachable" })
+    expect(useSimulationStore.getState().isActive).toBe(true)
+  })
+
+  it("adds the real token count from the streamChat response to metrics", async () => {
+    vi.mocked(streamChat).mockResolvedValue("a reasonably long reply for token estimation")
+    useSimulationStore.getState().setLiveMode(true)
+    loadGraph(
+      [node("s", "start"), node("a", "agent"), node("o", "output")],
+      [edge("s", "a"), edge("a", "o")],
+    )
+
+    await runToEnd()
+
+    expect(useSimulationMetricsStore.getState().tokens).toBeGreaterThan(0)
+  })
+})
+describe("executeLiveNode â tool/retriever branches real LLM", () => {
+  it("tool: calls streamChat with the node's model and system prompt", async () => {
+    useSimulationStore.getState().setLiveMode(true)
+    loadGraph(
+      [
+        node("s", "start"),
+        node("t", "tool", {
+          model: "tool-model",
+          systemPrompt: "Use the search tool.",
+        }),
+        node("o", "output"),
+      ],
+      [edge("s", "t"), edge("t", "o")],
+    )
+    const s = await runToEnd()
+
+    expect(streamChat).toHaveBeenCalledTimes(1)
+    const [config, chat] = vi.mocked(streamChat).mock.calls[0]
+    expect(config.settings.model).toBe("tool-model")
+    expect(chat[0]).toEqual({ role: "system", content: "Use the search tool." })
+    expect(s.nodeOutputs.t).toMatchObject({ model: "tool-model" })
+  })
+
+  it("tool: on streamChat rejection, pushes a warning toast and keeps the run from crashing", async () => {
+    vi.mocked(streamChat).mockRejectedValue(new Error("tool provider unreachable"))
+    useSimulationStore.getState().setLiveMode(true)
+    loadGraph(
+      [node("s", "start"), node("t", "tool"), node("o", "output")],
+      [edge("s", "t"), edge("t", "o")],
+    )
+    const pushToast = vi.spyOn(useToastStore.getState(), "pushToast")
+    pushToast.mockClear()
+
+    const s = await runToEnd()
+
+    expect(pushToast).toHaveBeenCalledTimes(1)
+    const [message, tone] = pushToast.mock.calls[0]
+    expect(message).toContain("tool provider unreachable")
+    expect(tone).toBe("warning")
+    expect(s.nodeOutputs.t).toMatchObject({ error: "tool provider unreachable" })
+    expect(useSimulationStore.getState().isActive).toBe(true)
+  })
+
+  it("retriever: calls streamChat with the node's model and system prompt", async () => {
+    useSimulationStore.getState().setLiveMode(true)
+    loadGraph(
+      [
+        node("s", "start"),
+        node("r", "retriever", {
+          model: "retriever-model",
+          systemPrompt: "Retrieve relevant documents.",
+        }),
+        node("o", "output"),
+      ],
+      [edge("s", "r"), edge("r", "o")],
+    )
+    const s = await runToEnd()
+
+    expect(streamChat).toHaveBeenCalledTimes(1)
+    const [config, chat] = vi.mocked(streamChat).mock.calls[0]
+    expect(config.settings.model).toBe("retriever-model")
+    expect(chat[0]).toEqual({ role: "system", content: "Retrieve relevant documents." })
+    expect(s.nodeOutputs.r).toMatchObject({ model: "retriever-model" })
+  })
+
+  it("retriever: on streamChat rejection, pushes a warning toast and keeps the run from crashing", async () => {
+    vi.mocked(streamChat).mockRejectedValue(new Error("retriever provider unreachable"))
+    useSimulationStore.getState().setLiveMode(true)
+    loadGraph(
+      [node("s", "start"), node("r", "retriever"), node("o", "output")],
+      [edge("s", "r"), edge("r", "o")],
+    )
+    const pushToast = vi.spyOn(useToastStore.getState(), "pushToast")
+    pushToast.mockClear()
+
+    const s = await runToEnd()
+
+    expect(pushToast).toHaveBeenCalledTimes(1)
+    const [message, tone] = pushToast.mock.calls[0]
+    expect(message).toContain("retriever provider unreachable")
+    expect(tone).toBe("warning")
+    expect(s.nodeOutputs.r).toMatchObject({ error: "retriever provider unreachable" })
+    expect(useSimulationStore.getState().isActive).toBe(true)
+  })
+})
+
+describe("executeLiveNode — maxTokens resolution", () => {
+  it("llm: resolves node.data.maxTokens into the returned output", async () => {
+    useSimulationStore.getState().setLiveMode(true)
+    loadGraph(
+      [node("s", "start"), node("l", "llm", { maxTokens: 512 }), node("o", "output")],
+      [edge("s", "l"), edge("l", "o")],
+    )
+    const s = await runToEnd()
+    expect(s.nodeOutputs.l).toMatchObject({ maxTokens: 512 })
+  })
+
+  it("llm: falls back to MAX_TOKENS_DEFAULT (1024) when maxTokens is unset", async () => {
+    useSimulationStore.getState().setLiveMode(true)
+    loadGraph(
+      [node("s", "start"), node("l", "llm"), node("o", "output")],
+      [edge("s", "l"), edge("l", "o")],
+    )
+    const s = await runToEnd()
+    expect(s.nodeOutputs.l).toMatchObject({ maxTokens: 1024 })
+  })
+
+  it("tool: resolves node.data.maxTokens, and falls back to MAX_TOKENS_DEFAULT when unset", async () => {
+    useSimulationStore.getState().setLiveMode(true)
+    loadGraph(
+      [node("s", "start"), node("t", "tool", { maxTokens: 256 }), node("o", "output")],
+      [edge("s", "t"), edge("t", "o")],
+    )
+    const withOverride = await runToEnd()
+    expect(withOverride.nodeOutputs.t).toMatchObject({ maxTokens: 256 })
+
+    loadGraph(
+      [node("s", "start"), node("t2", "tool"), node("o", "output")],
+      [edge("s", "t2"), edge("t2", "o")],
+    )
+    const withDefault = await runToEnd()
+    expect(withDefault.nodeOutputs.t2).toMatchObject({ maxTokens: 1024 })
   })
 })
