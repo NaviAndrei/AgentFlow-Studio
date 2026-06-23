@@ -1,16 +1,34 @@
+# Dependency Directories & Build Outputs
 node_modules/
 dist/
+
+# Environment Variables & Secrets
 .env
 .env.local
-*.log
+
+# System & Log Files
 .DS_Store
-.claude
-.specstory
-.vscode
+*.log
+
+# Editor & AI Tooling Configurations
+.vscode/
+.specstory/
+.agents/
+.claudeignore
+
+# Claude local configurations & cache
+.claude/settings.local.json
+.claude/**/__pycache__/
+.claude/plans/
+.claude/launch.json
+.claude/claude-project.json
+
+# Project Documentation (Local/Private copies)
 AgentFlow Studio - User Documentation.md
 ARCHITECTURE.md
 COMPONENTS.md
 DECISIONS.md
 TASKS.md
-.claudeignore
+
+# Testing & Diagnostic Reports
 Report_*
