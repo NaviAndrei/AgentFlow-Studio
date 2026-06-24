@@ -593,6 +593,17 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
 
     recordRunHistory(get().erroredNodeIds.length > 0 ? 'error' : 'done', costSummary, evalRun)
 
+    // Record a lightweight run summary for the read-only "Last run" row.
+    // Skipped trace entries are branches that never ran, so they're excluded
+    // from the executed-node count.
+    evalStore.recordRunSummary({
+      runId: crypto.randomUUID(),
+      timestamp: Date.now(),
+      nodesExecuted: trace.filter((e) => e.status !== 'skipped').length,
+      errorCount: get().erroredNodeIds.length,
+      totalLatencyMs: useSimulationMetricsStore.getState().elapsedMs,
+    })
+
     set({ isRunning: false })
   }
 

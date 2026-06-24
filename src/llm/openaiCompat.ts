@@ -5,7 +5,13 @@
  */
 import type { ChatMessage } from '../types'
 import type { ProviderSettings } from './types'
-import { fetchErrorMessage, hostOf, streamLines, trimBaseUrl } from './shared'
+import {
+  describeHttpStatus,
+  fetchErrorMessage,
+  hostOf,
+  streamLines,
+  trimBaseUrl,
+} from './shared'
 
 /** Extract the text chunk from one `data:` line of a chat-completions SSE stream. */
 export function parseOpenAICompatLine(line: string): string {
@@ -61,10 +67,7 @@ export async function streamOpenAICompatChat(
       parseLine: parseOpenAICompatLine,
       errors: {
         unreachable: `${label} not reachable at ${hostOf(settings.baseUrl)}`,
-        status: (status) =>
-          status === 401 || status === 403
-            ? `${label} rejected the API key (HTTP ${status})`
-            : `${label} responded with ${status}`,
+        status: (status) => describeHttpStatus(label, status),
         streamFailed: `${label} stream failed`,
       },
     },

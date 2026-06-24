@@ -38,6 +38,30 @@ export function isInsecureRemoteUrl(url: string): boolean {
   }
 }
 
+/**
+ * Map a non-OK HTTP status to a readable, provider-labelled message. The
+ * 401/403 wording is kept verbatim so existing transport error surfaces (and
+ * their tests) stay stable; 400/429/5xx get their own descriptive text.
+ */
+export function describeHttpStatus(label: string, status: number): string {
+  switch (status) {
+    case 400:
+      return `${label} rejected the request (HTTP 400 — bad request)`
+    case 401:
+    case 403:
+      return `${label} rejected the API key (HTTP ${status})`
+    case 429:
+      return `${label} rate limit exceeded (HTTP 429) — slow down or check your quota`
+    case 500:
+    case 502:
+    case 503:
+    case 504:
+      return `${label} server error (HTTP ${status})`
+    default:
+      return `${label} responded with ${status}`
+  }
+}
+
 /** Map abort/timeout DOMExceptions to readable messages; otherwise use the fallback. */
 export function fetchErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof DOMException) {

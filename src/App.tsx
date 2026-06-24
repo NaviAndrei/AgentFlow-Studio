@@ -12,6 +12,7 @@ import { EvalPanel } from './components/EvalPanel'
 import { ExportModal } from './components/ExportModal'
 import { HumanInLoopModal } from './components/HumanInLoopModal'
 import { Inspector } from './components/Inspector'
+import { LastRunSummaryBar } from './components/LastRunSummaryBar'
 import { LLMSettingsModal } from './components/LLMSettingsModal'
 import { Navbar } from './components/Navbar'
 import { PanelRail } from './components/PanelRail'
@@ -48,6 +49,7 @@ export default function App() {
     <ReactFlowProvider>
       <div className="flex h-screen flex-col bg-canvas font-mono text-gray-200">
         <Navbar />
+        <LastRunSummaryBar />
         <CanvasErrorBoundary>
           <div className="flex min-h-0 flex-1">
             <Sidebar />

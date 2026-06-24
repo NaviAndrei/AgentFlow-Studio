@@ -327,6 +327,23 @@ export interface EvalRun {
   qualityScore: number
 }
 
+/**
+ * Lightweight summary of one completed execution run, recorded by evalStore
+ * when a run finishes (distinct from EvalRun, which scores test cases). Powers
+ * the read-only "Last run: X nodes, Y errors, Zms" row beneath the toolbar.
+ */
+export interface LastRunSummary {
+  runId: string
+  /** Epoch ms when the run finished. */
+  timestamp: number
+  /** Total node executions in the run (excludes skipped branches). */
+  nodesExecuted: number
+  /** Nodes that finished with error status. */
+  errorCount: number
+  /** Wall-clock latency of the run, in ms. */
+  totalLatencyMs: number
+}
+
 export interface NodeCostEntry {
   nodeId: string
   nodeName: string

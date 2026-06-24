@@ -217,6 +217,70 @@ describe('streamChat dispatch', () => {
     ).rejects.toThrow('OpenRouter rejected the API key (HTTP 401)')
   })
 
+  it('streams an OpenAI response to the chat-completions endpoint', async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(
+      sseResponse([
+        'data: {"choices":[{"delta":{"content":"Hi"}}]}',
+        'data: {"choices":[{"delta":{"content":" there"}}]}',
+        'data: [DONE]',
+      ]),
+    )
+    vi.stubGlobal('fetch', fetchSpy)
+    const full = await streamChat(
+      config('openai', { apiKey: 'sk-test' }),
+      [{ role: 'user', content: 'hi' }],
+      () => {},
+    )
+    expect(full).toBe('Hi there')
+    const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe('https://api.openai.com/v1/chat/completions')
+    expect(init.method).toBe('POST')
+    expect((init.headers as Record<string, string>).authorization).toBe(
+      'Bearer sk-test',
+    )
+    const body = JSON.parse(init.body as string) as { model: string }
+    expect(body.model).toBe('gpt-4o-mini')
+  })
+
+  it('streams a Gemini response with the key in a header, not the URL', async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(
+      sseResponse([
+        'data: {"candidates":[{"content":{"parts":[{"text":"Hel"}]}}]}',
+        'data: {"candidates":[{"content":{"parts":[{"text":"lo"}]}}]}',
+      ]),
+    )
+    vi.stubGlobal('fetch', fetchSpy)
+    const full = await streamChat(
+      config('gemini', { apiKey: 'AIza-test' }),
+      [{ role: 'user', content: 'hi' }],
+      () => {},
+    )
+    expect(full).toBe('Hello')
+    const [url, init] = fetchSpy.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse',
+    )
+    // Key travels in the header so it can't leak into request-URL logs.
+    expect((init.headers as Record<string, string>)['x-goog-api-key']).toBe(
+      'AIza-test',
+    )
+    expect(url).not.toContain('AIza-test')
+  })
+
+  it('surfaces a 429 as a readable rate-limit error', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response('slow down', { status: 429 })),
+    )
+    await expect(
+      streamChat(
+        config('openai', { apiKey: 'sk-test' }),
+        [{ role: 'user', content: 'hi' }],
+        () => {},
+      ),
+    ).rejects.toThrow('OpenAI rate limit exceeded (HTTP 429)')
+  })
+
   it('tests OpenAI-compatible connections via GET /models', async () => {
     const fetchSpy = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ data: [{ id: 'a' }, { id: 'b' }] }), {

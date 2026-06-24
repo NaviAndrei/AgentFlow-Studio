@@ -4,7 +4,7 @@
  */
 import type { ChatMessage } from '../types'
 import type { ProviderSettings } from './types'
-import { fetchErrorMessage, streamLines } from './shared'
+import { describeHttpStatus, fetchErrorMessage, streamLines } from './shared'
 
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta'
 
@@ -79,7 +79,7 @@ export async function streamGeminiChat(
       parseLine: parseGeminiLine,
       errors: {
         unreachable: 'Gemini API not reachable (network or CORS error)',
-        status: (status) => `Gemini responded with ${status}`,
+        status: (status) => describeHttpStatus('Gemini', status),
         streamFailed: 'Gemini stream failed',
       },
     },

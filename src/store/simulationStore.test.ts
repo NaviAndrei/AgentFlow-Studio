@@ -8,6 +8,7 @@ import type {
   AgentFlowNodeType,
 } from '../types'
 import { useCanvasStore } from './canvasStore'
+import { useEvalStore } from './evalStore'
 import { useSimulationStore } from './simulationStore'
 import { useToastStore } from './toastStore'
 import { useSimulationMetricsStore } from './simulationMetricsStore'
@@ -1085,5 +1086,62 @@ describe("executeLiveNode — maxTokens resolution", () => {
     )
     const withDefault = await runToEnd()
     expect(withDefault.nodeOutputs.t2).toMatchObject({ maxTokens: 1024 })
+  })
+})
+
+describe('execution mode toggle', () => {
+  it('toggles liveMode between simulation and live', () => {
+    expect(useSimulationStore.getState().liveMode).toBe(false)
+    useSimulationStore.getState().setLiveMode(true)
+    expect(useSimulationStore.getState().liveMode).toBe(true)
+    useSimulationStore.getState().setLiveMode(false)
+    expect(useSimulationStore.getState().liveMode).toBe(false)
+  })
+})
+
+describe('evalStore lastRunSummary recording', () => {
+  beforeEach(() => {
+    useEvalStore.setState({ lastRunSummary: null })
+  })
+
+  it('records a summary when a run completes', async () => {
+    loadGraph(
+      [node('s', 'start'), node('l', 'llm'), node('o', 'output')],
+      [edge('s', 'l'), edge('l', 'o')],
+    )
+    await runToEnd()
+    const summary = useEvalStore.getState().lastRunSummary
+    expect(summary).not.toBeNull()
+    // start + llm + output all executed, none skipped, no errors.
+    expect(summary?.nodesExecuted).toBe(3)
+    expect(summary?.errorCount).toBe(0)
+    expect(summary?.runId).toBeTruthy()
+    expect(typeof summary?.totalLatencyMs).toBe('number')
+  })
+
+  it('counts errored nodes and excludes skipped branches', async () => {
+    // Diamond: the untaken branch is skipped, so it is not counted.
+    loadGraph(
+      [
+        node('s', 'start'),
+        node('c', 'condition', { branches: ['yes', 'no'] }),
+        node('a', 'llm'),
+        node('b', 'tool'),
+        node('o', 'output'),
+      ],
+      [
+        edge('s', 'c'),
+        edge('c', 'a', 'yes'),
+        edge('c', 'b', 'no'),
+        edge('a', 'o'),
+        edge('b', 'o'),
+      ],
+    )
+    useSimulationStore.getState().setUserInput('yes please')
+    await runToEnd()
+    const summary = useEvalStore.getState().lastRunSummary
+    // s, c, a, o executed; b skipped (not counted).
+    expect(summary?.nodesExecuted).toBe(4)
+    expect(summary?.errorCount).toBe(0)
   })
 })
