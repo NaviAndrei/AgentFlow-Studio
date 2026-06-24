@@ -114,6 +114,14 @@ def main():
         )
 
     existing = PROGRESS_FILE.read_text(encoding="utf-8")
+
+    # Idempotency guard: skip if the top block is already an unfilled template
+    # (prevents duplicate empty blocks when the Stop hook fires more than once
+    # per session — see Session 13 Known Gaps).
+    if "(TODO: fill session name)" in existing[:400]:
+        log_action("skipped", "Top block is already an empty template")
+        sys.exit(0)
+
     lines = existing.splitlines(keepends=True)
 
     # Find insertion point: after the header block (first --- separator)
