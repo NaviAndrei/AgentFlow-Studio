@@ -3,6 +3,71 @@
 > Start next session: `@CLAUDE.md @docs/progress.md`
 > Older handoffs: `docs/progress-archive.md`
 
+
+---
+<!-- auto-prepended by on_stop_reminder.py on 2026-06-24 -->
+## Handoff — 2026-06-24 (TODO: fill session name)
+
+### What was completed
+- [ ] TODO: Task A — description ✅/❌
+- [ ] TODO: Task B — description ✅/❌
+
+### Build & Test Status
+| Check | Result |
+|---|---|
+| `npm run typecheck` | TODO |
+| `npm run build` | TODO |
+| `npm run test` | TODO: X/Y passing |
+| Browser verification | TODO |
+
+### Decisions made this session
+- [ ] TODO: one bullet per architectural decision
+
+### Known edge cases / deferred
+- [ ] TODO: one bullet per deferred item or known gap
+
+### What to load at resume
+```
+@CLAUDE.md @docs/progress.md
+```
+---
+
+## Handoff — 2026-06-24 (Session 15 — remove duplicate MetricsBar Approve/Reject buttons)
+
+### What was completed
+- Pre-flight recon confirmed: `MetricsBar.tsx` rendered its own inline Approve/Reject
+  buttons (wired to `simulationStore.approve`/`reject`) gated on `pendingApproval`, fully
+  duplicated by `HumanInLoopModal.tsx` (the canonical Human-in-Loop UX, with its own
+  `reject`-on-cancel wiring).
+- Task A — wrote `MetricsBar.test.tsx` first (2 tests: no Approve/Reject text when
+  `pendingApproval` is set, and when it's null), watched it fail (found the real "Approve"
+  button in the rendered output), then removed the inline button JSX, the `Check`/`X`
+  icon imports, and the `approve`/`reject` store-hook lines that existed solely for those
+  buttons. Kept `pendingApproval` (still drives the "Awaiting approval" label and the
+  `disabled` props on Play/Step) and the "Awaiting approval" text itself — not part of the
+  duplicate-button removal. Did not touch `HumanInLoopModal.tsx` or any `simulationStore`
+  action. ✅
+
+### Build & Test Status
+| Check | Result |
+|---|---|
+| `npm run typecheck` | ✅ clean |
+| `npm run build` | ✅ clean (927.5 KB / 281.7 KB gzip; pre-existing >500kB chunk + fflate dynamic-import warnings only) |
+| `npm run test` | ✅ **319/319 passing** (32 files), +2 net (317 → 319) |
+
+### Decisions made this session
+- Left `pendingApproval` wired into `MetricsBar` — it's still consumed by the "Awaiting
+  approval" label and the Play/Step `disabled` conditions, so it isn't dead state.
+- Approval/rejection now only happens through `HumanInLoopModal`; `MetricsBar` is
+  read-only status display for that gate.
+
+### Known edge cases / deferred
+- None new this session.
+
+### What to load at resume
+```
+@CLAUDE.md @docs/progress.md
+```
 ---
 
 ## Handoff — 2026-06-24 (Session 14 — CommandPalette confirm, pre-push hook, on_stop idempotency)
@@ -156,8 +221,8 @@
 
 ```
 @CLAUDE.md @docs/progress.md
-Continue from Session 14. Key context: 317/317 tests passing (31 files),
-CommandPalette confirm step / pre-push hook / on_stop idempotency all done.
+Continue from Session 15. Key context: 319/319 tests passing (32 files),
+MetricsBar duplicate Approve/Reject buttons removed (modal is now the sole HIL UX).
 Next priority: wire real LLM calls into default: branch of executeLiveNode in
 src/store/simulationStore.ts (agent/supervisor/loop currently use fakeStreamTextFor
 / fakeOutputFor/fakeTokensFor stubs — confirmed still present via grep, Session 13).
@@ -167,7 +232,7 @@ src/store/simulationStore.ts (agent/supervisor/loop currently use fakeStreamText
 - [x] Wire `pre-push-check.ps1` as a Git pre-push hook — done (Session 14); `.git/hooks/pre-push` prefers `pwsh`, falls back to `powershell.exe`, warns + exits 0 if neither found
 - [ ] Wire real LLM calls into `default:` branch of `executeLiveNode` (agent/supervisor/loop) — PARTIAL: wired for maxTokens, `fakeStreamTextFor`/`fakeOutputFor`/`fakeTokensFor` stubs still present for non-LLM node types (confirmed via grep, Session 13)
 - [x] Add `maxTokens?: number` to `AgentFlowNodeData` — done (Session 12); wired into the actual provider request body (was previously display-only)
-- [ ] Remove inline Approve/Reject buttons from `MetricsBar.tsx` (duplicated by modal) — agent — LOW
+- [x] Remove inline Approve/Reject buttons from `MetricsBar.tsx` (duplicated by modal) — done (Session 15)
 - [ ] Consider `-StepOnly` param for `pre-push-check.ps1` — human — LOW
 
 ## Known Gaps (intentionally deferred)
