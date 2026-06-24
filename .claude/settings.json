@@ -1,0 +1,56 @@
+{
+  "SessionStart": [
+    {
+      "hooks": [
+        {
+          "type": "command",
+          "command": "python .claude/hooks/session_start.py"
+        }
+      ]
+    }
+  ],
+  "PreToolUse": [
+    {
+      "matcher": "Write|Edit|MultiEdit",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "python .claude/hooks/secret_scanner.py"
+        }
+      ]
+    }
+  ],
+  "PostToolUse": [
+    {
+      "matcher": "Write|Edit|MultiEdit",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "python .claude/hooks/post_write_format.py"
+        },
+        {
+          "type": "command",
+          "command": "python .claude/hooks/auto_format.py"
+        },
+        {
+          "type": "command",
+          "command": "python .claude/hooks/auto_test.py"
+        }
+      ]
+    }
+  ],
+  "Stop": [
+    {
+      "hooks": [
+        {
+          "type": "command",
+          "command": "python .claude/hooks/on_stop_reminder.py"
+        },
+        {
+          "type": "command",
+          "command": "python .claude/hooks/progress_guard.py"
+        }
+      ]
+    }
+  ]
+}
