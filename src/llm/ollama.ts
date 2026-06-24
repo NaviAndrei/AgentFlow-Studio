@@ -44,16 +44,21 @@ export async function streamOllamaChat(
   messages: ChatMessage[],
   onChunk: (text: string) => void,
   signal?: AbortSignal,
+  maxTokens?: number,
 ): Promise<string> {
+  const body: Record<string, unknown> = {
+    model: settings.model || 'llama3',
+    messages,
+    stream: true,
+  }
+  if (maxTokens !== undefined && maxTokens > 0) {
+    body.options = { num_predict: maxTokens }
+  }
   return streamLines(
     {
       url: `${trimBaseUrl(settings.baseUrl)}/api/chat`,
       headers: { 'content-type': 'application/json' },
-      body: {
-        model: settings.model || 'llama3',
-        messages,
-        stream: true,
-      },
+      body,
       parseLine: parseOllamaLine,
       errors: {
         unreachable: `${label} not reachable at ${hostOf(settings.baseUrl)}`,

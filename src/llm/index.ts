@@ -55,9 +55,16 @@ export async function streamChat(
         messages,
         onChunk,
         signal,
+        config.maxTokens,
       )
     case 'gemini':
-      return streamGeminiChat(config.settings, messages, onChunk, signal)
+      return streamGeminiChat(
+        config.settings,
+        messages,
+        onChunk,
+        signal,
+        config.maxTokens,
+      )
     case 'openai-compat':
       return streamOpenAICompatChat(
         descriptor.label,
@@ -65,6 +72,7 @@ export async function streamChat(
         messages,
         onChunk,
         signal,
+        config.maxTokens,
       )
   }
 }

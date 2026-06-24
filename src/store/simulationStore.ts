@@ -10,6 +10,7 @@ import {
   truncate,
 } from '../utils/fakeData'
 import { streamChat } from '../llm'
+import type { ResolvedLLMConfig } from '../llm'
 import { callTool } from '../utils/mcpClient'
 import {
   evaluateConditionBranches,
@@ -43,6 +44,18 @@ import type {
   StepSnapshot,
   TraceEntry,
 } from '../types'
+
+/**
+ * Attach a per-node output token cap to a resolved LLM config. Purely
+ * additive: when the node has no `maxTokens`, the config is returned
+ * unchanged so the provider default still applies.
+ */
+function withMaxTokens(
+  config: ResolvedLLMConfig,
+  maxTokens: number | undefined,
+): ResolvedLLMConfig {
+  return maxTokens === undefined ? config : { ...config, maxTokens }
+}
 
 /**
  * ── Dynamic simulation walker (architecture note) ────────────────────────
@@ -1206,7 +1219,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
         abortController?.abort()
         abortController = new AbortController()
         const full = await streamChat(
-          config,
+          withMaxTokens(config, node.data.maxTokens),
           chat,
           (chunk) => appendStream(nodeId, chunk),
           abortController.signal,
@@ -1249,7 +1262,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
           abortController?.abort()
           abortController = new AbortController()
           const full = await streamChat(
-            config,
+            withMaxTokens(config, node.data.maxTokens),
             chat,
             (chunk) => appendStream(nodeId, chunk),
             abortController.signal,
@@ -1417,7 +1430,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
         abortController?.abort()
         abortController = new AbortController()
         const reply = await streamChat(
-          config,
+          withMaxTokens(config, node.data.maxTokens),
           chat,
           (chunk) => appendStream(nodeId, chunk),
           abortController.signal,
@@ -1464,7 +1477,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
         abortController?.abort()
         abortController = new AbortController()
         const reply = await streamChat(
-          config,
+          withMaxTokens(config, node.data.maxTokens),
           chat,
           (chunk) => appendStream(nodeId, chunk),
           abortController.signal,
@@ -1500,7 +1513,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
         abortController?.abort()
         abortController = new AbortController()
         const reply = await streamChat(
-          config,
+          withMaxTokens(config, node.data.maxTokens),
           chat,
           (chunk) => appendStream(nodeId, chunk),
           abortController.signal,
@@ -1570,7 +1583,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
           abortController?.abort()
           abortController = new AbortController()
           const full = await streamChat(
-            config,
+            withMaxTokens(config, node.data.maxTokens),
             chat,
             (chunk) => appendStream(nodeId, chunk),
             abortController.signal,
@@ -1765,7 +1778,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
             abortController?.abort()
             abortController = new AbortController()
             const full = await streamChat(
-              config,
+              withMaxTokens(config, node.data.maxTokens),
               chat,
               (chunk) => appendStream(nodeId, chunk),
               abortController.signal,
@@ -1807,7 +1820,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
             abortController?.abort()
             abortController = new AbortController()
             const reply = await streamChat(
-              config,
+              withMaxTokens(config, node.data.maxTokens),
               chat,
               (chunk) => appendStream(nodeId, chunk),
               abortController.signal,
@@ -1845,7 +1858,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
               abortController?.abort()
               abortController = new AbortController()
               const reply = await streamChat(
-                config,
+                withMaxTokens(config, node.data.maxTokens),
                 chat,
                 (chunk) => appendStream(nodeId, chunk),
                 abortController.signal,
@@ -1884,7 +1897,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
             abortController?.abort()
             abortController = new AbortController()
             const reply = await streamChat(
-              config,
+              withMaxTokens(config, node.data.maxTokens),
               chat,
               (chunk) => appendStream(nodeId, chunk),
               abortController.signal,

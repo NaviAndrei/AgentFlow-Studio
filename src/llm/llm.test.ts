@@ -295,4 +295,64 @@ describe('streamChat dispatch', () => {
     expect(url).toBe('https://api.openai.com/v1/models')
     expect(init.method).toBeUndefined()
   })
+
+  it('forwards maxTokens to the OpenAI-compatible body as max_tokens', async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(sseResponse(['data: [DONE]']))
+    vi.stubGlobal('fetch', fetchSpy)
+    await streamChat(
+      { ...config('openai', { apiKey: 'sk-test' }), maxTokens: 512 },
+      [{ role: 'user', content: 'hi' }],
+      () => {},
+    )
+    const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit]
+    const body = JSON.parse(init.body as string) as { max_tokens?: number }
+    expect(body.max_tokens).toBe(512)
+  })
+
+  it('forwards maxTokens to the Ollama body as options.num_predict', async () => {
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValue(sseResponse(['{"message":{"content":"ok"}}']))
+    vi.stubGlobal('fetch', fetchSpy)
+    await streamChat(
+      { ...config('ollama', { model: 'llama3' }), maxTokens: 256 },
+      [{ role: 'user', content: 'hi' }],
+      () => {},
+    )
+    const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit]
+    const body = JSON.parse(init.body as string) as {
+      options?: { num_predict?: number }
+    }
+    expect(body.options?.num_predict).toBe(256)
+  })
+
+  it('forwards maxTokens to the Gemini body as generationConfig.maxOutputTokens', async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(
+      sseResponse(['data: {"candidates":[{"content":{"parts":[{"text":"x"}]}}]}']),
+    )
+    vi.stubGlobal('fetch', fetchSpy)
+    await streamChat(
+      { ...config('gemini', { apiKey: 'AIza-test' }), maxTokens: 128 },
+      [{ role: 'user', content: 'hi' }],
+      () => {},
+    )
+    const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit]
+    const body = JSON.parse(init.body as string) as {
+      generationConfig?: { maxOutputTokens?: number }
+    }
+    expect(body.generationConfig?.maxOutputTokens).toBe(128)
+  })
+
+  it('omits the token cap from the body when maxTokens is unset', async () => {
+    const fetchSpy = vi.fn().mockResolvedValue(sseResponse(['data: [DONE]']))
+    vi.stubGlobal('fetch', fetchSpy)
+    await streamChat(
+      config('openai', { apiKey: 'sk-test' }),
+      [{ role: 'user', content: 'hi' }],
+      () => {},
+    )
+    const [, init] = fetchSpy.mock.calls[0] as [string, RequestInit]
+    const body = JSON.parse(init.body as string) as { max_tokens?: number }
+    expect(body.max_tokens).toBeUndefined()
+  })
 })

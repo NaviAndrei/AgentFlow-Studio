@@ -51,6 +51,7 @@ export async function streamGeminiChat(
   messages: ChatMessage[],
   onChunk: (text: string) => void,
   signal?: AbortSignal,
+  maxTokens?: number,
 ): Promise<string> {
   requireKey(settings)
   const system = messages.find((m) => m.role === 'system')
@@ -64,6 +65,9 @@ export async function streamGeminiChat(
   }
   if (system) {
     body.systemInstruction = { parts: [{ text: system.content }] }
+  }
+  if (maxTokens !== undefined && maxTokens > 0) {
+    body.generationConfig = { maxOutputTokens: maxTokens }
   }
   const modelId = resolveGeminiModelId(settings.model)
   // API key travels in a header, not the URL, so it can't leak into

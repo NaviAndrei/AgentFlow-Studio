@@ -50,20 +50,25 @@ export async function streamOpenAICompatChat(
   messages: ChatMessage[],
   onChunk: (text: string) => void,
   signal?: AbortSignal,
+  maxTokens?: number,
 ): Promise<string> {
   requireBaseUrl(label, settings)
   if (settings.model.trim() === '') {
     throw new Error(`${label} model is not set`)
   }
+  const body: Record<string, unknown> = {
+    model: settings.model,
+    messages,
+    stream: true,
+  }
+  if (maxTokens !== undefined && maxTokens > 0) {
+    body.max_tokens = maxTokens
+  }
   return streamLines(
     {
       url: `${trimBaseUrl(settings.baseUrl)}/chat/completions`,
       headers: authHeaders(settings),
-      body: {
-        model: settings.model,
-        messages,
-        stream: true,
-      },
+      body,
       parseLine: parseOpenAICompatLine,
       errors: {
         unreachable: `${label} not reachable at ${hostOf(settings.baseUrl)}`,

@@ -33,6 +33,8 @@ export interface ProviderSettings {
 export interface ResolvedLLMConfig {
   provider: ProviderId
   settings: ProviderSettings
+  /** Per-call output token cap; omitted = provider default. */
+  maxTokens?: number
 }
 
 /** Static, declarative description of a provider; drives the modal UI and dispatch. */
