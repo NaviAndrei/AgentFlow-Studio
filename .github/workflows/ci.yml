@@ -2,43 +2,100 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
-    branches: [main]
+    branches: [main, develop]
 
 jobs:
-  build:
+  typecheck:
+    name: typecheck
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: 20.x
+          node-version: 20
 
       - name: Cache node_modules
         uses: actions/cache@v4
         with:
           path: node_modules
-          key: ${{ runner.os }}-node_modules-${{ hashFiles('package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-node_modules-
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Typecheck
+      - name: Run typecheck
         run: npm run typecheck
 
-      - name: Build
-        run: npm run build
-
-      - name: Tests
-        run: npm run test
-
-      - name: Report bundle size
+      - name: Report failure
+        if: failure()
         run: |
-          du -sh dist/
-          find dist -name "*.js" -exec gzip -l {} \;
+          echo "Failing step: typecheck"
+          exit 1
+
+  build:
+    name: build
+    needs: typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run build
+        run: npm run build | tee build-output.log
+
+      - name: Capture gzip bundle size
+        run: |
+          grep -i "gzip" build-output.log || echo "No gzip size line found in build output"
+
+      - name: Report failure
+        if: failure()
+        run: |
+          echo "Failing step: build"
+          exit 1
+
+  test:
+    name: test
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm run test -- --run
+
+      - name: Report failure
+        if: failure()
+        run: |
+          echo "Failing step: test"
+          exit 1
+
+      - name: CI success
+        run: echo "AgentFlow Studio CI passed"

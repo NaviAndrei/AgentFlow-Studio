@@ -32,6 +32,9 @@ npm run test         # Run Vitest suite
 - **Verification**: `npm run typecheck && npm run build` must pass successfully before every commit.
 - **Rules & Constraints**: Scoped rules for components, stores, nodes, and code generation reside in `.claude/rules/`. Familiarize yourself with those rules before editing files in those paths.
 
+## Git Commit Rules
+- CI gate: `.github/workflows/ci.yml` runs typecheck → build → test on every push to main and develop. Do not merge a PR with a failing CI run.
+
 ## References
 - Stores, engine, node registration → [ARCHITECTURE.md](file:///c:/Users/IvanA/Claude_Code/AgentFLow-Studio/ARCHITECTURE.md)
 - Components, layout details → [COMPONENTS.md](file:///c:/Users/IvanA/Claude_Code/AgentFLow-Studio/COMPONENTS.md)
