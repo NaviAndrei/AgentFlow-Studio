@@ -22,6 +22,7 @@ import {
 import { useCanvasStore } from './canvasStore'
 import { useEvalStore } from './evalStore'
 import { useLLMConfigStore } from './llmConfigStore'
+import { useMemoryStore } from './memoryStore'
 import { useSimulationMetricsStore } from './simulationMetricsStore'
 import { computeQualityScore, scoreTestCase } from '../utils/evalScorer'
 import { getPricing } from '../data/modelPricing'
@@ -1303,6 +1304,42 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
         })
         metrics.addTokens(estimateTokens(output.output))
         return output
+      }
+      case 'longTermStore': {
+        // Session-scoped store (memoryStore) — 'write' persists the latest
+        // transcript content under `namespace`; 'read'/'search' pull entries
+        // back and surface them to downstream nodes as a user message so the
+        // next live LLM call actually sees them.
+        const namespace = (node.data.namespace ?? 'default').trim() || 'default'
+        const operation = node.data.storeOperation ?? 'read'
+        if (operation === 'write') {
+          const content = latestContent()
+          useMemoryStore.getState().write(namespace, content)
+          return { namespace, operation, wrote: content }
+        }
+        const all = useMemoryStore.getState().read(namespace)
+        const query = (node.data.searchQuery ?? '').trim().toLowerCase()
+        const results =
+          operation === 'search' && query
+            ? all.filter((entry) => entry.toLowerCase().includes(query))
+            : all
+        if (results.length > 0) {
+          const summary = `[${node.data.label}] retrieved from "${namespace}":\n${results.join('\n')}`
+          set({ messages: [...get().messages, { role: 'user', content: summary }] })
+        }
+        return { namespace, operation, results }
+      }
+      case 'memoryWriter': {
+        // LangMem-style background extractor, simplified to a direct write —
+        // no separate extraction LLM call.
+        const namespace = (node.data.writeNamespace ?? 'default').trim() || 'default'
+        const content = latestContent()
+        useMemoryStore.getState().write(namespace, content)
+        return {
+          namespace,
+          memoryKind: node.data.memoryKind ?? 'episodic',
+          wrote: content,
+        }
       }
       case 'httpRequest': {
         const token = runToken
@@ -2887,6 +2924,10 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
           ...get().nodeOutputs,
           [pending.nodeId]: { ...(prev as object), approved: true, userResponse: value },
         },
+        // Also thread the typed response into the shared transcript so the
+        // next downstream live LLM call (which reads ...get().messages) sees
+        // it, not just the node's own output badge.
+        messages: [...get().messages, { role: 'user', content: value }],
       })
       get().play()
     },

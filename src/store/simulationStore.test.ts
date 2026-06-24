@@ -9,6 +9,7 @@ import type {
 } from '../types'
 import { useCanvasStore } from './canvasStore'
 import { useEvalStore } from './evalStore'
+import { useMemoryStore } from './memoryStore'
 import { useSimulationStore } from './simulationStore'
 import { useToastStore } from './toastStore'
 import { useSimulationMetricsStore } from './simulationMetricsStore'
@@ -1143,5 +1144,127 @@ describe('evalStore lastRunSummary recording', () => {
     // s, c, a, o executed; b skipped (not counted).
     expect(summary?.nodesExecuted).toBe(4)
     expect(summary?.errorCount).toBe(0)
+  })
+})
+
+describe('executeLiveNode — memoryWriter and longTermStore', () => {
+  beforeEach(() => {
+    useMemoryStore.getState().clear()
+  })
+
+  it('memoryWriter: writes the current transcript content under writeNamespace', async () => {
+    useSimulationStore.getState().setLiveMode(true)
+    loadGraph(
+      [
+        node('s', 'start'),
+        node('m', 'memoryWriter', { writeNamespace: 'notes', memoryKind: 'semantic' }),
+        node('o', 'output'),
+      ],
+      [edge('s', 'm'), edge('m', 'o')],
+    )
+    useSimulationStore.getState().setUserInput('remember this fact')
+    const s = await runToEnd()
+
+    expect(useMemoryStore.getState().read('notes')).toEqual(['remember this fact'])
+    expect(s.nodeOutputs.m).toMatchObject({ namespace: 'notes', memoryKind: 'semantic' })
+  })
+
+  it('memoryWriter: falls back to the "default" namespace when writeNamespace is unset', async () => {
+    useSimulationStore.getState().setLiveMode(true)
+    loadGraph(
+      [node('s', 'start'), node('m', 'memoryWriter'), node('o', 'output')],
+      [edge('s', 'm'), edge('m', 'o')],
+    )
+    useSimulationStore.getState().setUserInput('hello')
+    await runToEnd()
+
+    expect(useMemoryStore.getState().read('default')).toEqual(['hello'])
+  })
+
+  it('longTermStore: storeOperation "write" persists the transcript under namespace', async () => {
+    useSimulationStore.getState().setLiveMode(true)
+    loadGraph(
+      [
+        node('s', 'start'),
+        node('t', 'longTermStore', { namespace: 'user_memories', storeOperation: 'write' }),
+        node('o', 'output'),
+      ],
+      [edge('s', 't'), edge('t', 'o')],
+    )
+    useSimulationStore.getState().setUserInput('writes go here')
+    const s = await runToEnd()
+
+    expect(useMemoryStore.getState().read('user_memories')).toEqual(['writes go here'])
+    expect(s.nodeOutputs.t).toMatchObject({ namespace: 'user_memories', operation: 'write' })
+  })
+
+  it('longTermStore: storeOperation "read" surfaces prior entries to the next live llm call', async () => {
+    useMemoryStore.getState().write('user_memories', 'the user prefers dark mode')
+    useSimulationStore.getState().setLiveMode(true)
+    loadGraph(
+      [
+        node('s', 'start'),
+        node('t', 'longTermStore', { namespace: 'user_memories', storeOperation: 'read' }),
+        node('l', 'llm'),
+        node('o', 'output'),
+      ],
+      [edge('s', 't'), edge('t', 'l'), edge('l', 'o')],
+    )
+    const s = await runToEnd()
+
+    expect(s.nodeOutputs.t).toMatchObject({
+      namespace: 'user_memories',
+      operation: 'read',
+      results: ['the user prefers dark mode'],
+    })
+    const [, chat] = vi.mocked(streamChat).mock.calls.at(-1)!
+    expect(chat.some((m) => m.content.includes('the user prefers dark mode'))).toBe(true)
+  })
+
+  it('longTermStore: storeOperation "search" filters entries by searchQuery', async () => {
+    useMemoryStore.getState().write('kb', 'fact about cats')
+    useMemoryStore.getState().write('kb', 'fact about dogs')
+    useSimulationStore.getState().setLiveMode(true)
+    loadGraph(
+      [
+        node('s', 'start'),
+        node('t', 'longTermStore', {
+          namespace: 'kb',
+          storeOperation: 'search',
+          searchQuery: 'cats',
+        }),
+        node('o', 'output'),
+      ],
+      [edge('s', 't'), edge('t', 'o')],
+    )
+    const s = await runToEnd()
+
+    expect(s.nodeOutputs.t).toMatchObject({ results: ['fact about cats'] })
+  })
+})
+
+describe('humanInLoop — typed response reaches downstream LLM context', () => {
+  it("threads the injected response into the next live 'llm' node's chat history", async () => {
+    useSimulationStore.getState().setLiveMode(true)
+    loadGraph(
+      [
+        node('s', 'start'),
+        node('h', 'humanInLoop'),
+        node('l', 'llm'),
+        node('o', 'output'),
+      ],
+      [edge('s', 'h'), edge('h', 'l'), edge('l', 'o')],
+    )
+    await runUntilPending()
+    useSimulationStore.getState().submitHumanInput('looks good, proceed')
+    await vi.waitFor(() => {
+      const st = useSimulationStore.getState()
+      expect(st.currentNodeIndex).toBeGreaterThanOrEqual(st.executionQueue.length)
+    })
+
+    const lastCall = vi.mocked(streamChat).mock.calls.at(-1)
+    expect(lastCall).toBeDefined()
+    const [, chat] = lastCall!
+    expect(chat).toContainEqual({ role: 'user', content: 'looks good, proceed' })
   })
 })

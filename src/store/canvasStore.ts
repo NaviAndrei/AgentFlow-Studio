@@ -19,6 +19,7 @@ import { createDefaultNodeData } from '../utils/nodeDefaults'
 import { validateGraph } from '../utils/validation'
 import { getLayoutedElements, type LayoutDirection } from '../utils/autoLayout'
 import { getRfInstance } from '../utils/rfInstance'
+import { useMemoryStore } from './memoryStore'
 
 interface Snapshot {
   nodes: AgentFlowNode[]
@@ -285,6 +286,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
       pushHistory('Clear canvas')
       // Clearing the canvas is treated as a deliberate fresh start — not dirty.
       set({ ...validated([], []), selectedNodeId: null, isDirty: false })
+      useMemoryStore.getState().clear()
     },
 
     loadGraph: (nodes, edges, viewport) => {
