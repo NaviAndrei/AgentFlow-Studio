@@ -3,190 +3,88 @@
 > Start next session: `@CLAUDE.md @docs/progress.md`
 > Older handoffs: `docs/progress-archive.md`
 
-
-
-
-
-
-
-
 ---
-<!-- auto-prepended by on_stop_reminder.py on 2026-06-24 -->
-## Handoff — 2026-06-24 (TODO: fill session name)
+
+## Handoff — 2026-06-24 (Session 13 — recon: node-caching-and-run-diff plan verification)
 
 ### What was completed
-- [ ] TODO: Task A — description ✅/❌
-- [ ] TODO: Task B — description ✅/❌
+- All 7 tasks from `docs/superpowers/plans/2026-06-18-node-caching-and-run-diff.md`
+  confirmed fully implemented and tested in a prior session ✅
+- Session 13 reconnaissance only — no code changes ✅
+- `hashNodeInput.ts`, `diffRuns.ts`, `nodeInputHashCache`, `setCachedHash`,
+  `clearHashCache`, `'cached'` `TraceEntry` status, `RunHistoryPanel` `DiffTable` —
+  all present and green ✅
 
 ### Build & Test Status
 | Check | Result |
 |---|---|
-| `npm run typecheck` | TODO |
-| `npm run build` | TODO |
-| `npm run test` | TODO: X/Y passing |
-| Browser verification | TODO |
+| `npm run typecheck` | ✅ clean |
+| `npm run build` | ✅ clean (928 KB / 282 KB gzip; pre-existing >500kB chunk + fflate dynamic-import warnings only) |
+| `npm run test` | ✅ **317/317 passing** (31 files) |
 
 ### Decisions made this session
-- [ ] TODO: one bullet per architectural decision
+- Caching plan was already shipped in a prior session — no re-implementation needed.
+- Session 13 consumed as a recon-and-handoff session only.
 
 ### Known edge cases / deferred
-- [ ] TODO: one bullet per deferred item or known gap
+- `docs/progress.md` Next Session Entrypoint was stale (pointed at "Session 13 caching
+  plan" which was already done) — corrected in this step.
+- `on_stop_reminder.py` hook duplicate-prepend issue still active — low priority, see
+  Known Gaps below.
 
 ### What to load at resume
 ```
 @CLAUDE.md @docs/progress.md
 ```
 ---
-<!-- auto-prepended by on_stop_reminder.py on 2026-06-24 -->
-## Handoff — 2026-06-24 (TODO: fill session name)
+
+## Handoff — 2026-06-24 (Session 12 — maxTokens plumbing + LLM/run-history test coverage)
 
 ### What was completed
-- [ ] TODO: Task A — description ✅/❌
-- [ ] TODO: Task B — description ✅/❌
+- [x] Task A — wired `maxTokens` end-to-end into live LLM calls (was stored on node data + shown
+  in the Inspector, but never actually sent to the provider) ✅
+- [x] Task B — added regression tests for the existing `LLMSettingsModal` (no new panel built) ✅
+- [x] Task C — added regression tests for the existing `RunHistoryPanel`/`diffRuns` (no new panel
+  or utility built) ✅
 
 ### Build & Test Status
 | Check | Result |
 |---|---|
-| `npm run typecheck` | TODO |
-| `npm run build` | TODO |
-| `npm run test` | TODO: X/Y passing |
-| Browser verification | TODO |
+| `npm run typecheck` | ✅ clean |
+| `npm run build` | ✅ clean (928 KB / 282 KB gzip; pre-existing >500kB chunk + fflate dynamic-import warnings only) |
+| `npm run test` | ✅ **317/317 passing** (31 files), +17 net (300 → 317) |
+| Browser verification | Skipped — change is in network-request-body construction (LLM transports) and existing UI, not newly observable in the preview; covered by the new `llm.test.ts` request-body assertions instead |
 
 ### Decisions made this session
-- [ ] TODO: one bullet per architectural decision
+- **Spec vs. reality reconciliation**: the incoming Session 12 spec was written as if Tasks A/B/C
+  started from scratch. Exploration showed `maxTokens` was already on `AgentFlowNodeData` and
+  already rendered in the Inspector (`MaxTokensField`), and that `LLMSettingsModal.tsx` (304 lines)
+  and `RunHistoryPanel.tsx` (387 lines, with a *richer* `diffRuns`/`NodeDiff` than the spec
+  described) were already fully built and tested in earlier sessions. Asked the user per-task
+  before writing code; confirmed direction: (A) do the real missing plumbing, (B)/(C) add tests to
+  the existing components instead of building duplicates. Saved as a standing memory
+  (`feedback_reconcile_session_specs_with_code`) so future "Session N" specs get this same
+  reconciliation step before implementation.
+- **`maxTokens` lives on `ResolvedLLMConfig`, not `ProviderSettings`**: `ProviderSettings` is
+  persisted per-provider connection state (baseUrl/apiKey/model); `maxTokens` is a per-call,
+  per-node value, so it rides as an optional field on the resolved config object instead.
+- **Token cap omitted (not sent as 0) when unset or ≤0**: all three transports only add the
+  provider-specific field (`options.num_predict` / `max_tokens` / `generationConfig.maxOutputTokens`)
+  when `maxTokens !== undefined && maxTokens > 0`, so omitting it (the common case) is byte-for-byte
+  the same request as before this session — zero behavior change for existing nodes/blueprints.
+- **`withMaxTokens` helper added to `simulationStore.ts`, not inline at each call site**: one pure
+  module-level function (`(config, maxTokens) => maxTokens === undefined ? config : {...}`) wraps
+  all 10 `streamChat` call sites uniformly, keeping the diff additive and avoiding touching any
+  run/abort/retry/token core logic per the "don't modify simulationStore.ts core logic" constraint.
 
 ### Known edge cases / deferred
-- [ ] TODO: one bullet per deferred item or known gap
-
-### What to load at resume
-```
-@CLAUDE.md @docs/progress.md
-```
----
-<!-- auto-prepended by on_stop_reminder.py on 2026-06-24 -->
-## Handoff — 2026-06-24 (TODO: fill session name)
-
-### What was completed
-- [ ] TODO: Task A — description ✅/❌
-- [ ] TODO: Task B — description ✅/❌
-
-### Build & Test Status
-| Check | Result |
-|---|---|
-| `npm run typecheck` | TODO |
-| `npm run build` | TODO |
-| `npm run test` | TODO: X/Y passing |
-| Browser verification | TODO |
-
-### Decisions made this session
-- [ ] TODO: one bullet per architectural decision
-
-### Known edge cases / deferred
-- [ ] TODO: one bullet per deferred item or known gap
-
-### What to load at resume
-```
-@CLAUDE.md @docs/progress.md
-```
----
-<!-- auto-prepended by on_stop_reminder.py on 2026-06-24 -->
-## Handoff — 2026-06-24 (TODO: fill session name)
-
-### What was completed
-- [ ] TODO: Task A — description ✅/❌
-- [ ] TODO: Task B — description ✅/❌
-
-### Build & Test Status
-| Check | Result |
-|---|---|
-| `npm run typecheck` | TODO |
-| `npm run build` | TODO |
-| `npm run test` | TODO: X/Y passing |
-| Browser verification | TODO |
-
-### Decisions made this session
-- [ ] TODO: one bullet per architectural decision
-
-### Known edge cases / deferred
-- [ ] TODO: one bullet per deferred item or known gap
-
-### What to load at resume
-```
-@CLAUDE.md @docs/progress.md
-```
----
-<!-- auto-prepended by on_stop_reminder.py on 2026-06-24 -->
-## Handoff — 2026-06-24 (TODO: fill session name)
-
-### What was completed
-- [ ] TODO: Task A — description ✅/❌
-- [ ] TODO: Task B — description ✅/❌
-
-### Build & Test Status
-| Check | Result |
-|---|---|
-| `npm run typecheck` | TODO |
-| `npm run build` | TODO |
-| `npm run test` | TODO: X/Y passing |
-| Browser verification | TODO |
-
-### Decisions made this session
-- [ ] TODO: one bullet per architectural decision
-
-### Known edge cases / deferred
-- [ ] TODO: one bullet per deferred item or known gap
-
-### What to load at resume
-```
-@CLAUDE.md @docs/progress.md
-```
----
-<!-- auto-prepended by on_stop_reminder.py on 2026-06-24 -->
-## Handoff — 2026-06-24 (TODO: fill session name)
-
-### What was completed
-- [ ] TODO: Task A — description ✅/❌
-- [ ] TODO: Task B — description ✅/❌
-
-### Build & Test Status
-| Check | Result |
-|---|---|
-| `npm run typecheck` | TODO |
-| `npm run build` | TODO |
-| `npm run test` | TODO: X/Y passing |
-| Browser verification | TODO |
-
-### Decisions made this session
-- [ ] TODO: one bullet per architectural decision
-
-### Known edge cases / deferred
-- [ ] TODO: one bullet per deferred item or known gap
-
-### What to load at resume
-```
-@CLAUDE.md @docs/progress.md
-```
----
-<!-- auto-prepended by on_stop_reminder.py on 2026-06-24 -->
-## Handoff — 2026-06-24 (TODO: fill session name)
-
-### What was completed
-- [ ] TODO: Task A — description ✅/❌
-- [ ] TODO: Task B — description ✅/❌
-
-### Build & Test Status
-| Check | Result |
-|---|---|
-| `npm run typecheck` | TODO |
-| `npm run build` | TODO |
-| `npm run test` | TODO: X/Y passing |
-| Browser verification | TODO |
-
-### Decisions made this session
-- [ ] TODO: one bullet per architectural decision
-
-### Known edge cases / deferred
-- [ ] TODO: one bullet per deferred item or known gap
+- No `anthropic` provider exists (`ProviderId` is ollama/lmstudio/gemini/groq/openrouter/openai/custom)
+  — the original spec referenced an `anthropic` option that doesn't exist in this codebase; not
+  added, since it was never a real requirement, just a spec assumption.
+- `RunHistoryPanel`'s 3rd-selection "shift" behavior keeps the **first** compare id and replaces
+  the second (`toggleCompare`), not the literal "oldest selection" wording from the spec — verified
+  against the real implementation and tested as-is rather than changing component behavior to
+  match the spec's phrasing.
 
 ### What to load at resume
 ```
@@ -207,13 +105,18 @@
 
 ```
 @CLAUDE.md @docs/progress.md
-Continue from Session 10. Key context: 264/264 tests passing, DRY debt resolved, pre-push CI script wired. Next priority: wire real LLM calls into non-LLM node types (see Pre-flight Audit in Session 10).
+Continue from Session 13. Key context: 317/317 tests passing (31 files),
+node-caching + run-diff plan fully shipped. Next priority: wire real LLM
+calls into default: branch of executeLiveNode in
+src/store/simulationStore.ts (agent/supervisor/loop currently use fakeStreamTextFor
+/ fakeOutputFor stubs). Secondary: CommandPalette "Clear Canvas" confirm
+step (currently calls clearCanvas() with no ConfirmDialog).
 ```
 
 ## Open TODOs
 - [ ] Wire `pre-push-check.ps1` as a Git pre-push hook — agent — HIGH
-- [ ] Wire real LLM calls into `default:` branch of `executeLiveNode` (agent/supervisor/loop) — agent — HIGH
-- [ ] Add `maxTokens?: number` to `AgentFlowNodeData` — agent — MED
+- [ ] Wire real LLM calls into `default:` branch of `executeLiveNode` (agent/supervisor/loop) — PARTIAL: wired for maxTokens, `fakeStreamTextFor`/`fakeOutputFor`/`fakeTokensFor` stubs still present for non-LLM node types (confirmed via grep, Session 13)
+- [x] Add `maxTokens?: number` to `AgentFlowNodeData` — done (Session 12); wired into the actual provider request body (was previously display-only)
 - [ ] Remove inline Approve/Reject buttons from `MetricsBar.tsx` (duplicated by modal) — agent — LOW
 - [ ] Consider `-StepOnly` param for `pre-push-check.ps1` — human — LOW
 
@@ -221,6 +124,10 @@ Continue from Session 10. Key context: 264/264 tests passing, DRY debt resolved,
 - **Viewport screenshot in headless**: stalls on html-to-image resource loading in the preview env — works in real browser. Not a regression.
 - **TraceLog virtualization untested at scale**: engine clears trace per run, so 50+ entries never reached naturally. Re-verify if a merge-trace feature is added.
 - **`G` shortcut escape hatch**: fires globally without `isEditableTarget` check — low risk today, re-evaluate if custom focusable editors are added.
+- **`on_stop_reminder.py` duplicate hook**: fires multiple times per session
+  end producing N identical empty template blocks. Fix: add idempotency
+  check (write only if the top block is NOT already an empty template).
+  Low risk, high annoyance — candidate for Session 14 chore.
 
 ---
 
