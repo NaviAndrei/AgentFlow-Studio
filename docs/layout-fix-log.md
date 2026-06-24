@@ -51,3 +51,4 @@
 **Gate:** typecheck ✅ | build ✅ | tests ✅ 158/158
 
 **What was NOT changed and why:** PanelRail z-index — geometry fix was sufficient. Z-index swap would either bury rail under full-width panel or leave original bug. Bottom-12 is gone — do not reintroduce.
+- `C:\Users\IvanA\Claude_Code\AgentFLow-Studio\CLAUDE.md` edited at 2026-06-24 18:24 UTC
