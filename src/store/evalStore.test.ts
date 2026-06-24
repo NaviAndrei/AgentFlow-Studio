@@ -42,4 +42,17 @@ describe('evalStore — lastRunSummary', () => {
     useEvalStore.getState().recordRunSummary(second)
     expect(useEvalStore.getState().lastRunSummary).toEqual(second)
   })
+
+  it('clearRunSummary resets lastRunSummary to null', () => {
+    const summary: LastRunSummary = {
+      runId: 'run-1',
+      timestamp: 1,
+      nodesExecuted: 3,
+      errorCount: 0,
+      totalLatencyMs: 50,
+    }
+    useEvalStore.getState().recordRunSummary(summary)
+    useEvalStore.getState().clearRunSummary()
+    expect(useEvalStore.getState().lastRunSummary).toBeNull()
+  })
 })

@@ -1,3 +1,12 @@
+// @vitest-environment node
+//
+// fflate's internal `instanceof Uint8Array` checks break under the default
+// jsdom environment here: Vite loads this externalized dependency in a
+// different realm than the jsdom-patched globals, so zipSync/unzipSync
+// misclassify their own Uint8Array values as plain objects (each byte comes
+// back as its own nested "directory" entry). This file has no DOM
+// dependency, so running it under plain node sidesteps the realm mismatch
+// entirely.
 import { unzipSync, strFromU8 } from 'fflate'
 import { describe, expect, it } from 'vitest'
 import type { AgentFlowNode } from '../types'

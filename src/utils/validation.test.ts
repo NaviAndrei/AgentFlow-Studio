@@ -284,4 +284,31 @@ describe('validateGraph — HTTP Request node', () => {
     )
     expect(cycleMessages).toHaveLength(0)
   })
+
+  it('does not warn on a cycle guarded by an evaluator node', () => {
+    const nodes = [node('A', 'agent'), node('B', 'evaluator'), node('C', 'agent')]
+    const edges = [edge('A', 'B'), edge('B', 'C'), edge('C', 'A')]
+    const cycleMessages = messages(nodes, edges).filter((m) =>
+      m.includes('Unguarded cycle'),
+    )
+    expect(cycleMessages).toHaveLength(0)
+  })
+
+  it('does not warn on a cycle guarded by a tryCatch node', () => {
+    const nodes = [node('A', 'agent'), node('B', 'tryCatch'), node('C', 'agent')]
+    const edges = [edge('A', 'B'), edge('B', 'C'), edge('C', 'A')]
+    const cycleMessages = messages(nodes, edges).filter((m) =>
+      m.includes('Unguarded cycle'),
+    )
+    expect(cycleMessages).toHaveLength(0)
+  })
+
+  it('does not warn on a cycle guarded by a retry node', () => {
+    const nodes = [node('A', 'agent'), node('B', 'retry'), node('C', 'agent')]
+    const edges = [edge('A', 'B'), edge('B', 'C'), edge('C', 'A')]
+    const cycleMessages = messages(nodes, edges).filter((m) =>
+      m.includes('Unguarded cycle'),
+    )
+    expect(cycleMessages).toHaveLength(0)
+  })
 })

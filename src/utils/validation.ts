@@ -99,7 +99,14 @@ export function detectCycle(
 // passes through one of these has a real exit path. Agent/llm/retriever/tool
 // always forward unconditionally, so a cycle made only of those types has no
 // way out other than the engine's MAX_NODE_VISITS budget.
-export const ESCAPE_NODE_TYPES = new Set<string>(['router', 'condition', 'guardrail'])
+export const ESCAPE_NODE_TYPES = new Set<string>([
+  'router',
+  'condition',
+  'guardrail',
+  'evaluator',
+  'tryCatch',
+  'retry',
+])
 
 export function hasEscapeOnCycle(
   cyclePath: string[],

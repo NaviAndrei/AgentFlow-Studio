@@ -22,6 +22,10 @@ dist/
 .claude/plans/
 .claude/launch.json
 .claude/claude-project.json
+.claude/hook-log.jsonl
+.claude/agentflow-studio.log
+.claude/agentflow-studio.log.*
+.claude/.session_start
 
 # Project Documentation (Local/Private copies)
 AgentFlow Studio - User Documentation.md

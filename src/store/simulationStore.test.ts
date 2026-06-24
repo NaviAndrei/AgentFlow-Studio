@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Edge } from '@xyflow/react'
 import { BLUEPRINTS } from '../blueprints'
 import type {
@@ -9,6 +9,7 @@ import type {
 } from '../types'
 import { useCanvasStore } from './canvasStore'
 import { useEvalStore } from './evalStore'
+import { useLLMConfigStore } from './llmConfigStore'
 import { useMemoryStore } from './memoryStore'
 import { useSimulationStore } from './simulationStore'
 import { useToastStore } from './toastStore'
@@ -1266,5 +1267,130 @@ describe('humanInLoop — typed response reaches downstream LLM context', () => 
     expect(lastCall).toBeDefined()
     const [, chat] = lastCall!
     expect(chat).toContainEqual({ role: 'user', content: 'looks good, proceed' })
+  })
+})
+
+describe('executeLiveNode — Prompt 6 real-LLM integration verification', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(streamChat).mockReset()
+    vi.mocked(streamChat).mockResolvedValue('(mock live reply)')
+  })
+
+  afterEach(() => {
+    useLLMConfigStore.getState().setActiveProvider('ollama')
+    useLLMConfigStore.getState().updateProviderSettings('ollama', { model: '' })
+  })
+
+  it('Test 1 — llm node routes to streamChat with the resolved provider config', async () => {
+    useSimulationStore.getState().setLiveMode(true)
+    loadGraph(
+      [
+        node('s', 'start'),
+        node('l', 'llm', { systemPrompt: 'Hello' }),
+        node('o', 'output'),
+      ],
+      [edge('s', 'l'), edge('l', 'o')],
+    )
+    await runToEnd()
+
+    expect(streamChat).toHaveBeenCalledTimes(1)
+    const [config] = vi.mocked(streamChat).mock.calls[0]
+    expect(config).toHaveProperty('provider')
+    expect(config).toHaveProperty('settings')
+    expect(config.settings).toHaveProperty('apiKey')
+  })
+
+  it('Test 2 — node.data.modelOverride overrides the global model for that node only', async () => {
+    useLLMConfigStore.getState().setActiveProvider('ollama')
+    useLLMConfigStore.getState().updateProviderSettings('ollama', { model: 'claude-3' })
+    useSimulationStore.getState().setLiveMode(true)
+    loadGraph(
+      [
+        node('s', 'start'),
+        node('l', 'llm', { modelOverride: 'gpt-4o-mini' }),
+        node('o', 'output'),
+      ],
+      [edge('s', 'l'), edge('l', 'o')],
+    )
+    await runToEnd()
+
+    const [config] = vi.mocked(streamChat).mock.calls[0]
+    expect(config.settings.model).toBe('gpt-4o-mini')
+    expect(config.settings.model).not.toBe('claude-3')
+  })
+
+  it('Test 3 — llm node: streamChat rejection bubbles to the outer handler (no per-branch try/catch, so no toast); the run pauses but stays resumable', async () => {
+    // The 'llm' case (unlike 'tool'/'retriever'/the default agent branch) has
+    // no internal try/catch around streamChat, so a rejection throws and is
+    // caught by executeCurrent's generic-failure handler, NOT a pushToast
+    // call. That handler sets isRunning false and records the node as
+    // errored, but leaves isActive true (paused, resumable) — it does not
+    // advance the queue or end the run.
+    vi.mocked(streamChat).mockRejectedValue(new Error('API timeout'))
+    useSimulationStore.getState().setLiveMode(true)
+    loadGraph(
+      [node('s', 'start'), node('l', 'llm'), node('o', 'output')],
+      [edge('s', 'l'), edge('l', 'o')],
+    )
+    const pushToast = vi.spyOn(useToastStore.getState(), 'pushToast')
+    pushToast.mockClear()
+
+    useSimulationStore.getState().start()
+    await vi.waitFor(
+      () => {
+        expect(useSimulationStore.getState().isRunning).toBe(false)
+      },
+      { timeout: 3000 },
+    )
+
+    const s = useSimulationStore.getState()
+    expect(pushToast).not.toHaveBeenCalled()
+    expect(s.erroredNodeIds).toContain('l')
+    expect(s.isActive).toBe(true)
+  })
+
+  it('Test 4 — tool node routes to streamChat via the shared tool/retriever handler', async () => {
+    useSimulationStore.getState().setLiveMode(true)
+    loadGraph(
+      [node('s', 'start'), node('t', 'tool'), node('o', 'output')],
+      [edge('s', 't'), edge('t', 'o')],
+    )
+    await runToEnd()
+
+    expect(streamChat).toHaveBeenCalledTimes(1)
+  })
+
+  it('Test 5 — evalStore.recordRunSummary is called once after a live run completes', async () => {
+    vi.mocked(streamChat).mockResolvedValue('ok')
+    useSimulationStore.getState().setLiveMode(true)
+    const recordRunSummary = vi.spyOn(useEvalStore.getState(), 'recordRunSummary')
+    recordRunSummary.mockClear()
+    loadGraph(
+      [node('s', 'start'), node('l', 'llm'), node('o', 'output')],
+      [edge('s', 'l'), edge('l', 'o')],
+    )
+    await runToEnd()
+
+    expect(recordRunSummary).toHaveBeenCalledTimes(1)
+    expect(recordRunSummary).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runId: expect.any(String),
+        nodesExecuted: expect.any(Number),
+        errorCount: 0,
+        totalLatencyMs: expect.any(Number),
+      }),
+    )
+  })
+
+  it('Test 6 — simulated (non-live) path never calls streamChat', async () => {
+    useSimulationStore.getState().setLiveMode(false)
+    loadGraph(
+      [node('s', 'start'), node('l', 'llm'), node('o', 'output')],
+      [edge('s', 'l'), edge('l', 'o')],
+    )
+    await runToEnd()
+
+    expect(streamChat).not.toHaveBeenCalled()
   })
 })

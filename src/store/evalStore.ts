@@ -14,6 +14,8 @@ interface EvalState {
   addRun: (run: EvalRun) => void
   /** Records the summary of a just-finished run (called from simulationStore). */
   recordRunSummary: (summary: LastRunSummary) => void
+  /** Dismisses the last run summary bar. */
+  clearRunSummary: () => void
   setEvalOpen: (open: boolean) => void
 }
 
@@ -57,6 +59,8 @@ export const useEvalStore = create<EvalState>((set, get) => ({
   addRun: (run) => set({ runs: [...get().runs, run] }),
 
   recordRunSummary: (lastRunSummary) => set({ lastRunSummary }),
+
+  clearRunSummary: () => set({ lastRunSummary: null }),
 
   setEvalOpen: (evalOpen) => set({ evalOpen }),
 }))

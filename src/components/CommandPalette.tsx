@@ -6,6 +6,7 @@ import { useCanvasStore } from '../store/canvasStore'
 import { useSimulationStore } from '../store/simulationStore'
 import { scoreCommand } from '../utils/commandPalette'
 import type { PaletteCommand } from '../utils/commandPalette'
+import { ConfirmDialog } from './Modal'
 
 export function CommandPalette() {
   const open = useUIStore((s) => s.commandPaletteOpen)
@@ -34,6 +35,7 @@ export function CommandPalette() {
 
   const [query, setQuery] = useState('')
   const [highlighted, setHighlighted] = useState(0)
+  const [confirmClearOpen, setConfirmClearOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const commands = useMemo<PaletteCommand[]>(() => {
@@ -45,7 +47,7 @@ export function CommandPalette() {
         keywords: ['new', 'reset'],
         group: 'Canvas',
         disabled: nodes.length === 0,
-        action: clearCanvas,
+        action: () => setConfirmClearOpen(true),
       },
       {
         id: 'select-all',
@@ -147,7 +149,7 @@ export function CommandPalette() {
     liveMode,
     simulationActive,
     galleryOpen,
-    clearCanvas,
+    setConfirmClearOpen,
     selectAll,
     undo,
     redo,
@@ -197,7 +199,7 @@ export function CommandPalette() {
     return () => document.removeEventListener('keydown', onKeyDown, true)
   }, [open, closeAllModals])
 
-  if (!open) return null
+  if (!open && !confirmClearOpen) return null
 
   const execute = (cmd: PaletteCommand) => {
     if (cmd.disabled) return
@@ -222,65 +224,80 @@ export function CommandPalette() {
   let lastGroup: string | null = null
 
   return (
-    <div
-      className="fixed inset-0 z-[70] flex items-start justify-center bg-black/60 px-6 pt-[20vh]"
-      onClick={() => closeAllModals()}
-    >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label="Command palette"
-        onClick={(e) => e.stopPropagation()}
-        className="h-fit w-full max-w-lg rounded-xl border border-white/10 bg-surface shadow-2xl"
-      >
-        <div className="flex items-center gap-2 border-b border-white/10 px-3 py-2.5">
-          <Search size={14} className="text-gray-500" />
-          <input
-            ref={inputRef}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={onInputKeyDown}
-            placeholder="Type a command…"
-            className="w-full bg-transparent text-xs text-gray-200 outline-none placeholder:text-gray-500"
-          />
+    <>
+      {open && (
+        <div
+          className="fixed inset-0 z-[70] flex items-start justify-center bg-black/60 px-6 pt-[20vh]"
+          onClick={() => closeAllModals()}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Command palette"
+            onClick={(e) => e.stopPropagation()}
+            className="h-fit w-full max-w-lg rounded-xl border border-white/10 bg-surface shadow-2xl"
+          >
+            <div className="flex items-center gap-2 border-b border-white/10 px-3 py-2.5">
+              <Search size={14} className="text-gray-500" />
+              <input
+                ref={inputRef}
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={onInputKeyDown}
+                placeholder="Type a command…"
+                className="w-full bg-transparent text-xs text-gray-200 outline-none placeholder:text-gray-500"
+              />
+            </div>
+            <div className="max-h-80 overflow-y-auto p-1.5">
+              {filtered.length === 0 ? (
+                <p className="py-6 text-center text-xs text-gray-500">No matching commands.</p>
+              ) : (
+                filtered.map((cmd, i) => {
+                  const showGroupHeader = cmd.group !== lastGroup
+                  lastGroup = cmd.group
+                  return (
+                    <div key={cmd.id}>
+                      {showGroupHeader && (
+                        <p className="mt-2 px-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-500 first:mt-0">
+                          {cmd.group}
+                        </p>
+                      )}
+                      <button
+                        onClick={() => execute(cmd)}
+                        onMouseEnter={() => setHighlighted(i)}
+                        disabled={cmd.disabled}
+                        className={`flex w-full items-center justify-between gap-3 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors ${
+                          cmd.disabled
+                            ? 'cursor-not-allowed text-gray-600'
+                            : i === highlighted
+                              ? 'bg-accent/15 text-accent'
+                              : 'text-gray-300 hover:bg-surface-2'
+                        }`}
+                      >
+                        <span>{cmd.label}</span>
+                        {cmd.shortcut && (
+                          <kbd className="text-[10px] text-gray-500">{cmd.shortcut}</kbd>
+                        )}
+                      </button>
+                    </div>
+                  )
+                })
+              )}
+            </div>
+          </div>
         </div>
-        <div className="max-h-80 overflow-y-auto p-1.5">
-          {filtered.length === 0 ? (
-            <p className="py-6 text-center text-xs text-gray-500">No matching commands.</p>
-          ) : (
-            filtered.map((cmd, i) => {
-              const showGroupHeader = cmd.group !== lastGroup
-              lastGroup = cmd.group
-              return (
-                <div key={cmd.id}>
-                  {showGroupHeader && (
-                    <p className="mt-2 px-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-500 first:mt-0">
-                      {cmd.group}
-                    </p>
-                  )}
-                  <button
-                    onClick={() => execute(cmd)}
-                    onMouseEnter={() => setHighlighted(i)}
-                    disabled={cmd.disabled}
-                    className={`flex w-full items-center justify-between gap-3 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors ${
-                      cmd.disabled
-                        ? 'cursor-not-allowed text-gray-600'
-                        : i === highlighted
-                          ? 'bg-accent/15 text-accent'
-                          : 'text-gray-300 hover:bg-surface-2'
-                    }`}
-                  >
-                    <span>{cmd.label}</span>
-                    {cmd.shortcut && (
-                      <kbd className="text-[10px] text-gray-500">{cmd.shortcut}</kbd>
-                    )}
-                  </button>
-                </div>
-              )
-            })
-          )}
-        </div>
-      </div>
-    </div>
+      )}
+      <ConfirmDialog
+        open={confirmClearOpen}
+        title="Clear canvas?"
+        message="Clear canvas? This will remove all nodes and edges. This action cannot be undone."
+        confirmLabel="Clear"
+        onConfirm={() => {
+          clearCanvas()
+          setConfirmClearOpen(false)
+        }}
+        onCancel={() => setConfirmClearOpen(false)}
+      />
+    </>
   )
 }

@@ -3,6 +3,195 @@
 > Start next session: `@CLAUDE.md @docs/progress.md`
 > Older handoffs: `docs/progress-archive.md`
 
+
+
+
+
+
+
+
+---
+<!-- auto-prepended by on_stop_reminder.py on 2026-06-24 -->
+## Handoff — 2026-06-24 (TODO: fill session name)
+
+### What was completed
+- [ ] TODO: Task A — description ✅/❌
+- [ ] TODO: Task B — description ✅/❌
+
+### Build & Test Status
+| Check | Result |
+|---|---|
+| `npm run typecheck` | TODO |
+| `npm run build` | TODO |
+| `npm run test` | TODO: X/Y passing |
+| Browser verification | TODO |
+
+### Decisions made this session
+- [ ] TODO: one bullet per architectural decision
+
+### Known edge cases / deferred
+- [ ] TODO: one bullet per deferred item or known gap
+
+### What to load at resume
+```
+@CLAUDE.md @docs/progress.md
+```
+---
+<!-- auto-prepended by on_stop_reminder.py on 2026-06-24 -->
+## Handoff — 2026-06-24 (TODO: fill session name)
+
+### What was completed
+- [ ] TODO: Task A — description ✅/❌
+- [ ] TODO: Task B — description ✅/❌
+
+### Build & Test Status
+| Check | Result |
+|---|---|
+| `npm run typecheck` | TODO |
+| `npm run build` | TODO |
+| `npm run test` | TODO: X/Y passing |
+| Browser verification | TODO |
+
+### Decisions made this session
+- [ ] TODO: one bullet per architectural decision
+
+### Known edge cases / deferred
+- [ ] TODO: one bullet per deferred item or known gap
+
+### What to load at resume
+```
+@CLAUDE.md @docs/progress.md
+```
+---
+<!-- auto-prepended by on_stop_reminder.py on 2026-06-24 -->
+## Handoff — 2026-06-24 (TODO: fill session name)
+
+### What was completed
+- [ ] TODO: Task A — description ✅/❌
+- [ ] TODO: Task B — description ✅/❌
+
+### Build & Test Status
+| Check | Result |
+|---|---|
+| `npm run typecheck` | TODO |
+| `npm run build` | TODO |
+| `npm run test` | TODO: X/Y passing |
+| Browser verification | TODO |
+
+### Decisions made this session
+- [ ] TODO: one bullet per architectural decision
+
+### Known edge cases / deferred
+- [ ] TODO: one bullet per deferred item or known gap
+
+### What to load at resume
+```
+@CLAUDE.md @docs/progress.md
+```
+---
+<!-- auto-prepended by on_stop_reminder.py on 2026-06-24 -->
+## Handoff — 2026-06-24 (TODO: fill session name)
+
+### What was completed
+- [ ] TODO: Task A — description ✅/❌
+- [ ] TODO: Task B — description ✅/❌
+
+### Build & Test Status
+| Check | Result |
+|---|---|
+| `npm run typecheck` | TODO |
+| `npm run build` | TODO |
+| `npm run test` | TODO: X/Y passing |
+| Browser verification | TODO |
+
+### Decisions made this session
+- [ ] TODO: one bullet per architectural decision
+
+### Known edge cases / deferred
+- [ ] TODO: one bullet per deferred item or known gap
+
+### What to load at resume
+```
+@CLAUDE.md @docs/progress.md
+```
+---
+<!-- auto-prepended by on_stop_reminder.py on 2026-06-24 -->
+## Handoff — 2026-06-24 (TODO: fill session name)
+
+### What was completed
+- [ ] TODO: Task A — description ✅/❌
+- [ ] TODO: Task B — description ✅/❌
+
+### Build & Test Status
+| Check | Result |
+|---|---|
+| `npm run typecheck` | TODO |
+| `npm run build` | TODO |
+| `npm run test` | TODO: X/Y passing |
+| Browser verification | TODO |
+
+### Decisions made this session
+- [ ] TODO: one bullet per architectural decision
+
+### Known edge cases / deferred
+- [ ] TODO: one bullet per deferred item or known gap
+
+### What to load at resume
+```
+@CLAUDE.md @docs/progress.md
+```
+---
+<!-- auto-prepended by on_stop_reminder.py on 2026-06-24 -->
+## Handoff — 2026-06-24 (TODO: fill session name)
+
+### What was completed
+- [ ] TODO: Task A — description ✅/❌
+- [ ] TODO: Task B — description ✅/❌
+
+### Build & Test Status
+| Check | Result |
+|---|---|
+| `npm run typecheck` | TODO |
+| `npm run build` | TODO |
+| `npm run test` | TODO: X/Y passing |
+| Browser verification | TODO |
+
+### Decisions made this session
+- [ ] TODO: one bullet per architectural decision
+
+### Known edge cases / deferred
+- [ ] TODO: one bullet per deferred item or known gap
+
+### What to load at resume
+```
+@CLAUDE.md @docs/progress.md
+```
+---
+<!-- auto-prepended by on_stop_reminder.py on 2026-06-24 -->
+## Handoff — 2026-06-24 (TODO: fill session name)
+
+### What was completed
+- [ ] TODO: Task A — description ✅/❌
+- [ ] TODO: Task B — description ✅/❌
+
+### Build & Test Status
+| Check | Result |
+|---|---|
+| `npm run typecheck` | TODO |
+| `npm run build` | TODO |
+| `npm run test` | TODO: X/Y passing |
+| Browser verification | TODO |
+
+### Decisions made this session
+- [ ] TODO: one bullet per architectural decision
+
+### Known edge cases / deferred
+- [ ] TODO: one bullet per deferred item or known gap
+
+### What to load at resume
+```
+@CLAUDE.md @docs/progress.md
+```
 ---
 
 ## Active Architecture Decisions
