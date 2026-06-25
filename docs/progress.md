@@ -5,20 +5,22 @@
 > See docs/progress-archive.md for Sessions 1–13 (and Session 8 and earlier, archived previously).
 
 
+
 ---
 <!-- auto-prepended by on_stop_reminder.py on 2026-06-24 -->
-## Handoff — 2026-06-24 (TODO: fill session name)
+## Handoff — 2026-06-24 (Session 18 — docs: initialize project documentation and add architectural context logs)
 
 ### What was completed
-- [ ] TODO: Task A — description ✅/❌
-- [ ] TODO: Task B — description ✅/❌
+- [x] Modified `.claude/hooks/on_stop_reminder.py`
+- [x] Modified `docs/progress.md`
+- [ ] TODO: annotate WHY each change was made (auto-detected list above is files only)
 
 ### Build & Test Status
 | Check | Result |
 |---|---|
-| `npm run typecheck` | TODO |
-| `npm run build` | TODO |
-| `npm run test` | TODO: X/Y passing |
+| `npm run typecheck` | ✅ clean |
+| `npm run build` | TODO (not run by hook) |
+| `npm run test` | ✅ 319/319 passing |
 | Browser verification | TODO |
 
 ### Decisions made this session
@@ -26,6 +28,82 @@
 
 ### Known edge cases / deferred
 - [ ] TODO: one bullet per deferred item or known gap
+
+### What to load at resume
+```
+@CLAUDE.md @docs/progress.md
+```
+---
+
+## Handoff — 2026-06-25 (Session 17 — tool:/retriever: real execution)
+
+### What was completed
+- Task A — already real, no change needed. `case 'tool': case 'retriever':` in
+  `executeLiveNode` (`simulationStore.ts:1240-1287`) already calls
+  `streamChat(withMaxTokens(config, node.data.maxTokens), chat, onChunk, abortController.signal)`,
+  identical pattern to the `default:`/`llm:` cases, with abort wiring and a toast +
+  `{ error }` fallback on failure. Confirmed via test coverage already present
+  (`simulationStore.test.ts:969`, `"executeLiveNode — tool/retriever branches real LLM"`). ✅
+
+### Build & Test Status
+| Check | Result |
+|---|---|
+| `npm run typecheck` | ✅ clean |
+| `npm run build` | ✅ clean |
+| `npm run test` | ✅ 319/319 passing (32 files) |
+
+### Decisions made this session
+- No code change made — recon (per the session brief's Step 0 stop condition) found
+  the branch already wired to real `streamChat` calls, so no test-first/implementation
+  cycle was needed.
+- Noted but out of scope: `node.data.tools?: string[]` and `toolName?: string`
+  (`src/types/index.ts:66,69`) exist on node data but aren't consumed by the `tool:`
+  case — execution is a plain LLM call, not an actual external tool/MCP invocation.
+  That's a larger, separate feature (real tool-call dispatch), not a stub-removal fix.
+
+### Known edge cases / deferred
+- Wiring `node.data.tools`/`toolName` into an actual tool-call dispatch loop (vs. the
+  current LLM-only call) is deferred — out of scope for this session.
+- Non-live simulated engine path (`runSubgraph` inner fallback, top-level `else` when
+  `liveMode` is false) intentionally still uses `fakeOutputFor`/`fakeTokensFor`/
+  `fakeStreamTextFor` — that's the simulated mode's actual implementation, not a gap.
+
+### What to load at resume
+```
+@CLAUDE.md @docs/progress.md
+```
+---
+
+## Handoff — 2026-06-24 (Session 16 — wire real LLM calls into executeLiveNode default:)
+
+### What was completed
+- Task A — already implemented (fakeStreamTextFor confirmed absent from `executeLiveNode`'s
+  `default:` case via grep). The remaining `fakeStreamTextFor`/`fakeOutputFor`/`fakeTokensFor`
+  hits are all in the non-live simulated engine path (the `else` branch taken when
+  `liveMode` is false) and in `runSubgraph`'s own simulated fallback — by design, not
+  leftover stubs. ✅
+
+### Build & Test Status
+| Check | Result |
+|---|---|
+| `npm run typecheck` | ✅ clean |
+| `npm run build` | ✅ clean (927.5 KB / 281.7 KB gzip; pre-existing >500kB chunk + fflate dynamic-import warnings only) |
+| `npm run test` | ✅ **319/319 passing** (32 files) |
+
+### Decisions made this session
+- Recon (3 greps per the session brief) showed `executeLiveNode`'s `default:` case
+  (`simulationStore.ts:1561`) already calls `streamChat(withMaxTokens(config, node.data.maxTokens), ...)`
+  with abort-signal wiring and `onChunk` streaming — identical pattern to the `llm:` case.
+  Existing coverage in `simulationStore.test.ts:912` (`"executeLiveNode — default branch real LLM"`)
+  already asserts `streamChat` is called with the right model/system prompt, handles rejection
+  with a toast, and tallies real tokens. No code change made; this TODO was stale.
+
+### Known edge cases / deferred
+- tool:/retriever: cases still use fakeOutputFor — separate task, not in scope here
+- `runSubgraph`'s inner-node simulated fallback (lines ~2299-2371) and the top-level
+  non-live `else` branch (lines ~2300-2371) intentionally keep `fakeOutputFor`/
+  `fakeTokensFor`/`fakeStreamTextFor` — those power the simulated (non-live) engine mode,
+  not a missing live-mode wire-up.
 
 ### What to load at resume
 ```
@@ -144,7 +222,9 @@ src/store/simulationStore.ts (agent/supervisor/loop currently use fakeStreamText
 
 ## Open TODOs
 - [x] Wire `pre-push-check.ps1` as a Git pre-push hook — done (Session 14); `.git/hooks/pre-push` prefers `pwsh`, falls back to `powershell.exe`, warns + exits 0 if neither found
-- [ ] Wire real LLM calls into `default:` branch of `executeLiveNode` (agent/supervisor/loop) — PARTIAL: wired for maxTokens, `fakeStreamTextFor`/`fakeOutputFor`/`fakeTokensFor` stubs still present for non-LLM node types (confirmed via grep, Session 13)
+- [x] Wire real LLM calls into `default:` branch of `executeLiveNode` (agent/supervisor/loop) — done (confirmed already implemented, Session 16); remaining fake* stubs are intentional, gating the non-live simulated engine path, not missing live wiring
+- [x] Wire real execution into `tool:`/`retriever:` cases of `executeLiveNode` — done (confirmed already implemented, Session 17); both already call `streamChat` identically to `default:`/`llm:`
+- [ ] Wire `node.data.tools`/`toolName` into an actual tool-call dispatch loop for `tool:` nodes (currently a plain LLM call, no real external tool invocation) — Session 17 — MEDIUM
 - [x] Add `maxTokens?: number` to `AgentFlowNodeData` — done (Session 12); wired into the actual provider request body (was previously display-only)
 - [x] Remove inline Approve/Reject buttons from `MetricsBar.tsx` (duplicated by modal) — done (Session 15)
 - [ ] Consider `-StepOnly` param for `pre-push-check.ps1` — human — LOW
