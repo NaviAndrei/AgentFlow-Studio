@@ -6,13 +6,15 @@
 
 
 
+
 ---
-<!-- auto-prepended by on_stop_reminder.py on 2026-06-24 -->
-## Handoff — 2026-06-24 (Session 18 — docs: initialize project documentation and add architectural context logs)
+<!-- auto-prepended by on_stop_reminder.py on 2026-06-25 -->
+## Handoff — 2026-06-25 (Session 19 — feat(hooks): auto-fill session handoff and sync Open TODOs on stop)
 
 ### What was completed
-- [x] Modified `.claude/hooks/on_stop_reminder.py`
 - [x] Modified `docs/progress.md`
+- [x] Modified `src/store/simulationStore.test.ts`
+- [x] Modified `src/store/simulationStore.ts`
 - [ ] TODO: annotate WHY each change was made (auto-detected list above is files only)
 
 ### Build & Test Status
@@ -20,7 +22,7 @@
 |---|---|
 | `npm run typecheck` | ✅ clean |
 | `npm run build` | TODO (not run by hook) |
-| `npm run test` | ✅ 319/319 passing |
+| `npm run test` | ✅ 323/323 passing |
 | Browser verification | TODO |
 
 ### Decisions made this session
@@ -28,6 +30,58 @@
 
 ### Known edge cases / deferred
 - [ ] TODO: one bullet per deferred item or known gap
+
+### What to load at resume
+```
+@CLAUDE.md @docs/progress.md
+```
+---
+## Handoff — 2026-06-25 (Session 18 — wire tool metadata into tool:/retriever: system prompt)
+
+### What was completed
+- Recon (Step 0) confirmed `node.data.tools`/`toolName` were declared in
+  `AgentFlowNodeData` (`src/types/index.ts:66,69`) but never read anywhere in
+  `simulationStore.ts`. `mcpServer:` already has a real tool-dispatch loop
+  (`parseToolCall` + `callTool`), but it depends on `serverUrl`/`authToken`
+  fields that `tool:` nodes don't have — no local tool-function registry
+  exists anywhere, and no `src/llm/` transport parses structured tool-call
+  responses. Building a full dispatch loop for `tool:` nodes would require
+  new infrastructure, so scoped down to **Option B**: inject the node's
+  declared tool metadata into the system prompt sent to `streamChat`.
+- Added `buildToolContext(data: AgentFlowNodeData): string` next to
+  `parseToolCall` (`simulationStore.ts:115`) — renders `toolName`/`tools[]`/
+  `description` as a `"You have access to the following tool(s): ..."`
+  addendum, returning `''` when no tool metadata is set.
+- Wired it into the `case 'tool': case 'retriever':` branch
+  (`simulationStore.ts:1253`) — system prompt is now
+  `toolContext ? \`${basePrompt}\n\n${toolContext}\` : basePrompt` instead of
+  ignoring `node.data.tools`/`toolName` entirely. ✅
+- TDD: added 4 tests to `simulationStore.test.ts` under
+  `"executeLiveNode — tool: branch — system prompt includes tool metadata"`
+  (toolName+description, tools[] array, no-metadata no-crash case, retriever:
+  variant). All 4 failed pre-implementation (verified), all pass after. ✅
+
+### Build & Test Status
+| Check | Result |
+|---|---|
+| `npm run typecheck` | ✅ clean |
+| `npm run test` | ✅ **323/323 passing** (32 files), +4 net (319 → 323) |
+
+### Decisions made this session
+- Did not touch `mcpServer:`, `default:`, `llm:`, abort, or retry logic — per
+  session invariant.
+- Did not add `serverUrl`/`authToken` to `tool:` node data or attempt to
+  reuse `callTool` — that's the Option A full-dispatch path, deliberately
+  out of scope (no real tool-execution backend exists for plain `tool:`
+  nodes today).
+
+### Known edge cases / deferred
+- `tool:` nodes still make a plain LLM call — the model is now *told* about
+  its declared tools via the system prompt, but there is still no real
+  function/tool execution loop. A genuine dispatch loop (Option A) would
+  need either a local tool-function registry or extending `tool:` nodes to
+  carry MCP server connection fields, reusing `parseToolCall`/`callTool` —
+  deferred as a larger, separate feature.
 
 ### What to load at resume
 ```
@@ -224,7 +278,7 @@ src/store/simulationStore.ts (agent/supervisor/loop currently use fakeStreamText
 - [x] Wire `pre-push-check.ps1` as a Git pre-push hook — done (Session 14); `.git/hooks/pre-push` prefers `pwsh`, falls back to `powershell.exe`, warns + exits 0 if neither found
 - [x] Wire real LLM calls into `default:` branch of `executeLiveNode` (agent/supervisor/loop) — done (confirmed already implemented, Session 16); remaining fake* stubs are intentional, gating the non-live simulated engine path, not missing live wiring
 - [x] Wire real execution into `tool:`/`retriever:` cases of `executeLiveNode` — done (confirmed already implemented, Session 17); both already call `streamChat` identically to `default:`/`llm:`
-- [ ] Wire `node.data.tools`/`toolName` into an actual tool-call dispatch loop for `tool:` nodes (currently a plain LLM call, no real external tool invocation) — Session 17 — MEDIUM
+- [x] Wire `node.data.tools`/`toolName` into the `tool:`/`retriever:` system prompt — done (Session 18); scoped to Option B (system-prompt injection via `buildToolContext`), since no real tool-execution backend exists for plain `tool:` nodes (full dispatch loop remains deferred, see Known Gaps)
 - [x] Add `maxTokens?: number` to `AgentFlowNodeData` — done (Session 12); wired into the actual provider request body (was previously display-only)
 - [x] Remove inline Approve/Reject buttons from `MetricsBar.tsx` (duplicated by modal) — done (Session 15)
 - [ ] Consider `-StepOnly` param for `pre-push-check.ps1` — human — LOW

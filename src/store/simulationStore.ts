@@ -34,6 +34,7 @@ import { useToastStore } from './toastStore'
 import type {
   AgentFlowEdge,
   AgentFlowNode,
+  AgentFlowNodeData,
   AgentFlowNodeType,
   ChatMessage,
   EvalResult,
@@ -127,6 +128,19 @@ function parseToolCall(content: string): { name: string; input: Record<string, u
     if (!match) return null
     return parseToolCall(match[1])
   }
+}
+
+/**
+ * Render a `tool:`/`retriever:` node's declared tool metadata
+ * (`toolName`/`description`/`tools`) as a system-prompt addendum, so the
+ * model is at least told what tools it has rather than calling streamChat
+ * blind to them. Returns '' when no tool metadata is set.
+ */
+function buildToolContext(data: AgentFlowNodeData): string {
+  const names = [...(data.toolName ? [data.toolName] : []), ...(data.tools ?? [])]
+  if (names.length === 0) return ''
+  const description = data.description ? ` Tool description: ${data.description}` : ''
+  return `You have access to the following tool(s): ${names.join(', ')}.${description}`
 }
 
 /** Node types that take part in the simulated execution sequence. */
@@ -1251,8 +1265,10 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
               ? base
               : { ...base, settings: { ...base.settings, model: explicitModel } }
           const { systemPrompt: resolvedPrompt } = resolveNodePrompts(node.data)
-          const systemPrompt =
+          const basePrompt =
             resolvedPrompt || `You are a ${node.type} agent. Complete your task.`
+          const toolContext = buildToolContext(node.data)
+          const systemPrompt = toolContext ? `${basePrompt}\n\n${toolContext}` : basePrompt
           const temperature = node.data.temperature ?? 0.7
           const chat: ChatMessage[] = [
             { role: 'system', content: systemPrompt },

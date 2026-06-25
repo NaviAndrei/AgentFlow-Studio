@@ -1052,6 +1052,85 @@ describe("executeLiveNode â tool/retriever branches real LLM", () => {
   })
 })
 
+describe("executeLiveNode — tool: branch — system prompt includes tool metadata", () => {
+  it("tool: node with toolName + description includes both in the system prompt", async () => {
+    useSimulationStore.getState().setLiveMode(true)
+    loadGraph(
+      [
+        node("s", "start"),
+        node("t", "tool", {
+          toolName: "search",
+          description: "web search tool",
+        }),
+        node("o", "output"),
+      ],
+      [edge("s", "t"), edge("t", "o")],
+    )
+    await runToEnd()
+
+    expect(streamChat).toHaveBeenCalledTimes(1)
+    const [, chat] = vi.mocked(streamChat).mock.calls[0]
+    const systemContent = (chat[0] as { role: string; content: string }).content
+    expect(systemContent).toContain("search")
+    expect(systemContent).toContain("web search tool")
+  })
+
+  it("tool: node with tools[] includes every tool name in the system prompt", async () => {
+    useSimulationStore.getState().setLiveMode(true)
+    loadGraph(
+      [
+        node("s", "start"),
+        node("t", "tool", {
+          tools: ["search", "summarize"],
+        }),
+        node("o", "output"),
+      ],
+      [edge("s", "t"), edge("t", "o")],
+    )
+    await runToEnd()
+
+    expect(streamChat).toHaveBeenCalledTimes(1)
+    const [, chat] = vi.mocked(streamChat).mock.calls[0]
+    const systemContent = (chat[0] as { role: string; content: string }).content
+    expect(systemContent).toContain("search")
+    expect(systemContent).toContain("summarize")
+  })
+
+  it("tool: node with no toolName and no tools calls streamChat normally without crashing", async () => {
+    useSimulationStore.getState().setLiveMode(true)
+    loadGraph(
+      [node("s", "start"), node("t", "tool"), node("o", "output")],
+      [edge("s", "t"), edge("t", "o")],
+    )
+    const s = await runToEnd()
+
+    expect(streamChat).toHaveBeenCalledTimes(1)
+    expect(s.nodeOutputs.t).not.toHaveProperty("error")
+  })
+
+  it("retriever: node with toolName + description includes both in the system prompt", async () => {
+    useSimulationStore.getState().setLiveMode(true)
+    loadGraph(
+      [
+        node("s", "start"),
+        node("r", "retriever", {
+          toolName: "search",
+          description: "web search tool",
+        }),
+        node("o", "output"),
+      ],
+      [edge("s", "r"), edge("r", "o")],
+    )
+    await runToEnd()
+
+    expect(streamChat).toHaveBeenCalledTimes(1)
+    const [, chat] = vi.mocked(streamChat).mock.calls[0]
+    const systemContent = (chat[0] as { role: string; content: string }).content
+    expect(systemContent).toContain("search")
+    expect(systemContent).toContain("web search tool")
+  })
+})
+
 describe("executeLiveNode — maxTokens resolution", () => {
   it("llm: resolves node.data.maxTokens into the returned output", async () => {
     useSimulationStore.getState().setLiveMode(true)
