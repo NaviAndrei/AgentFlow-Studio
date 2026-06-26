@@ -35,6 +35,9 @@ npm run test         # Run Vitest suite
 ## Git Commit Rules
 - CI gate: `.github/workflows/ci.yml` runs typecheck → build → test on every push to main and develop. Do not merge a PR with a failing CI run.
 
+## Session Rituals
+- Before code: run `/resume` to restore context. Plan a session with `/plan` (writes `docs/session-plan.md`, waits for Y before opening files).
+
 ## References
 - Stores, engine, node registration → [ARCHITECTURE.md](file:///c:/Users/IvanA/Claude_Code/AgentFLow-Studio/ARCHITECTURE.md)
 - Components, layout details → [COMPONENTS.md](file:///c:/Users/IvanA/Claude_Code/AgentFLow-Studio/COMPONENTS.md)
