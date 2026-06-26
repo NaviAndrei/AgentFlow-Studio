@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { Inspector } from './Inspector'
 import { useCanvasStore } from '../store/canvasStore'
 import { useUIStore } from '../store/uiStore'
@@ -34,5 +35,36 @@ describe('Inspector — Max Tokens field', () => {
     selectNodeOfType('router')
     render(<Inspector />)
     expect(screen.queryByText('Max Tokens')).toBeNull()
+  })
+})
+
+describe('Inspector tool: node — endpoint fields', () => {
+  it('renders an Endpoint URL labeled input for a tool node', () => {
+    selectNodeOfType('tool')
+    render(<Inspector />)
+    expect(screen.getByText('Endpoint URL')).not.toBeNull()
+  })
+
+  it('renders an Auth Token labeled input for a tool node', () => {
+    selectNodeOfType('tool')
+    render(<Inspector />)
+    expect(screen.getByText('Auth Token')).not.toBeNull()
+  })
+
+  it('typing in Endpoint URL calls updateNodeData with the new value', async () => {
+    const user = userEvent.setup()
+    selectNodeOfType('tool')
+    render(<Inspector />)
+    const input = screen.getByPlaceholderText('https://your-tool-server.com/endpoint')
+    await user.type(input, 'https://example.com/tool')
+    const node = useCanvasStore.getState().nodes[0]
+    expect(node.data.endpointUrl).toBe('https://example.com/tool')
+  })
+
+  it('renders both endpoint fields for a retriever node', () => {
+    selectNodeOfType('retriever')
+    render(<Inspector />)
+    expect(screen.getByText('Endpoint URL')).not.toBeNull()
+    expect(screen.getByText('Auth Token')).not.toBeNull()
   })
 })

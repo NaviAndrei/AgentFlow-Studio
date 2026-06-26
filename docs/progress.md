@@ -9,15 +9,15 @@
 
 
 
+
 ---
 <!-- auto-prepended by on_stop_reminder.py on 2026-06-26 -->
-## Handoff — 2026-06-26 (Session 22 — feat: Session 18 â€” tool: system prompt injection + hook rewrite)
+## Handoff — 2026-06-26 (Session 22 — feat(tool-nodes): wire tool:/retriever: to HTTP endpoint via callTool())
 
 ### What was completed
 - [x] Modified `docs/progress.md`
-- [x] Modified `src/store/simulationStore.test.ts`
-- [x] Modified `src/store/simulationStore.ts`
-- [x] Modified `src/types/index.ts`
+- [x] Modified `src/components/Inspector.test.tsx`
+- [x] Modified `src/components/Inspector.tsx`
 - [ ] TODO: annotate WHY each change was made (auto-detected list above is files only)
 
 ### Build & Test Status
@@ -25,7 +25,7 @@
 |---|---|
 | `npm run typecheck` | ✅ clean |
 | `npm run build` | TODO (not run by hook) |
-| `npm run test` | ✅ 327/327 passing |
+| `npm run test` | ✅ 331/331 passing |
 | Browser verification | TODO |
 
 ### Decisions made this session
@@ -37,6 +37,54 @@
 ### What to load at resume
 ```
 @CLAUDE.md @docs/progress.md
+```
+---
+## Handoff — 2026-06-26 (Session 21 — Inspector endpoint fields for tool: nodes)
+
+### What was completed
+- Recon confirmed `endpointUrl`/`authToken` existed on `AgentFlowNodeData`
+  (`src/types/index.ts:74`, Session 20) but were not yet rendered anywhere in
+  `Inspector.tsx` — `ToolFields` and `RetrieverFields` had no UI for them.
+- Added a shared `ToolEndpointFields({ data, update })` component
+  (`Inspector.tsx`, after `ToolFields`) modeled on the `MCPServerFields`
+  `serverUrl`/`authToken` pattern: "Endpoint URL" input (`type="url"`),
+  "Auth Token" input (`type="password"`, masked), and a hint paragraph
+  ("Leave Endpoint URL empty to use the LLM-only fallback mode."). Mounted
+  it at the end of both `ToolFields` and `RetrieverFields`. ✅
+- TDD: added 4 tests under `"Inspector tool: node — endpoint fields"` in
+  `Inspector.test.tsx` (Endpoint URL label renders, Auth Token label renders,
+  typing in Endpoint URL updates `node.data.endpointUrl` via the real
+  `canvasStore`, retriever: node renders both fields too). All 4 failed
+  pre-implementation (verified), all pass after. ✅
+
+### Build & Test Status
+| Check | Result |
+|---|---|
+| `npm run typecheck` | ✅ clean |
+| `npm run build` | ✅ clean (929 KB / 282 KB gzip; pre-existing >500kB chunk + fflate dynamic-import warnings only) |
+| `npm run test` | ✅ **331/331 passing** (32 files), +4 net (327 → 331) |
+| Browser smoke test | ✅ 5/5 — tool: node shows both fields, typing persists across deselect/reselect, retriever: node shows both fields |
+
+### Decisions made this session
+- `type="password"` on Auth Token — matches the masking already used for
+  `authToken` on `A2AAgentFields` and `MCPServerFields`.
+- Shared `ToolEndpointFields` helper instead of duplicating the two inputs
+  in `ToolFields` and `RetrieverFields` separately — both node kinds use the
+  identical `endpointUrl`/`authToken` shape from `AgentFlowNodeData`.
+- Did not touch `MCPServerFields` (`serverUrl`/`authToken`), `default:`,
+  `llm:`, or any simulation/store logic — UI-only change, the dispatch logic
+  landed in Session 20.
+
+### Known edge cases / deferred
+- No validation on Endpoint URL format — a malformed URL will only surface
+  as a failure at `callTool` time (toast), not inline in the Inspector.
+- `authToken` is stored in plain Zustand state, not encrypted at rest —
+  acceptable for MVP, same as the existing `MCPServerFields`/`A2AAgentFields`
+  pattern.
+
+### What to load at resume
+```
+@CLAUDE.md @docs/progress.md @ARCHITECTURE.md
 ```
 ---
 ## Handoff — 2026-06-26 (Session 20 — tool: HTTP endpoint dispatch)
@@ -361,7 +409,7 @@ src/store/simulationStore.ts (agent/supervisor/loop currently use fakeStreamText
 - [x] Add `maxTokens?: number` to `AgentFlowNodeData` — done (Session 12); wired into the actual provider request body (was previously display-only)
 - [x] Remove inline Approve/Reject buttons from `MetricsBar.tsx` (duplicated by modal) — done (Session 15)
 - [x] Wire `tool:`/`retriever:` nodes into real tool-dispatch loop — done (Session 20); HTTP endpoint path via `callTool()` reuse, gated on `node.data.endpointUrl`; LLM-only path remains the fallback
-- [ ] Expose `endpointUrl`/`authToken` fields on `tool:`/`retriever:` nodes in NodeConfigPanel — human — MED (Session 20 follow-up)
+- [x] Expose `endpointUrl`/`authToken` fields on `tool:`/`retriever:` nodes in NodeConfigPanel — done (Session 21); added via shared `ToolEndpointFields` in `Inspector.tsx`
 - [ ] Consider `-StepOnly` param for `pre-push-check.ps1` — human — LOW
 
 ## Known Gaps (intentionally deferred)

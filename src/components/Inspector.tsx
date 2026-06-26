@@ -278,6 +278,37 @@ function ToolFields({ data, update }: FieldsProps) {
           onChange={(e) => update({ outputSchema: e.target.value })}
         />
       </label>
+      <ToolEndpointFields data={data} update={update} />
+    </>
+  )
+}
+
+function ToolEndpointFields({ data, update }: FieldsProps) {
+  return (
+    <>
+      <label className="block">
+        <span className={labelCls}>Endpoint URL</span>
+        <input
+          className={inputCls}
+          type="url"
+          value={data.endpointUrl ?? ''}
+          onChange={(e) => update({ endpointUrl: e.target.value })}
+          placeholder="https://your-tool-server.com/endpoint"
+        />
+      </label>
+      <label className="block">
+        <span className={labelCls}>Auth Token</span>
+        <input
+          className={inputCls}
+          type="password"
+          value={data.authToken ?? ''}
+          onChange={(e) => update({ authToken: e.target.value })}
+          placeholder="Bearer token (optional)"
+        />
+      </label>
+      <p className="text-[10px] text-gray-600">
+        Leave Endpoint URL empty to use the LLM-only fallback mode.
+      </p>
     </>
   )
 }
@@ -1218,6 +1249,7 @@ function RetrieverFields({ data, update }: FieldsProps) {
           className="w-full accent-accent"
         />
       </label>
+      <ToolEndpointFields data={data} update={update} />
     </>
   )
 }
