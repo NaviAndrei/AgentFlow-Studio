@@ -1258,6 +1258,11 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
         // Errors here toast and fail loudly — no silent fallback to the LLM
         // path, since that would mask a broken tool integration.
         if (node.data.endpointUrl) {
+          if (!URL.canParse(node.data.endpointUrl)) {
+            const message = `Invalid endpoint URL on node "${node.data.label ?? node.id}": ${node.data.endpointUrl}`
+            useToastStore.getState().pushToast(message, 'warning')
+            return { error: message }
+          }
           try {
             const signal = abortController?.signal
             const result = await callTool(

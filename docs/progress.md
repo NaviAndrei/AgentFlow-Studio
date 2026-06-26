@@ -10,6 +10,89 @@
 
 
 
+
+---
+<!-- auto-prepended by on_stop_reminder.py on 2026-06-26 -->
+## Handoff — 2026-06-26 (Session 23 — feat(inspector): expose endpointUrl + authToken fields for tool:/retriever: nodes)
+
+### What was completed
+- [x] Modified `docs/progress.md`
+- [x] Modified `src/components/Inspector.test.tsx`
+- [x] Modified `src/components/Inspector.tsx`
+- [x] Modified `src/store/simulationStore.test.ts`
+- [x] Modified `src/store/simulationStore.ts`
+- [ ] TODO: annotate WHY each change was made (auto-detected list above is files only)
+
+### Build & Test Status
+| Check | Result |
+|---|---|
+| `npm run typecheck` | ✅ clean |
+| `npm run build` | TODO (not run by hook) |
+| `npm run test` | ✅ 336/336 passing |
+| Browser verification | TODO |
+
+### Decisions made this session
+- [ ] TODO: one bullet per architectural decision
+
+### Known edge cases / deferred
+- [ ] TODO: one bullet per deferred item or known gap
+
+### What to load at resume
+```
+@CLAUDE.md @docs/progress.md
+```
+---
+## Handoff — 2026-06-26 (Session 22 — URL validation + authToken warning)
+
+### What was completed
+- Task A — `URL.canParse()` guard added in `executeLiveNode`'s `tool:`/`retriever:`
+  branch (`src/store/simulationStore.ts`), right before the existing
+  `callTool` dispatch. A malformed `endpointUrl` now toasts an "Invalid
+  endpoint URL on node ..." warning and returns `{ error }` immediately —
+  no `callTool` or `streamChat` call. Empty-string `endpointUrl` is still
+  falsy, so it's unaffected and continues to fall back to `streamChat`. ✅
+- Task B — added a plain-text export warning in `Inspector.tsx`'s
+  `ToolEndpointFields`, shown directly under the Auth Token input when
+  `data.authToken` is non-empty, styled with the existing
+  `text-amber-400` pattern (matches `MCPServerFields`'s insecure-URL
+  warning). ✅
+- TDD: 3 new tests in `simulationStore.test.ts` under
+  `"executeLiveNode tool: branch — endpointUrl validation"` (malformed URL
+  toasts + no dispatch, empty string falls back to streamChat, valid URL
+  still calls callTool as a regression guard). 2 new tests in
+  `Inspector.test.tsx` under `"Inspector tool: node — authToken export
+  warning"` (warning renders when authToken is typed, absent when empty).
+  All failed pre-implementation as expected, all pass after. ✅
+
+### Build & Test Status
+| Check | Result |
+|---|---|
+| `npm run typecheck` | ✅ clean |
+| `npm run build` | ✅ clean (929 KB / 282 KB gzip; pre-existing >500kB chunk + fflate dynamic-import warnings only) |
+| `npm run test` | ✅ **336/336 passing** (32 files), +5 net (331 → 336) |
+
+### Decisions made this session
+- `URL.canParse()` over `new URL()` try/catch — cleaner, no exception
+  overhead, available in the project's modern browser/Node target.
+- Early-exit on invalid URL returns `{ error }` without calling `callTool`
+  OR `streamChat` — fail loudly, consistent with the existing Session 20
+  decision that a misconfigured tool node should not silently degrade to
+  the LLM-only path.
+- Warning shown inline in the Inspector (not a modal) — non-blocking,
+  visible exactly when the user is editing the Auth Token field.
+
+### Known edge cases / deferred
+- `authToken` is still plain Zustand state, not encrypted at rest — same
+  acceptable-for-MVP posture as Session 21/20; would need a secrets store
+  for production hardening.
+- URL validation only checks format via `URL.canParse()`, not reachability
+  — a syntactically valid URL pointing at a dead server still fails at
+  `callTool` time with the existing network-error toast.
+
+### What to load at resume
+```
+@CLAUDE.md @docs/progress.md
+```
 ---
 <!-- auto-prepended by on_stop_reminder.py on 2026-06-26 -->
 ## Handoff — 2026-06-26 (Session 22 — feat(tool-nodes): wire tool:/retriever: to HTTP endpoint via callTool())

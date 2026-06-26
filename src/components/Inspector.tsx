@@ -305,6 +305,11 @@ function ToolEndpointFields({ data, update }: FieldsProps) {
           onChange={(e) => update({ authToken: e.target.value })}
           placeholder="Bearer token (optional)"
         />
+        {data.authToken && (
+          <p className="mt-1 text-[10px] text-amber-400">
+            Auth token is stored in plain text. Remove before sharing or exporting this flow.
+          </p>
+        )}
       </label>
       <p className="text-[10px] text-gray-600">
         Leave Endpoint URL empty to use the LLM-only fallback mode.

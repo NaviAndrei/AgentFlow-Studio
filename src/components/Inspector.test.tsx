@@ -68,3 +68,20 @@ describe('Inspector tool: node — endpoint fields', () => {
     expect(screen.getByText('Auth Token')).not.toBeNull()
   })
 })
+
+describe('Inspector tool: node — authToken export warning', () => {
+  it('renders a plain-text export warning when authToken is set', async () => {
+    const user = userEvent.setup()
+    selectNodeOfType('tool')
+    render(<Inspector />)
+    const input = screen.getByPlaceholderText('Bearer token (optional)')
+    await user.type(input, 'secret-token')
+    expect(screen.getByText(/stored in plain text/i)).not.toBeNull()
+  })
+
+  it('does not render the warning when authToken is empty', () => {
+    selectNodeOfType('tool')
+    render(<Inspector />)
+    expect(screen.queryByText(/stored in plain text/i)).toBeNull()
+  })
+})

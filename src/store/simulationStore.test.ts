@@ -1224,6 +1224,58 @@ describe("executeLiveNode tool: branch — HTTP endpoint dispatch", () => {
   })
 })
 
+describe("executeLiveNode tool: branch — endpointUrl validation", () => {
+  it("malformed endpointUrl toasts an invalid-URL warning and does not call callTool or streamChat", async () => {
+    useSimulationStore.getState().setLiveMode(true)
+    loadGraph(
+      [node("s", "start"), node("t", "tool", { endpointUrl: "not-a-url" }), node("o", "output")],
+      [edge("s", "t"), edge("t", "o")],
+    )
+    const pushToast = vi.spyOn(useToastStore.getState(), "pushToast")
+    pushToast.mockClear()
+
+    const s = await runToEnd()
+
+    expect(callTool).not.toHaveBeenCalled()
+    expect(streamChat).not.toHaveBeenCalled()
+    expect(pushToast).toHaveBeenCalledTimes(1)
+    const [message] = pushToast.mock.calls[0]
+    expect(message).toContain("Invalid")
+    expect(s.nodeOutputs.t).toMatchObject({ error: expect.stringContaining("Invalid") })
+  })
+
+  it("empty string endpointUrl is treated as unset and falls back to streamChat", async () => {
+    useSimulationStore.getState().setLiveMode(true)
+    loadGraph(
+      [node("s", "start"), node("t", "tool", { endpointUrl: "" }), node("o", "output")],
+      [edge("s", "t"), edge("t", "o")],
+    )
+
+    await runToEnd()
+
+    expect(callTool).not.toHaveBeenCalled()
+    expect(streamChat).toHaveBeenCalledTimes(1)
+  })
+
+  it("valid endpointUrl still calls callTool (regression guard)", async () => {
+    vi.mocked(callTool).mockResolvedValue({ ok: true })
+    useSimulationStore.getState().setLiveMode(true)
+    loadGraph(
+      [
+        node("s", "start"),
+        node("t", "tool", { endpointUrl: "https://example.com/tool" }),
+        node("o", "output"),
+      ],
+      [edge("s", "t"), edge("t", "o")],
+    )
+
+    await runToEnd()
+
+    expect(callTool).toHaveBeenCalledTimes(1)
+    expect(streamChat).not.toHaveBeenCalled()
+  })
+})
+
 describe("executeLiveNode — maxTokens resolution", () => {
   it("llm: resolves node.data.maxTokens into the returned output", async () => {
     useSimulationStore.getState().setLiveMode(true)
