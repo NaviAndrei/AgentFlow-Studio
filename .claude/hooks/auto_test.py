@@ -49,10 +49,13 @@ def main():
     if not test_file:
         sys.exit(0)
 
-    # Run vitest with timeout
+    # Run vitest with timeout. shell=True so Windows resolves `npx` (npx.cmd) —
+    # a bare ["npx", ...] list raises FileNotFoundError under shell=False.
+    # Matches the subprocess convention in on_stop_reminder.py.
     try:
         result = subprocess.run(
-            ["npx", "--no-install", "vitest", "run", str(test_file), "--reporter=verbose"],
+            f'npx --no-install vitest run "{test_file}" --reporter=verbose',
+            shell=True,
             capture_output=True,
             text=True,
             timeout=30

@@ -37,8 +37,11 @@ def log_action(action: str, detail: str) -> None:
 def format_with_prettier(file_path: Path) -> bool:
     """Format file with prettier. Returns True if formatting was attempted."""
     try:
+        # shell=True so Windows resolves `npx` (npx.cmd); a bare list raises
+        # FileNotFoundError under shell=False, silently disabling formatting.
         subprocess.run(
-            ["npx", "--no-install", "prettier", "--write", str(file_path)],
+            f'npx --no-install prettier --write "{file_path}"',
+            shell=True,
             capture_output=True,
             text=True,
             timeout=30,
@@ -51,16 +54,19 @@ def format_with_prettier(file_path: Path) -> bool:
 def format_with_ruff(file_path: Path) -> bool:
     """Format file with ruff (format + check --fix). Returns True if formatting was attempted."""
     try:
+        # shell=True for consistent executable resolution on Windows.
         # First, run ruff format
         subprocess.run(
-            ["ruff", "format", str(file_path)],
+            f'ruff format "{file_path}"',
+            shell=True,
             capture_output=True,
             text=True,
             timeout=30,
         )
         # Then, run ruff check --fix
         subprocess.run(
-            ["ruff", "check", "--fix", str(file_path)],
+            f'ruff check --fix "{file_path}"',
+            shell=True,
             capture_output=True,
             text=True,
             timeout=30,
