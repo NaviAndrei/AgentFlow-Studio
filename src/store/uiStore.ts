@@ -22,6 +22,7 @@ interface UIState {
   inspectorWidth: number
   costPanelOpen: boolean
   problemsPanelOpen: boolean
+  mcpPanelOpen: boolean
   /** Vertical drag offset (px) for the PanelRail, relative to its centered default. */
   railOffsetPx: number
   /** Blueprint landing overlay dismissed for the current empty-canvas session (Esc / Start blank). */
@@ -38,6 +39,7 @@ interface UIState {
   setCommandPaletteOpen: (open: boolean) => void
   setCostPanelOpen: (open: boolean) => void
   setProblemsPanelOpen: (open: boolean) => void
+  toggleMcpPanel(): void
   setLandingDismissed: (dismissed: boolean) => void
   toggleMinimap: () => void
   toggleAnimatedEdges: () => void
@@ -65,6 +67,7 @@ export const useUIStore = create<UIState>((set, get) => ({
   inspectorWidth: 300,
   costPanelOpen: false,
   problemsPanelOpen: false,
+  mcpPanelOpen: false,
   railOffsetPx: 0,
   landingDismissed: false,
   minimapVisible: true,
@@ -79,6 +82,7 @@ export const useUIStore = create<UIState>((set, get) => ({
   setCommandPaletteOpen: (commandPaletteOpen) => set({ commandPaletteOpen }),
   setCostPanelOpen: (costPanelOpen) => set({ costPanelOpen }),
   setProblemsPanelOpen: (problemsPanelOpen) => set({ problemsPanelOpen }),
+  toggleMcpPanel: () => set((s) => ({ mcpPanelOpen: !s.mcpPanelOpen })),
   setLandingDismissed: (landingDismissed) => set({ landingDismissed }),
   toggleMinimap: () => set({ minimapVisible: !get().minimapVisible }),
   toggleAnimatedEdges: () => set({ animatedEdgesEnabled: !get().animatedEdgesEnabled }),

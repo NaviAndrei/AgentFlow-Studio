@@ -39,6 +39,17 @@ export type AgentFlowNodeType =
 
 export type MemoryType = 'short-term' | 'vector-store' | 'checkpointer'
 
+/** A registered MCP server entry in the mcpStore registry. */
+export interface MCPServerConfig {
+  serverKey: string
+  label: string
+  endpointUrl: string
+  authToken?: string
+  description?: string
+  /** Runtime-only — not persisted to localStorage. */
+  isConnected?: boolean
+}
+
 /** A tool advertised by an MCP server's `tools/list` response. */
 export interface MCPTool {
   name: string
@@ -62,6 +73,8 @@ export type AgentFlowNodeData = {
   systemPrompt?: string
   temperature?: number
   maxTokens?: number
+  /** Per-node provider id override; empty/absent = use the global provider. */
+  providerOverride?: string
   /** Agent */
   tools?: string[]
   maxIterations?: number
@@ -91,6 +104,8 @@ export type AgentFlowNodeData = {
   topK?: number
   similarityThreshold?: number
   /** MCP Server */
+  /** Key into mcpStore.servers — resolves endpointUrl/authToken at runtime. */
+  serverKey?: string
   serverUrl?: string
   mcpTools?: string[]
   discoveredTools?: MCPTool[]

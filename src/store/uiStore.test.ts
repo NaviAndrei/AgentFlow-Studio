@@ -25,3 +25,14 @@ describe('uiStore — animated edges toggle', () => {
     expect(useUIStore.getState().animatedEdgesEnabled).toBe(false)
   })
 })
+
+describe('uiStore — MCP panel toggle', () => {
+  it('Test G: toggleMcpPanel flips mcpPanelOpen from false to true and back', () => {
+    useUIStore.setState({ mcpPanelOpen: false })
+    expect(useUIStore.getState().mcpPanelOpen).toBe(false)
+    useUIStore.getState().toggleMcpPanel()
+    expect(useUIStore.getState().mcpPanelOpen).toBe(true)
+    useUIStore.getState().toggleMcpPanel()
+    expect(useUIStore.getState().mcpPanelOpen).toBe(false)
+  })
+})
