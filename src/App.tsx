@@ -17,6 +17,7 @@ import { LastRunSummaryBar } from './components/LastRunSummaryBar'
 import { LLMSettingsModal } from './components/LLMSettingsModal'
 import { Navbar } from './components/Navbar'
 import { PanelRail } from './components/PanelRail'
+import { MCPServersPanel } from './components/MCPServersPanel'
 import { ProblemsPanel } from './components/ProblemsPanel'
 import { QuickAddPopup } from './components/QuickAddPopup'
 import { MetricsBar } from './components/MetricsBar'
@@ -84,6 +85,7 @@ export default function App() {
             <RunHistoryPanel />
           </PanelErrorBoundary>
           <ProblemsPanel />
+          <MCPServersPanel />
           <PanelRail />
           <MetricsBar />
           <HumanInLoopModal />

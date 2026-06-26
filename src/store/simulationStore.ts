@@ -23,6 +23,7 @@ import {
 import { useCanvasStore } from './canvasStore'
 import { useEvalStore } from './evalStore'
 import { useLLMConfigStore } from './llmConfigStore'
+import { useMCPStore } from './mcpStore'
 import { useMemoryStore } from './memoryStore'
 import { useSimulationMetricsStore } from './simulationMetricsStore'
 import { computeQualityScore, scoreTestCase } from '../utils/evalScorer'
@@ -1214,13 +1215,9 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
       }
       case 'llm': {
         const base = useLLMConfigStore.getState().getConfig()
-        // Per-node override: a non-empty value replaces the global model for
-        // this node only; the provider/transport stays the global one.
-        const override = (node.data.modelOverride ?? '').trim()
-        const config =
-          override === ''
-            ? base
-            : { ...base, settings: { ...base.settings, model: override } }
+        const resolvedProvider = (node.data.providerOverride ?? base.provider) as typeof base.provider
+        const resolvedModel = (node.data.modelOverride ?? '').trim() || base.settings.model
+        const config = { ...base, provider: resolvedProvider, settings: { ...base.settings, model: resolvedModel } }
         const { systemPrompt } = resolveNodePrompts(node.data)
         const chat: ChatMessage[] = [
           {
@@ -1351,9 +1348,16 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
 
         const signal = abortController?.signal
         if (signal?.aborted) return { output: '', status: 'error' }
+        // Resolve endpointUrl + authToken from mcpStore registry when serverKey is set,
+        // falling back to node.data directly for backward compatibility.
+        const registeredServer = node.data.serverKey
+          ? useMCPStore.getState().servers[node.data.serverKey]
+          : undefined
+        const resolvedUrl = registeredServer?.endpointUrl ?? node.data.serverUrl ?? ''
+        const resolvedToken = registeredServer?.authToken ?? node.data.authToken
         const result = await callTool(
-          node.data.serverUrl ?? '',
-          node.data.authToken,
+          resolvedUrl,
+          resolvedToken,
           toolCall.name,
           toolCall.input,
           signal,
@@ -1613,12 +1617,9 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
         // single bad call can't crash the run.
         try {
           const base = useLLMConfigStore.getState().getConfig()
-          const explicitModel =
-            (node.data.model ?? '').trim() || (node.data.modelOverride ?? '').trim()
-          const config =
-            explicitModel === '' || explicitModel === base.settings.model
-              ? base
-              : { ...base, settings: { ...base.settings, model: explicitModel } }
+          const resolvedProvider = (node.data.providerOverride ?? base.provider) as typeof base.provider
+          const resolvedModel = node.data.modelOverride ?? node.data.model ?? base.settings.model
+          const config = { ...base, provider: resolvedProvider, settings: { ...base.settings, model: resolvedModel } }
           const { systemPrompt: resolvedPrompt } = resolveNodePrompts(node.data)
           const systemPrompt =
             resolvedPrompt || `You are a ${node.type} agent. Complete your task.`

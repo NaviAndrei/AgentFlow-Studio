@@ -19,6 +19,7 @@ import { MODEL_PRESETS } from '../utils/exportModels'
 import { usePromptStore } from '../store/promptStore'
 import { ExternalLink, Link as LinkIcon, X } from 'lucide-react'
 import type { AgentFlowNodeData, AgentFlowNodeType, MemoryType } from '../types'
+import { useMCPStore } from '../store/mcpStore'
 
 const inputCls =
   'w-full rounded-md border border-white/10 bg-surface-2 px-2 py-1.5 text-xs text-gray-200 focus:border-accent focus:outline-none'
@@ -176,6 +177,29 @@ function LLMFields({ data, update }: FieldsProps) {
           onChange={(e) => update({ temperature: Number(e.target.value) })}
           className="w-full accent-accent"
         />
+      </label>
+      <label className="block">
+        <span className={labelCls}>Provider Override</span>
+        <div className="relative">
+          <input
+            className={inputCls}
+            value={data.providerOverride ?? ''}
+            onChange={(e) => update({ providerOverride: e.target.value || undefined })}
+            placeholder="Default (global setting)"
+          />
+          {data.providerOverride && (
+            <button
+              onClick={() => update({ providerOverride: undefined })}
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300"
+              aria-label="Clear provider override"
+            >
+              <X size={11} />
+            </button>
+          )}
+        </div>
+        <p className="mt-1 text-[10px] text-gray-600">
+          Live mode only — routes this node to a different provider (e.g. openai, gemini).
+        </p>
       </label>
     </>
   )
@@ -1264,6 +1288,9 @@ function MCPServerFields({ data, update }: FieldsProps) {
   const [discoverError, setDiscoverError] = useState<string | null>(null)
   const discoveredTools = data.discoveredTools ?? []
   const selectedTools = data.selectedTools ?? []
+  const registeredServers = useMCPStore((s) => s.servers)
+  const toggleMcpPanel = useUIStore((s) => s.toggleMcpPanel)
+  const serverList = Object.values(registeredServers)
 
   const discover = () => {
     const url = (data.serverUrl ?? '').trim()
@@ -1307,6 +1334,42 @@ function MCPServerFields({ data, update }: FieldsProps) {
 
   return (
     <>
+      <label className="block">
+        <span className={labelCls}>Registered Server</span>
+        {serverList.length === 0 ? (
+          <p className="text-[10px] text-gray-600">
+            No servers registered.{' '}
+            <button
+              type="button"
+              onClick={toggleMcpPanel}
+              className="text-accent underline hover:opacity-80"
+            >
+              Open MCP Servers panel
+            </button>{' '}
+            to add one.
+          </p>
+        ) : (
+          <select
+            className={inputCls}
+            value={data.serverKey ?? ''}
+            onChange={(e) => {
+              const key = e.target.value
+              const cfg = registeredServers[key]
+              update({
+                serverKey: key || undefined,
+                serverUrl: cfg?.endpointUrl ?? data.serverUrl,
+              })
+            }}
+          >
+            <option value="">— use node URL below —</option>
+            {serverList.map((srv) => (
+              <option key={srv.serverKey} value={srv.serverKey}>
+                {srv.label}
+              </option>
+            ))}
+          </select>
+        )}
+      </label>
       <label className="block">
         <span className={labelHintCls}>
           Server URL

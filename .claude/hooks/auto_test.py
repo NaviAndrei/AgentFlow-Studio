@@ -18,9 +18,9 @@ def main():
     if tool_name not in ("Write", "Edit", "MultiEdit"):
         sys.exit(0)
 
-    # Extract file path from parameters
-    parameters = data.get("parameters", {})
-    file_path = parameters.get("file_path", "")
+    # Extract file path from tool_input (Claude Code sends "tool_input", not "parameters")
+    tool_input = data.get("tool_input", {})
+    file_path = tool_input.get("file_path") or tool_input.get("path", "")
     if not file_path:
         sys.exit(0)
 

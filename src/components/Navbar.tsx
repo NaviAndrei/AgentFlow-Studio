@@ -12,6 +12,7 @@ import {
   LayoutGrid,
   Map,
   Play,
+  Plug,
   Settings,
   Share2,
   Square,
@@ -61,6 +62,8 @@ export function Navbar() {
     () => estimatePreRunCost(nodes, globalModel),
     [nodes, globalModel, activeProvider],
   )
+  const mcpPanelOpen = useUIStore((s) => s.mcpPanelOpen)
+  const toggleMcpPanel = useUIStore((s) => s.toggleMcpPanel)
   const setExportOpen = useUIStore((s) => s.setExportOpen)
   const setShortcutsOpen = useUIStore((s) => s.setShortcutsOpen)
   const setSnapshotOpen = useUIStore((s) => s.setSnapshotOpen)
@@ -351,6 +354,19 @@ export function Navbar() {
           }`}
         >
           <Waves size={13} />
+        </button>
+        <button
+          onClick={toggleMcpPanel}
+          title="MCP Servers"
+          aria-label="MCP Servers"
+          aria-pressed={mcpPanelOpen}
+          className={`rounded-md border p-1.5 transition-colors ${
+            mcpPanelOpen
+              ? 'border-accent bg-accent/15 text-accent'
+              : 'border-white/10 text-gray-300 hover:border-accent/50 hover:text-white'
+          }`}
+        >
+          <Plug size={13} />
         </button>
         <button
           onClick={() => setSnapshotOpen(true)}

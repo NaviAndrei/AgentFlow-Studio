@@ -1618,3 +1618,94 @@ describe('executeLiveNode — Prompt 6 real-LLM integration verification', () =>
     expect(streamChat).not.toHaveBeenCalled()
   })
 })
+
+describe('Per-node LLM routing', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(streamChat).mockReset()
+    vi.mocked(streamChat).mockResolvedValue('(mock reply)')
+  })
+
+  afterEach(() => {
+    useLLMConfigStore.getState().setActiveProvider('ollama')
+    useLLMConfigStore.getState().updateProviderSettings('ollama', { model: '' })
+    useLLMConfigStore.getState().updateProviderSettings('openai', { model: '' })
+  })
+
+  it('Test A — node.data.providerOverride overrides global provider in executeLiveNode', async () => {
+    useLLMConfigStore.getState().setActiveProvider('ollama')
+    useLLMConfigStore.getState().updateProviderSettings('ollama', { model: 'llama3' })
+    useSimulationStore.getState().setLiveMode(true)
+    loadGraph(
+      [
+        node('s', 'start'),
+        node('l', 'llm', { providerOverride: 'openai' }),
+        node('o', 'output'),
+      ],
+      [edge('s', 'l'), edge('l', 'o')],
+    )
+    await runToEnd()
+
+    expect(streamChat).toHaveBeenCalledTimes(1)
+    const [config] = vi.mocked(streamChat).mock.calls[0]
+    expect(config.provider).toBe('openai')
+  })
+
+  it('Test B — node.data.modelOverride overrides global model', async () => {
+    useLLMConfigStore.getState().setActiveProvider('ollama')
+    useLLMConfigStore.getState().updateProviderSettings('ollama', { model: 'claude-3' })
+    useSimulationStore.getState().setLiveMode(true)
+    loadGraph(
+      [
+        node('s', 'start'),
+        node('l', 'llm', { modelOverride: 'gpt-4o-mini' }),
+        node('o', 'output'),
+      ],
+      [edge('s', 'l'), edge('l', 'o')],
+    )
+    await runToEnd()
+
+    expect(streamChat).toHaveBeenCalledTimes(1)
+    const [config] = vi.mocked(streamChat).mock.calls[0]
+    expect(config.settings.model).toBe('gpt-4o-mini')
+  })
+
+  it('Test C — node without providerOverride uses global provider', async () => {
+    useLLMConfigStore.getState().setActiveProvider('ollama')
+    useLLMConfigStore.getState().updateProviderSettings('ollama', { model: 'mistral' })
+    useSimulationStore.getState().setLiveMode(true)
+    loadGraph(
+      [
+        node('s', 'start'),
+        node('l', 'llm', {}),
+        node('o', 'output'),
+      ],
+      [edge('s', 'l'), edge('l', 'o')],
+    )
+    await runToEnd()
+
+    expect(streamChat).toHaveBeenCalledTimes(1)
+    const [config] = vi.mocked(streamChat).mock.calls[0]
+    expect(config.provider).toBe('ollama')
+  })
+
+  it('Test D — providerOverride on agent node (default branch) resolves correctly', async () => {
+    useLLMConfigStore.getState().setActiveProvider('ollama')
+    useLLMConfigStore.getState().updateProviderSettings('ollama', { model: 'llama3' })
+    useSimulationStore.getState().setLiveMode(true)
+    loadGraph(
+      [
+        node('s', 'start'),
+        node('a', 'agent', { providerOverride: 'openai', modelOverride: 'gpt-4o' }),
+        node('o', 'output'),
+      ],
+      [edge('s', 'a'), edge('a', 'o')],
+    )
+    await runToEnd()
+
+    expect(streamChat).toHaveBeenCalledTimes(1)
+    const [config] = vi.mocked(streamChat).mock.calls[0]
+    expect(config.provider).toBe('openai')
+    expect(config.settings.model).toBe('gpt-4o')
+  })
+})

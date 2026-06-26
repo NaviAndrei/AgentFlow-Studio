@@ -642,6 +642,7 @@ export function exportPython(
     switch (node.type) {
       case 'llm': {
         const prompt = resolveNodePrompts(node.data).systemPrompt || 'You are a helpful assistant.'
+        if (node.data.providerOverride) emit(`# provider: ${node.data.providerOverride}`)
         emit(
           `${defKeyword} ${name}(state: State) -> dict:`,
           `    """LLM node: ${pyDoc(node.data.label)}."""`,

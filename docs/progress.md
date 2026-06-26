@@ -5,6 +5,105 @@
 > See docs/progress-archive.md for Sessions 1–25 (Sessions 14–25 archived 2026-06-26).
 
 
+
+
+
+---
+<!-- auto-prepended by on_stop_reminder.py on 2026-06-26 -->
+## Handoff — 2026-06-26 (Session 33 — feat(agents): add session-planner roadmap subagent)
+
+### What was completed
+- [x] Modified `docs/layout-fix-log.md`
+- [x] Modified `docs/progress-archive.md`
+- [x] Modified `docs/progress.md`
+- [x] Modified `src/App.tsx`
+- [x] Modified `src/components/Inspector.tsx`
+- [x] Modified `src/components/Navbar.tsx`
+- [x] Modified `src/store/simulationStore.test.ts`
+- [x] Modified `src/store/simulationStore.ts`
+- [x] Modified `src/store/uiStore.test.ts`
+- [x] Modified `src/store/uiStore.ts`
+- [x] Modified `src/types/index.ts`
+- [x] Modified `src/utils/codeExporter.ts`
+- [ ] TODO: annotate WHY each change was made (auto-detected list above is files only)
+
+### Build & Test Status
+| Check | Result |
+|---|---|
+| `npm run typecheck` | ✅ clean |
+| `npm run build` | TODO (not run by hook) |
+| `npm run test` | ✅ 368/368 passing |
+| Browser verification | TODO |
+
+### Decisions made this session
+- [ ] TODO: one bullet per architectural decision
+
+### Known edge cases / deferred
+- [ ] TODO: one bullet per deferred item or known gap
+
+### What to load at resume
+```
+@CLAUDE.md @docs/progress.md
+```
+---
+<!-- auto-prepended by on_stop_reminder.py on 2026-06-26 -->
+## Handoff — 2026-06-26 (Session 32 — feat(export): add async _aget_relevant_documents override to BaseRetriever)
+
+### What was completed
+- [x] Modified `.claude/settings.json`
+- [x] Modified `CLAUDE.md`
+- [x] Modified `docs/layout-fix-log.md`
+- [x] Modified `docs/progress-archive.md`
+- [x] Modified `docs/progress.md`
+- [ ] TODO: annotate WHY each change was made (auto-detected list above is files only)
+
+### Build & Test Status
+| Check | Result |
+|---|---|
+| `npm run typecheck` | ✅ clean |
+| `npm run build` | TODO (not run by hook) |
+| `npm run test` | ✅ 357/357 passing |
+| Browser verification | TODO |
+
+### Decisions made this session
+- [ ] TODO: one bullet per architectural decision
+
+### Known edge cases / deferred
+- [ ] TODO: one bullet per deferred item or known gap
+
+### What to load at resume
+```
+@CLAUDE.md @docs/progress.md
+```
+---
+<!-- auto-prepended by on_stop_reminder.py on 2026-06-26 -->
+## Handoff — 2026-06-26 (Session 31 — fix(ux): wire authToken reload warning to real triggers)
+
+### What was completed
+- [x] Modified `docs/progress-archive.md`
+- [x] Modified `docs/progress.md`
+- [x] Modified `src/utils/codeExporter.test.ts`
+- [x] Modified `src/utils/codeExporter.ts`
+- [ ] TODO: annotate WHY each change was made (auto-detected list above is files only)
+
+### Build & Test Status
+| Check | Result |
+|---|---|
+| `npm run typecheck` | ✅ clean |
+| `npm run build` | TODO (not run by hook) |
+| `npm run test` | ✅ 357/357 passing |
+| Browser verification | TODO |
+
+### Decisions made this session
+- [ ] TODO: one bullet per architectural decision
+
+### Known edge cases / deferred
+- [ ] TODO: one bullet per deferred item or known gap
+
+### What to load at resume
+```
+@CLAUDE.md @docs/progress.md
+```
 ---
 <!-- auto-prepended by on_stop_reminder.py on 2026-06-26 -->
 ## Handoff — 2026-06-26 (Session 30 — fix(ux): wire authToken reload warning to real triggers)
