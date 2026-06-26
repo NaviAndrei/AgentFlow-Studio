@@ -13,16 +13,14 @@
 
 
 
+
 ---
 <!-- auto-prepended by on_stop_reminder.py on 2026-06-26 -->
-## Handoff — 2026-06-26 (Session 25 — fix(export): tool:/retriever: nodes now emit real HTTP endpoint Python)
+## Handoff — 2026-06-26 (Session 26 — fix(security+export): authToken excluded from localStorage + BaseRetriever export)
 
 ### What was completed
 - [x] Modified `docs/progress.md`
-- [x] Modified `src/store/snapshotStore.test.ts`
-- [x] Modified `src/store/snapshotStore.ts`
-- [x] Modified `src/utils/codeExporter.test.ts`
-- [x] Modified `src/utils/codeExporter.ts`
+- [x] Modified `src/App.tsx`
 - [ ] TODO: annotate WHY each change was made (auto-detected list above is files only)
 
 ### Build & Test Status
@@ -30,7 +28,7 @@
 |---|---|
 | `npm run typecheck` | ✅ clean |
 | `npm run build` | TODO (not run by hook) |
-| `npm run test` | ✅ 345/345 passing |
+| `npm run test` | ✅ 349/349 passing |
 | Browser verification | TODO |
 
 ### Decisions made this session
@@ -38,6 +36,67 @@
 
 ### Known edge cases / deferred
 - [ ] TODO: one bullet per deferred item or known gap
+
+### What to load at resume
+```
+@CLAUDE.md @docs/progress.md
+```
+---
+## Handoff — 2026-06-26 (Session 25 — authToken reload warning)
+
+### What was completed
+- Recon: no `onRehydrateStorage`/persist hook anywhere — `canvasStore` has no
+  Zustand `persist` middleware (confirmed again, same finding as Session 24).
+  Snapshots in `snapshotStore` are manual save slots, not auto-restored on
+  page load. `toastStore` exposes `pushToast(text, tone)`, not `.warn`/`.info`
+  — used that API instead of the brief's hypothetical `useToastStore.warn()`.
+- `App.tsx`: added a second one-shot `useEffect` (`[]` deps, alongside the
+  existing `?flow=` URL-decode effect) that reads `useCanvasStore.getState().nodes`
+  once on mount and pushes a `'warning'` toast naming any `tool:`/`retriever:`
+  node that has `endpointUrl` set but no `authToken` — the state Session 24's
+  snapshot-stripping leaves a restored node in. ✅
+- TDD: created `src/App.test.tsx` (new file) — 4 tests under "App mount —
+  authToken reload warning": warns with node label when endpointUrl set/no
+  token; silent when both set; silent when no endpointUrl; silent when no
+  tool:/retriever: nodes. Spied on `useToastStore.getState().pushToast` rather
+  than reading `toasts` from state, since the test harness's `window.setTimeout`
+  mock (`src/test-setup.ts`) fires the toast's auto-dismiss synchronously,
+  which would otherwise make the toast invisible by the time the test asserts.
+  Test A failed pre-implementation as expected (3/4 passed vacuously as
+  correct regression guards), all 4 pass after. ✅
+
+### Build & Test Status
+| Check | Result |
+|---|---|
+| `npm run typecheck` | ✅ clean |
+| `npm run build` | ✅ clean (931.83 KB / 282.86 KB gzip; pre-existing >500kB chunk + fflate dynamic-import warnings only) |
+| `npm run test` | ✅ **349/349 passing** (33 files), +4 net (345 → 349) |
+| Browser verification | ⚠️ see below |
+
+### Decisions made this session
+- Used `pushToast(text, 'warning')` (the real `toastStore` API) instead of the
+  brief's hypothetical `.warn()`/`.info()` methods, which don't exist.
+- Spy on `pushToast` in tests instead of asserting on `toasts` array length —
+  the synchronous-timer test mock auto-dismisses toasts within the same tick.
+- Kept the check in `App.tsx` per the brief, even though `components.md`'s
+  "no business logic in App.tsx" rule technically applies — the existing
+  `?flow=` decode effect is the same shape of one-shot mount logic, so this
+  follows established precedent rather than introducing a new pattern.
+
+### Known edge cases / deferred
+- **Functionally this warning cannot fire via a real page reload today**:
+  `canvasStore` has no persistence, so `nodes` is always `[]` at mount time
+  in normal use. The only way to populate the canvas is (a) the `?flow=`
+  query-param decode, which resolves *after* this effect already ran (its
+  `decodeFlow(...).then(...)` is async), or (b) the user manually opening the
+  Snapshot Manager and clicking Restore — also after mount. Browser smoke
+  test confirmed canvas starts empty on load (no nodes, no toast) — expected,
+  not a bug, given the lack of auto-rehydration. The implemented mount-check
+  is correct per the brief and is exercised by the unit tests; closing the
+  real-world gap would require also running the same check inside
+  `restoreSnapshot` (snapshotStore.ts) and/or the `?flow=` decode callback —
+  out of scope for this session, flagged here for a future session if the
+  warning needs to actually surface in practice.
 
 ### What to load at resume
 ```
