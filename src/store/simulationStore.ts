@@ -1253,6 +1253,33 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
       }
       case 'tool':
       case 'retriever': {
+        // When endpointUrl is set, dispatch to a real HTTP/MCP tool endpoint
+        // (reusing the mcpServer: callTool path) instead of calling an LLM.
+        // Errors here toast and fail loudly — no silent fallback to the LLM
+        // path, since that would mask a broken tool integration.
+        if (node.data.endpointUrl) {
+          try {
+            const signal = abortController?.signal
+            const result = await callTool(
+              node.data.endpointUrl,
+              node.data.authToken,
+              node.data.toolName ?? node.type,
+              { input: latestContent(), nodeId },
+              signal,
+            )
+            const output = JSON.stringify(result, null, 2)
+            appendStream(nodeId, output)
+            set({
+              messages: [...get().messages, { role: 'assistant', content: output }],
+            })
+            metrics.addTokens(estimateTokens(output))
+            return { role: 'assistant', content: truncate(output, 400) }
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err)
+            useToastStore.getState().pushToast(`${node.data.label}: ${message}`, 'warning')
+            return { error: message }
+          }
+        }
         // Tool/retriever nodes call the real provider in Live mode, mirroring
         // the default: branch's agent pattern. Falls back to a toast +
         // { error } on failure so a single bad call can't crash the run.

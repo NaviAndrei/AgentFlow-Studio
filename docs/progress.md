@@ -7,6 +7,85 @@
 
 
 
+
+
+---
+<!-- auto-prepended by on_stop_reminder.py on 2026-06-26 -->
+## Handoff — 2026-06-26 (Session 22 — feat: Session 18 â€” tool: system prompt injection + hook rewrite)
+
+### What was completed
+- [x] Modified `docs/progress.md`
+- [x] Modified `src/store/simulationStore.test.ts`
+- [x] Modified `src/store/simulationStore.ts`
+- [x] Modified `src/types/index.ts`
+- [ ] TODO: annotate WHY each change was made (auto-detected list above is files only)
+
+### Build & Test Status
+| Check | Result |
+|---|---|
+| `npm run typecheck` | ✅ clean |
+| `npm run build` | TODO (not run by hook) |
+| `npm run test` | ✅ 327/327 passing |
+| Browser verification | TODO |
+
+### Decisions made this session
+- [ ] TODO: one bullet per architectural decision
+
+### Known edge cases / deferred
+- [ ] TODO: one bullet per deferred item or known gap
+
+### What to load at resume
+```
+@CLAUDE.md @docs/progress.md
+```
+---
+## Handoff — 2026-06-26 (Session 20 — tool: HTTP endpoint dispatch)
+
+### What was completed
+- Added `endpointUrl?: string` to `AgentFlowNodeData` (`src/types/index.ts`) —
+  reused the existing `authToken?: string` field rather than adding a
+  duplicate, since it's already untyped/shared across node kinds.
+- `tool:`/`retriever:` case in `executeLiveNode` (`src/store/simulationStore.ts`)
+  now branches: if `node.data.endpointUrl` is set, dispatches via `callTool()`
+  (same signature/pattern as the `mcpServer:` case) instead of calling the LLM.
+  Falls back to the existing `buildToolContext` + `streamChat` LLM path when
+  `endpointUrl` is unset. ✅
+- TDD: added 4 tests under `"executeLiveNode tool: branch — HTTP endpoint
+  dispatch"` in `simulationStore.test.ts` (tool: with endpoint dispatches to
+  callTool not streamChat; tool: without endpoint falls back to streamChat;
+  retriever: with endpoint dispatches to callTool; callTool throws → toast,
+  no fallback to streamChat). 3 of 4 failed pre-implementation as expected
+  (the no-endpointUrl case already passed against old code); all 4 pass after. ✅
+
+### Build & Test Status
+| Check | Result |
+|---|---|
+| `npm run typecheck` | ✅ clean |
+| `npm run build` | ✅ clean (928 KB / 282 KB gzip; pre-existing >500kB chunk + fflate dynamic-import warnings only) |
+| `npm run test` | ✅ **327/327 passing** (32 files), +4 net (323 → 327) |
+| Browser verification | N/A — store-level engine change, not browser-observable |
+
+### Decisions made this session
+- Fail loudly on `callTool` error (toast, no silent LLM fallback) — preserves
+  user trust: if a tool endpoint is configured, a silent degrade to LLM would
+  mask a broken integration.
+- Did not add a new `authToken` field — reused the existing one already on
+  `AgentFlowNodeData` (shared with the A2A Remote Agent node).
+- Did not touch `mcpServer:`, `default:`, `llm:`, abort/retry core, or
+  `callTool`/`parseToolCall` themselves — only the `tool:`/`retriever:` branch.
+
+### Known edge cases / deferred
+- No UI yet for setting `endpointUrl`/`authToken` on `tool:`/`retriever:` nodes
+  in the canvas (fields exist on the type, not exposed in NodeConfigPanel) —
+  tracked in TASKS.md as a Session 21 candidate.
+- `callTool`'s response shape is assumed to match the `mcpServer:` case
+  (JSON-stringified into the transcript) — not yet verified against a real
+  external tool endpoint, only via the mocked test.
+
+### What to load at resume
+```
+@CLAUDE.md @docs/progress.md @ARCHITECTURE.md
+```
 ---
 <!-- auto-prepended by on_stop_reminder.py on 2026-06-25 -->
 ## Handoff — 2026-06-25 (Session 19 — feat(hooks): auto-fill session handoff and sync Open TODOs on stop)
@@ -281,6 +360,8 @@ src/store/simulationStore.ts (agent/supervisor/loop currently use fakeStreamText
 - [x] Wire `node.data.tools`/`toolName` into the `tool:`/`retriever:` system prompt — done (Session 18); scoped to Option B (system-prompt injection via `buildToolContext`), since no real tool-execution backend exists for plain `tool:` nodes (full dispatch loop remains deferred, see Known Gaps)
 - [x] Add `maxTokens?: number` to `AgentFlowNodeData` — done (Session 12); wired into the actual provider request body (was previously display-only)
 - [x] Remove inline Approve/Reject buttons from `MetricsBar.tsx` (duplicated by modal) — done (Session 15)
+- [x] Wire `tool:`/`retriever:` nodes into real tool-dispatch loop — done (Session 20); HTTP endpoint path via `callTool()` reuse, gated on `node.data.endpointUrl`; LLM-only path remains the fallback
+- [ ] Expose `endpointUrl`/`authToken` fields on `tool:`/`retriever:` nodes in NodeConfigPanel — human — MED (Session 20 follow-up)
 - [ ] Consider `-StepOnly` param for `pre-push-check.ps1` — human — LOW
 
 ## Known Gaps (intentionally deferred)

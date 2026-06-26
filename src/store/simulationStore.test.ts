@@ -15,10 +15,16 @@ import { useSimulationStore } from './simulationStore'
 import { useToastStore } from './toastStore'
 import { useSimulationMetricsStore } from './simulationMetricsStore'
 import { streamChat } from '../llm'
+import { callTool } from '../utils/mcpClient'
 
 vi.mock('../llm', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../llm')>()
   return { ...actual, streamChat: vi.fn() }
+})
+
+vi.mock('../utils/mcpClient', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../utils/mcpClient')>()
+  return { ...actual, callTool: vi.fn() }
 })
 
 function node(
@@ -1128,6 +1134,93 @@ describe("executeLiveNode — tool: branch — system prompt includes tool metad
     const systemContent = (chat[0] as { role: string; content: string }).content
     expect(systemContent).toContain("search")
     expect(systemContent).toContain("web search tool")
+  })
+})
+
+describe("executeLiveNode tool: branch — HTTP endpoint dispatch", () => {
+  it("tool: node with endpointUrl set calls callTool and not streamChat", async () => {
+    vi.mocked(callTool).mockResolvedValue({ ok: true })
+    useSimulationStore.getState().setLiveMode(true)
+    loadGraph(
+      [
+        node("s", "start"),
+        node("t", "tool", {
+          endpointUrl: "https://example.com/mcp",
+          authToken: "secret-token",
+          toolName: "search",
+        }),
+        node("o", "output"),
+      ],
+      [edge("s", "t"), edge("t", "o")],
+    )
+
+    await runToEnd()
+
+    expect(callTool).toHaveBeenCalledTimes(1)
+    const [serverUrl, authToken, name, input] = vi.mocked(callTool).mock.calls[0]
+    expect(serverUrl).toBe("https://example.com/mcp")
+    expect(authToken).toBe("secret-token")
+    expect(name).toBe("search")
+    expect(input).toMatchObject({})
+    expect(streamChat).not.toHaveBeenCalled()
+  })
+
+  it("tool: node without endpointUrl falls back to streamChat and does not call callTool", async () => {
+    useSimulationStore.getState().setLiveMode(true)
+    loadGraph(
+      [node("s", "start"), node("t", "tool"), node("o", "output")],
+      [edge("s", "t"), edge("t", "o")],
+    )
+
+    await runToEnd()
+
+    expect(callTool).not.toHaveBeenCalled()
+    expect(streamChat).toHaveBeenCalledTimes(1)
+  })
+
+  it("retriever: node with endpointUrl set calls callTool and not streamChat", async () => {
+    vi.mocked(callTool).mockResolvedValue({ ok: true })
+    useSimulationStore.getState().setLiveMode(true)
+    loadGraph(
+      [
+        node("s", "start"),
+        node("r", "retriever", {
+          endpointUrl: "https://example.com/mcp",
+          toolName: "retrieve",
+        }),
+        node("o", "output"),
+      ],
+      [edge("s", "r"), edge("r", "o")],
+    )
+
+    await runToEnd()
+
+    expect(callTool).toHaveBeenCalledTimes(1)
+    expect(streamChat).not.toHaveBeenCalled()
+  })
+
+  it("tool: node with endpointUrl set, callTool throws — toasts and does not fall back to streamChat", async () => {
+    vi.mocked(callTool).mockRejectedValue(new Error("network error"))
+    useSimulationStore.getState().setLiveMode(true)
+    loadGraph(
+      [
+        node("s", "start"),
+        node("t", "tool", { endpointUrl: "https://example.com/mcp" }),
+        node("o", "output"),
+      ],
+      [edge("s", "t"), edge("t", "o")],
+    )
+    const pushToast = vi.spyOn(useToastStore.getState(), "pushToast")
+    pushToast.mockClear()
+
+    const s = await runToEnd()
+
+    expect(pushToast).toHaveBeenCalledTimes(1)
+    const [message, tone] = pushToast.mock.calls[0]
+    expect(message).toContain("network error")
+    expect(tone).toBe("warning")
+    expect(s.nodeOutputs.t).toMatchObject({ error: "network error" })
+    expect(streamChat).not.toHaveBeenCalled()
   })
 })
 

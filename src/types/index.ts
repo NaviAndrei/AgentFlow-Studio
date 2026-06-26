@@ -70,6 +70,8 @@ export type AgentFlowNodeData = {
   description?: string
   inputSchema?: string
   outputSchema?: string
+  /** Tool — HTTP endpoint dispatch (falls back to LLM-only when unset). */
+  endpointUrl?: string
   /** Memory */
   memoryType?: MemoryType
   /** Condition */
