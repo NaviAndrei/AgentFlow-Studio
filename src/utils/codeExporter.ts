@@ -417,6 +417,9 @@ export function exportPython(
   const hasHttpTool = graphNodes.some(
     (n) => (n.type === 'tool' || n.type === 'retriever') && (n.data.endpointUrl ?? '').trim() !== '',
   )
+  const hasHttpRetriever = graphNodes.some(
+    (n) => n.type === 'retriever' && (n.data.endpointUrl ?? '').trim() !== '',
+  )
   // Only checkpointer / short-term memory becomes a LangGraph checkpointer;
   // a vector-store memory belongs to a Retriever, not the graph compile.
   const checkpointerNodes = memoryNodes.filter(
@@ -480,7 +483,7 @@ export function exportPython(
   if (needsOs) emit('import os')
   if (needsOperator) emit('import operator')
   emit(
-    `from typing import Annotated, TypedDict${needsLiteral ? ', Literal' : ''}${needsOptional ? ', Optional' : ''}`,
+    `from typing import Annotated, TypedDict${needsLiteral ? ', Literal' : ''}${needsOptional ? ', Optional' : ''}${hasHttpRetriever ? ', List' : ''}`,
   )
   emit('')
   emit('from langgraph.graph import StateGraph, START, END')
@@ -506,6 +509,10 @@ export function exportPython(
   }
   for (const setup of modelSetups) emit(setup.importLine)
   if (hasTools) emit('from langchain_core.tools import tool')
+  if (hasHttpRetriever) {
+    emit('from langchain_core.retrievers import BaseRetriever')
+    emit('from langchain_core.documents import Document')
+  }
   emit('')
 
   // --- State ---
@@ -1348,13 +1355,22 @@ export function exportPython(
         const endpointUrl = (node.data.endpointUrl ?? '').trim()
         if (endpointUrl !== '') {
           const envVar = authTokenEnvVar(node.id)
+          const className = `${name.charAt(0).toUpperCase()}${name.slice(1)}Retriever`
           emit(
+            `class ${className}(BaseRetriever):`,
+            `    """Retriever: ${pyDoc(node.data.label)} — HTTP endpoint (top_k=${k})."""`,
+            '    def _get_relevant_documents(self, query: str) -> List[Document]:',
+            `        headers = {"Authorization": f"Bearer {os.environ.get('${envVar}', '')}"}`,
+            `        resp = httpx.post(${pyStr(endpointUrl)}, json={"query": query, "top_k": ${k}}, headers=headers)`,
+            '        results = resp.json()',
+            '        return [Document(page_content=str(r)) for r in results]',
+            '',
+            `${name}_retriever = ${className}()`,
+            '',
             `${defKeyword} ${name}(state: State) -> dict:`,
             `    """Retriever node: ${pyDoc(node.data.label)} — HTTP endpoint (top_k=${k})."""`,
             '    last = state["messages"][-1]',
-            `    headers = {"Authorization": f"Bearer {os.environ.get('${envVar}', '')}"}`,
-            `    resp = httpx.post(${pyStr(endpointUrl)}, json={"query": str(last.content), "top_k": ${k}}, headers=headers)`,
-            '    result = resp.json()',
+            `    result = ${name}_retriever.invoke(str(last.content))`,
             `    return {"messages": [{"role": "user", "content": f"[${name} result] {result}"}]}`,
             '',
           )

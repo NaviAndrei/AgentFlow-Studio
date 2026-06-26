@@ -42,7 +42,10 @@ export const useSnapshotStore = create<SnapshotState>((set, get) => ({
       name: trimmed,
       savedAt: new Date().toISOString(),
       // Severs reactivity — later canvas edits must not mutate the saved slot.
-      nodes: JSON.parse(JSON.stringify(nodes)) as AgentFlowNode[],
+      // authToken is stripped before persisting: secrets must never reach localStorage.
+      nodes: JSON.parse(
+        JSON.stringify(nodes.map((n) => ({ ...n, data: { ...n.data, authToken: undefined } }))),
+      ) as AgentFlowNode[],
       edges: JSON.parse(JSON.stringify(edges)) as AgentFlowEdge[],
     }
     const next = [...get().snapshots, snapshot].slice(-MAX_SNAPSHOTS)

@@ -743,3 +743,46 @@ describe('exportPython — tool:/retriever: nodes with endpointUrl/authToken', (
     expect(code).toMatch(/os\.environ\.get\(['"]TOOL_T_AUTH_TOKEN['"]/)
   })
 })
+
+describe('LangGraph export — retriever: proper class', () => {
+  it('retriever: node with endpointUrl exports a BaseRetriever subclass', () => {
+    const nodes = [
+      node('s', 'start', { label: 'Start' }),
+      node('r', 'retriever', {
+        label: 'Docs',
+        endpointUrl: 'https://api.example.com/retrieve',
+        authToken: 'super-secret-token',
+      }),
+    ]
+    const code = exportPython(nodes, [edge('s', 'r')])
+    expect(code).toContain('from langchain_core.retrievers import BaseRetriever')
+    expect(code).toContain('BaseRetriever')
+    expect(code).not.toContain('RunnableLambda')
+    expect(code).toContain('_get_relevant_documents')
+    expect(code).not.toContain('super-secret-token')
+  })
+
+  it('retriever: node without endpointUrl keeps the existing placeholder behavior', () => {
+    const nodes = [
+      node('s', 'start', { label: 'Start' }),
+      node('r', 'retriever', { label: 'Docs' }),
+    ]
+    const code = exportPython(nodes, [edge('s', 'r')])
+    expect(code).toContain('# TODO: wire a real vector store')
+    expect(code).not.toContain('BaseRetriever')
+  })
+
+  it('retriever: node authToken never appears verbatim in the export output', () => {
+    const nodes = [
+      node('s', 'start', { label: 'Start' }),
+      node('r', 'retriever', {
+        label: 'Docs',
+        endpointUrl: 'https://api.example.com/retrieve',
+        authToken: 'sk-do-not-leak-this',
+      }),
+    ]
+    const code = exportPython(nodes, [edge('s', 'r')])
+    expect(code).not.toContain('sk-do-not-leak-this')
+    expect(code).toMatch(/os\.environ\.get\(['"]TOOL_R_AUTH_TOKEN['"]/)
+  })
+})

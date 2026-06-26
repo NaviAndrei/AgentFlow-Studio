@@ -70,3 +70,37 @@ describe('snapshotStore — restoreSnapshot', () => {
     expect(loadGraph).toHaveBeenCalledWith(snap.nodes, snap.edges)
   })
 })
+
+function toolNode(id: string, authToken: string): AgentFlowNode {
+  return {
+    id,
+    type: 'tool',
+    position: { x: 0, y: 0 },
+    data: { label: id, authToken, endpointUrl: 'https://api.example.com/tool' },
+  }
+}
+
+describe('snapshotStore — saveSnapshot persistence excludes authToken', () => {
+  it('does not write authToken to localStorage', () => {
+    useCanvasStore.setState({ nodes: [toolNode('t1', 'super-secret')], edges: [] })
+
+    useSnapshotStore.getState().saveSnapshot('With Token')
+
+    const raw = localStorage.getItem('agentflow-snapshots-v1')
+    expect(raw).not.toBeNull()
+    expect(raw).not.toContain('authToken')
+    expect(raw).not.toContain('super-secret')
+  })
+
+  it('hydrating from storage with no authToken leaves node.data.authToken undefined', () => {
+    useCanvasStore.setState({ nodes: [toolNode('t1', 'super-secret')], edges: [] })
+    useSnapshotStore.getState().saveSnapshot('With Token')
+
+    useSnapshotStore.setState({ snapshots: [] })
+    useSnapshotStore.getState()._loadFromStorage()
+
+    const { snapshots } = useSnapshotStore.getState()
+    expect(snapshots).toHaveLength(1)
+    expect(snapshots[0].nodes[0].data.authToken).toBeUndefined()
+  })
+})

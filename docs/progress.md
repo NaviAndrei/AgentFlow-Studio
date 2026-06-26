@@ -12,6 +12,97 @@
 
 
 
+
+---
+<!-- auto-prepended by on_stop_reminder.py on 2026-06-26 -->
+## Handoff — 2026-06-26 (Session 25 — fix(export): tool:/retriever: nodes now emit real HTTP endpoint Python)
+
+### What was completed
+- [x] Modified `docs/progress.md`
+- [x] Modified `src/store/snapshotStore.test.ts`
+- [x] Modified `src/store/snapshotStore.ts`
+- [x] Modified `src/utils/codeExporter.test.ts`
+- [x] Modified `src/utils/codeExporter.ts`
+- [ ] TODO: annotate WHY each change was made (auto-detected list above is files only)
+
+### Build & Test Status
+| Check | Result |
+|---|---|
+| `npm run typecheck` | ✅ clean |
+| `npm run build` | TODO (not run by hook) |
+| `npm run test` | ✅ 345/345 passing |
+| Browser verification | TODO |
+
+### Decisions made this session
+- [ ] TODO: one bullet per architectural decision
+
+### Known edge cases / deferred
+- [ ] TODO: one bullet per deferred item or known gap
+
+### What to load at resume
+```
+@CLAUDE.md @docs/progress.md
+```
+---
+## Handoff — 2026-06-26 (Session 24 — authToken security + retriever export)
+
+### What was completed
+- Recon found `canvasStore` has no Zustand `persist` middleware at all — the
+  actual localStorage write path for node data is `snapshotStore.ts`'s manual
+  `saveSnapshot`, which deep-cloned `nodes`/`edges` verbatim (including
+  `authToken`) before `localStorage.setItem`. Adapted Task A to that real path.
+- Task A — `saveSnapshot` (`src/store/snapshotStore.ts`) now strips
+  `authToken` (sets it to `undefined`) from each node's `data` before the
+  `JSON.parse(JSON.stringify(...))` deep clone that gets persisted, so the
+  secret never reaches `localStorage`. ✅
+- Task B — `retriever:` case with `endpointUrl` set (`src/utils/codeExporter.ts`)
+  now emits a `BaseRetriever` subclass (`_get_relevant_documents` returning
+  `List[Document]`) instead of a plain `RunnableLambda`-style function; the
+  graph node function calls `.invoke()` on an instance of that class. The
+  no-endpoint placeholder path is unchanged. `from langchain_core.retrievers
+  import BaseRetriever` / `from langchain_core.documents import Document` /
+  `List` import are gated on `hasHttpRetriever`. ✅
+- TDD: 2 new tests in `snapshotStore.test.ts` (localStorage write excludes
+  `authToken`/its value; reload from storage leaves `node.data.authToken`
+  `undefined`). 3 new tests in `codeExporter.test.ts` under "LangGraph export
+  — retriever: proper class" (`BaseRetriever` + `_get_relevant_documents`
+  present, no `RunnableLambda`; no-endpoint path unchanged; authToken never
+  verbatim). All failed pre-implementation as expected, all pass after. ✅
+
+### Build & Test Status
+| Check | Result |
+|---|---|
+| `npm run typecheck` | ✅ clean |
+| `npm run build` | ✅ clean (931.48 KB / 282.71 KB gzip; pre-existing >500kB chunk + fflate dynamic-import warnings only) |
+| `npm run test` | ✅ **345/345 passing** (32 files), +5 net (340 → 345) |
+
+### Decisions made this session
+- `authToken: undefined` (not `''`) when stripping before persistence —
+  `undefined` means "never set / not in this snapshot", `''` would mean "user
+  explicitly cleared it", a different state.
+- `BaseRetriever` over `RunnableLambda` — matches LangChain's standard
+  retriever interface (`_get_relevant_documents` is the sync contract);
+  `_aget_relevant_documents` (async) intentionally not added — MVP scope.
+- Class name derived from the existing deduped `name` identifier
+  (`${Name}Retriever`) rather than a new naming scheme, keeping generated
+  code consistent with how other node names are already resolved.
+- Did not touch `canvasStore.ts` (no `persist` middleware exists there —
+  the Task A brief's `partialize` pattern didn't apply) or the `tool:` case
+  in `codeExporter.ts` (out of scope; only `retriever:` needed the class
+  treatment per the session brief).
+
+### Known edge cases / deferred
+- `authToken` is lost from snapshots on reload by design — no UI warning yet
+  if a restored `tool:`/`retriever:` node has `endpointUrl` set but an empty
+  `authToken`.
+- `BaseRetriever._get_relevant_documents` is sync only; no async
+  `_aget_relevant_documents` override — acceptable for MVP, same posture as
+  prior sessions' HTTP-endpoint stubs.
+
+### What to load at resume
+```
+@CLAUDE.md @docs/progress.md
+```
 ---
 <!-- auto-prepended by on_stop_reminder.py on 2026-06-26 -->
 ## Handoff — 2026-06-26 (Session 24 — feat(tool-nodes): URL validation guard + authToken plain-text warning)
