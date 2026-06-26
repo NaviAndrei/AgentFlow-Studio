@@ -123,6 +123,12 @@ function pyDoc(value: string): string {
   return value.replace(/\\/g, '/').replace(/"/g, "'")
 }
 
+/** Env var name for a node's auth token — never export the token itself. */
+function authTokenEnvVar(nodeId: string): string {
+  const ident = nodeId.toUpperCase().replace(/[^A-Z0-9]+/g, '_')
+  return `TOOL_${ident}_AUTH_TOKEN`
+}
+
 /**
  * Parse a Subgraph node's input/output mapping JSON ('{"from": "to"}') into
  * ordered [from, to] string pairs. Invalid or non-string entries are dropped,
@@ -304,7 +310,14 @@ export function exportRequirements(nodes: AgentFlowNode[]): string {
   if (nodes.some((n) => n.type === 'computerUse')) {
     lines.push('anthropic')
   }
-  if (nodes.some((n) => n.type === 'a2aAgent' || n.type === 'httpRequest')) {
+  if (
+    nodes.some(
+      (n) =>
+        n.type === 'a2aAgent' ||
+        n.type === 'httpRequest' ||
+        (['tool', 'retriever'].includes(n.type) && (n.data.endpointUrl ?? '').trim() !== ''),
+    )
+  ) {
     lines.push('httpx')
   }
   lines.push('python-dotenv')
@@ -387,11 +400,23 @@ export function exportPython(
   const a2aNeedsAuth = graphNodes.some(
     (n) => n.type === 'a2aAgent' && (n.data.authToken ?? '').trim() !== '',
   )
+  const httpToolNeedsAuth = graphNodes.some(
+    (n) =>
+      (n.type === 'tool' || n.type === 'retriever') &&
+      (n.data.endpointUrl ?? '').trim() !== '' &&
+      (n.data.authToken ?? '').trim() !== '',
+  )
   const needsOs =
     envVars.length > 0 ||
     a2aNeedsAuth ||
+    httpToolNeedsAuth ||
     modelSetups.some((s) => s.pythonLine('m', 0).includes('os.environ'))
-  const hasTools = nodes.some((n) => n.type === 'tool')
+  const hasTools = nodes.some(
+    (n) => n.type === 'tool' && (n.data.endpointUrl ?? '').trim() === '',
+  )
+  const hasHttpTool = graphNodes.some(
+    (n) => (n.type === 'tool' || n.type === 'retriever') && (n.data.endpointUrl ?? '').trim() !== '',
+  )
   // Only checkpointer / short-term memory becomes a LangGraph checkpointer;
   // a vector-store memory belongs to a Retriever, not the graph compile.
   const checkpointerNodes = memoryNodes.filter(
@@ -473,7 +498,7 @@ export function exportPython(
   if (graphNodes.some((n) => n.type === 'computerUse')) {
     emit('from anthropic import Anthropic')
   }
-  if (graphNodes.some((n) => n.type === 'a2aAgent' || n.type === 'httpRequest')) {
+  if (graphNodes.some((n) => n.type === 'a2aAgent' || n.type === 'httpRequest') || hasHttpTool) {
     emit('import httpx')
   }
   if (graphNodes.some((n) => n.type === 'multimodalInput')) {
@@ -582,7 +607,9 @@ export function exportPython(
   }
 
   // --- Tools ---
-  const toolNodes = orderedNodes.filter((n) => n.type === 'tool')
+  const toolNodes = orderedNodes.filter(
+    (n) => n.type === 'tool' && (n.data.endpointUrl ?? '').trim() === '',
+  )
   const toolFnNames = new Map<string, string>()
   if (toolNodes.length > 0) {
     emit('# --- Tools ---')
@@ -644,6 +671,21 @@ export function exportPython(
         break
       }
       case 'tool': {
+        const endpointUrl = (node.data.endpointUrl ?? '').trim()
+        if (endpointUrl !== '') {
+          const envVar = authTokenEnvVar(node.id)
+          emit(
+            `${defKeyword} ${name}(state: State) -> dict:`,
+            `    """Tool node: ${pyDoc(node.data.label)} — HTTP endpoint."""`,
+            '    last = state["messages"][-1]',
+            `    headers = {"Authorization": f"Bearer {os.environ.get('${envVar}', '')}"}`,
+            `    resp = httpx.post(${pyStr(endpointUrl)}, json={"query": str(last.content)}, headers=headers)`,
+            '    result = resp.json()',
+            `    return {"messages": [{"role": "user", "content": f"[${name} result] {result}"}]}`,
+            '',
+          )
+          break
+        }
         const toolName = toolFnNames.get(node.id) ?? 'my_tool'
         // Invoke with the first parameter name declared in the input schema
         // so the call matches the generated @tool signature.
@@ -1303,6 +1345,21 @@ export function exportPython(
       }
       case 'retriever': {
         const k = node.data.topK ?? 4
+        const endpointUrl = (node.data.endpointUrl ?? '').trim()
+        if (endpointUrl !== '') {
+          const envVar = authTokenEnvVar(node.id)
+          emit(
+            `${defKeyword} ${name}(state: State) -> dict:`,
+            `    """Retriever node: ${pyDoc(node.data.label)} — HTTP endpoint (top_k=${k})."""`,
+            '    last = state["messages"][-1]',
+            `    headers = {"Authorization": f"Bearer {os.environ.get('${envVar}', '')}"}`,
+            `    resp = httpx.post(${pyStr(endpointUrl)}, json={"query": str(last.content), "top_k": ${k}}, headers=headers)`,
+            '    result = resp.json()',
+            `    return {"messages": [{"role": "user", "content": f"[${name} result] {result}"}]}`,
+            '',
+          )
+          break
+        }
         emit(
           `${defKeyword} ${name}(state: State) -> dict:`,
           `    """Retriever node: ${pyDoc(node.data.label)} (kb: ${pyDoc(node.data.knowledgeBase ?? 'docs')}, top_k=${k}, threshold=${node.data.similarityThreshold ?? 0.75})."""`,

@@ -684,3 +684,62 @@ describe('exportPython — tryCatch', () => {
     )
   })
 })
+
+describe('exportPython — tool:/retriever: nodes with endpointUrl/authToken', () => {
+  it('tool: node without endpointUrl exports a LangGraph @tool stub, no endpointUrl/authToken strings', () => {
+    const nodes = [
+      node('s', 'start', { label: 'Start' }),
+      node('t', 'tool', { label: 'Search', toolName: 'web_search' }),
+    ]
+    const code = exportPython(nodes, [edge('s', 't')])
+    expect(code).toContain('def web_search(query: str) -> str:')
+    expect(code).not.toContain('endpointUrl')
+    expect(code).not.toContain('authToken')
+  })
+
+  it('tool: node with endpointUrl exports an HTTP-backed tool node, authToken via env var', () => {
+    const nodes = [
+      node('s', 'start', { label: 'Start' }),
+      node('t', 'tool', {
+        label: 'Search',
+        toolName: 'web_search',
+        endpointUrl: 'https://api.example.com/search',
+        authToken: 'super-secret-token',
+      }),
+    ]
+    const code = exportPython(nodes, [edge('s', 't')])
+    expect(code).toContain('https://api.example.com/search')
+    expect(code).toContain('os.environ.get(')
+    expect(code).not.toContain('super-secret-token')
+  })
+
+  it('retriever: node with endpointUrl exports an HTTP-backed retriever node, authToken via env var', () => {
+    const nodes = [
+      node('s', 'start', { label: 'Start' }),
+      node('r', 'retriever', {
+        label: 'Docs',
+        endpointUrl: 'https://api.example.com/retrieve',
+        authToken: 'super-secret-token',
+      }),
+    ]
+    const code = exportPython(nodes, [edge('s', 'r')])
+    expect(code).toContain('https://api.example.com/retrieve')
+    expect(code).toContain('os.environ.get(')
+    expect(code).not.toContain('super-secret-token')
+  })
+
+  it('tool: node authToken never appears verbatim in the export output', () => {
+    const nodes = [
+      node('s', 'start', { label: 'Start' }),
+      node('t', 'tool', {
+        label: 'Search',
+        toolName: 'web_search',
+        endpointUrl: 'https://api.example.com/search',
+        authToken: 'sk-do-not-leak-this',
+      }),
+    ]
+    const code = exportPython(nodes, [edge('s', 't')])
+    expect(code).not.toContain('sk-do-not-leak-this')
+    expect(code).toMatch(/os\.environ\.get\(['"]TOOL_T_AUTH_TOKEN['"]/)
+  })
+})

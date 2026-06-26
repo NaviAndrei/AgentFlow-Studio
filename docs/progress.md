@@ -11,6 +11,95 @@
 
 
 
+
+---
+<!-- auto-prepended by on_stop_reminder.py on 2026-06-26 -->
+## Handoff — 2026-06-26 (Session 24 — feat(tool-nodes): URL validation guard + authToken plain-text warning)
+
+### What was completed
+- [x] Modified `docs/progress.md`
+- [x] Modified `src/utils/codeExporter.test.ts`
+- [x] Modified `src/utils/codeExporter.ts`
+- [ ] TODO: annotate WHY each change was made (auto-detected list above is files only)
+
+### Build & Test Status
+| Check | Result |
+|---|---|
+| `npm run typecheck` | ✅ clean |
+| `npm run build` | TODO (not run by hook) |
+| `npm run test` | ✅ 340/340 passing |
+| Browser verification | TODO |
+
+### Decisions made this session
+- [ ] TODO: one bullet per architectural decision
+
+### Known edge cases / deferred
+- [ ] TODO: one bullet per deferred item or known gap
+
+### What to load at resume
+```
+@CLAUDE.md @docs/progress.md
+```
+---
+## Handoff — 2026-06-26 (Session 23 — LangGraph export verification for tool:/retriever: endpointUrl/authToken)
+
+### What was completed
+- Recon found the real gap: `case 'tool'`/`case 'retriever'` in `exportPython`
+  (`src/utils/codeExporter.ts`) never read `node.data.endpointUrl`/`authToken`
+  at all — both emitted a static `@tool` stub (`raise NotImplementedError`) or
+  a `# TODO: wire a real vector store` stub regardless of those fields.
+- `tool:` case now branches: if `endpointUrl` is set, emits an `httpx.post`-backed
+  node function (`Authorization: Bearer {os.environ.get(...)}`) instead of the
+  `@tool` stub; falls back to the existing stub when `endpointUrl` is empty.
+  `toolNodes`/`hasTools` filters updated so the unused `@tool` stub/import isn't
+  emitted for endpoint-backed tool nodes. ✅
+- `retriever:` case gets the same `httpx.post` branch (includes `top_k` in the
+  request body), falling back to the existing vector-store TODO stub when
+  `endpointUrl` is empty. ✅
+- Added `authTokenEnvVar(nodeId)` helper — `authToken` is never exported
+  verbatim; the request always reads `os.environ.get('TOOL_{NODEID}_AUTH_TOKEN', '')`.
+  `exportRequirements` and the global `import httpx`/`import os` conditions
+  extended to cover endpoint-backed `tool:`/`retriever:` nodes. ✅
+- TDD: 4 new tests under `"exportPython — tool:/retriever: nodes with
+  endpointUrl/authToken"` in `codeExporter.test.ts` (no-endpoint stub has no
+  endpointUrl/authToken strings; with-endpoint tool emits the URL + env-var
+  auth; with-endpoint retriever same; authToken value never appears verbatim).
+  All 3 endpoint-dependent tests failed pre-implementation as expected (the
+  no-endpoint case already passed against old code); all 4 pass after. ✅
+- Manual smoke check (ad-hoc vitest run, not the browser UI — this is a pure
+  export function, not browser-observable): confirmed `https://api.example.com/search`
+  appears in the output and `sk-secret` does not; `os.environ.get('TOOL_T_AUTH_TOKEN', '')`
+  appears instead.
+
+### Build & Test Status
+| Check | Result |
+|---|---|
+| `npm run typecheck` | ✅ clean |
+| `npm run build` | ✅ clean (930.79 KB / 282.48 KB gzip; pre-existing >500kB chunk + fflate dynamic-import warnings only) |
+| `npm run test` | ✅ **340/340 passing** (32 files), +4 net (336 → 340) |
+| Browser verification | N/A — pure codegen function, not browser-observable (per project's preview-skip rule) |
+
+### Decisions made this session
+- Used `httpx` (already imported for `a2aAgent`/`httpRequest` nodes) instead
+  of `requests` — keeps the generated file's dependency surface consistent,
+  avoids adding a second HTTP library to `exportRequirements`.
+- `os.environ.get('TOOL_{NODEID}_AUTH_TOKEN', '')` (default `''`, not a
+  `KeyError`-raising `os.environ[...]`) — a misconfigured/missing env var
+  should not crash the generated script at import time.
+- Did not touch `simulationStore.ts`, `Inspector.tsx`, or `types/index.ts` —
+  scoped entirely to `codeExporter.ts` + its test file, per session brief.
+
+### Known edge cases / deferred
+- `retriever:` HTTP export reuses the same `httpx.post` shape as `tool:` —
+  may warrant a dedicated LangGraph retriever class for production use.
+- Generated imports (`httpx`, `os`) aren't checked for conflicts with a
+  user's pre-existing custom graph imports — acceptable for MVP, same as
+  the existing `a2aAgent`/`httpRequest` import logic.
+
+### What to load at resume
+```
+@CLAUDE.md @docs/progress.md @ARCHITECTURE.md
+```
 ---
 <!-- auto-prepended by on_stop_reminder.py on 2026-06-26 -->
 ## Handoff — 2026-06-26 (Session 23 — feat(inspector): expose endpointUrl + authToken fields for tool:/retriever: nodes)
