@@ -785,4 +785,42 @@ describe('LangGraph export — retriever: proper class', () => {
     expect(code).not.toContain('sk-do-not-leak-this')
     expect(code).toMatch(/os\.environ\.get\(['"]TOOL_R_AUTH_TOKEN['"]/)
   })
+
+  it('retriever: node with endpointUrl exports async _aget_relevant_documents override', () => {
+    const nodes = [
+      node('s', 'start', { label: 'Start' }),
+      node('r', 'retriever', {
+        label: 'Docs',
+        endpointUrl: 'https://api.example.com/retrieve',
+        authToken: 'secret-token',
+      }),
+    ]
+    const code = exportPython(nodes, [edge('s', 'r')])
+    expect(code).toContain('async def _aget_relevant_documents')
+    expect(code).toMatch(/async with httpx\.AsyncClient/)
+  })
+
+  it('retriever: node with endpointUrl exports both sync and async methods', () => {
+    const nodes = [
+      node('s', 'start', { label: 'Start' }),
+      node('r', 'retriever', {
+        label: 'Docs',
+        endpointUrl: 'https://api.example.com/retrieve',
+        authToken: 'secret-token',
+      }),
+    ]
+    const code = exportPython(nodes, [edge('s', 'r')])
+    expect(code).toContain('def _get_relevant_documents')
+    expect(code).toContain('async def _aget_relevant_documents')
+  })
+
+  it('retriever: node without endpointUrl has no regression', () => {
+    const nodes = [
+      node('s', 'start', { label: 'Start' }),
+      node('r', 'retriever', { label: 'Docs' }),
+    ]
+    const code = exportPython(nodes, [edge('s', 'r')])
+    expect(code).not.toContain('_aget_relevant_documents')
+    expect(code).toContain('# TODO: wire a real vector store')
+  })
 })
