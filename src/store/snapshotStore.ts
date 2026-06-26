@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { useCanvasStore } from './canvasStore'
+import { warnMissingTokens } from '../utils/warnMissingTokens'
 import type { AgentFlowEdge, AgentFlowNode } from '../types'
 
 export interface FlowSnapshot {
@@ -58,6 +59,7 @@ export const useSnapshotStore = create<SnapshotState>((set, get) => ({
     if (!snapshot) return
     useCanvasStore.getState().loadGraph(snapshot.nodes, snapshot.edges)
     useCanvasStore.getState().markClean()
+    warnMissingTokens(snapshot.nodes)
   },
 
   deleteSnapshot: (id) => {

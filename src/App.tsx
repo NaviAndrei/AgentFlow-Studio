@@ -1,8 +1,8 @@
 import { useEffect } from 'react'
 import { ReactFlowProvider } from '@xyflow/react'
 import { useCanvasStore } from './store/canvasStore'
-import { useToastStore } from './store/toastStore'
 import { decodeFlow } from './utils/shareUrl'
+import { warnMissingTokens } from './utils/warnMissingTokens'
 import { BlueprintGallery } from './components/BlueprintGallery'
 import { Canvas } from './components/Canvas'
 import { CanvasErrorBoundary } from './components/CanvasErrorBoundary'
@@ -43,28 +43,12 @@ export default function App() {
       clean.searchParams.delete('flow')
       window.history.replaceState({}, '', clean.toString())
       useCanvasStore.getState().loadGraph(result.nodes, result.edges)
+      warnMissingTokens(result.nodes)
     })
   }, [])
 
-  // authToken is stripped before snapshots reach localStorage (see
-  // snapshotStore.saveSnapshot) — warn once on mount so a restored
-  // tool:/retriever: node with an endpoint isn't silently missing its token.
   useEffect(() => {
-    const nodes = useCanvasStore.getState().nodes
-    const affected = nodes.filter(
-      (n) =>
-        (n.type === 'tool' || n.type === 'retriever') &&
-        (n.data.endpointUrl ?? '').trim() !== '' &&
-        !n.data.authToken,
-    )
-    if (affected.length === 0) return
-    const labels = affected.map((n) => n.data.label ?? n.id).join(', ')
-    useToastStore
-      .getState()
-      .pushToast(
-        `Auth token cleared on reload for: ${labels}. Re-enter tokens in the Inspector before running.`,
-        'warning',
-      )
+    warnMissingTokens()
   }, [])
 
   return (

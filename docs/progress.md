@@ -14,6 +14,87 @@
 
 
 
+
+---
+<!-- auto-prepended by on_stop_reminder.py on 2026-06-26 -->
+## Handoff — 2026-06-26 (Session 27 — feat(ux): warn on mount when tool/retriever nodes have endpointUrl but no authToken)
+
+### What was completed
+- [x] Modified `docs/progress.md`
+- [x] Modified `src/App.tsx`
+- [x] Modified `src/store/snapshotStore.test.ts`
+- [x] Modified `src/store/snapshotStore.ts`
+- [ ] TODO: annotate WHY each change was made (auto-detected list above is files only)
+
+### Build & Test Status
+| Check | Result |
+|---|---|
+| `npm run typecheck` | ✅ clean |
+| `npm run build` | TODO (not run by hook) |
+| `npm run test` | ✅ 354/354 passing |
+| Browser verification | TODO |
+
+### Decisions made this session
+- [ ] TODO: one bullet per architectural decision
+
+### Known edge cases / deferred
+- [ ] TODO: one bullet per deferred item or known gap
+
+### What to load at resume
+```
+@CLAUDE.md @docs/progress.md
+```
+---
+## Handoff — 2026-06-26 (Session 26 — warnMissingTokens wired to real triggers)
+
+### What was completed
+- Extracted the authToken-missing warning logic from `App.tsx`'s inline mount
+  effect into `src/utils/warnMissingTokens.ts` (`warnMissingTokens(nodes?)`,
+  defaults to reading `useCanvasStore.getState().nodes` when called with no
+  argument). `App.tsx`'s mount effect now just calls `warnMissingTokens()`. ✅
+- `?flow=` decode callback (`App.tsx`) now also calls
+  `warnMissingTokens(result.nodes)` right after `loadGraph` — closes the gap
+  noted in Session 25's handoff (the mount-effect warning ran before the async
+  decode resolved, so a `?flow=`-restored node never got checked). ✅
+- `restoreSnapshot` (`src/store/snapshotStore.ts`) now calls
+  `warnMissingTokens(snapshot.nodes)` after `loadGraph`/`markClean` — closes
+  the other gap from Session 25 (manual Snapshot Manager restores also ran
+  after the one-shot mount check).
+- TDD: new `src/utils/warnMissingTokens.test.ts` (3 tests: warns with node
+  label, silent on empty list, silent when authToken set) — all failed
+  pre-implementation (module didn't exist), all pass after. Added 2 tests to
+  `snapshotStore.test.ts` under "restoreSnapshot warns about missing tokens"
+  (warns when restored node missing token, silent when token present) — first
+  failed pre-implementation as expected, both pass after. Existing
+  `App.test.tsx` suite (4 tests) continues to pass unchanged against the
+  refactored `App.tsx`, confirming the extraction preserved behavior.
+
+### Build & Test Status
+| Check | Result |
+|---|---|
+| `npm run typecheck` | ✅ clean |
+| `npm run build` | ✅ clean (931.88 KB / 282.89 KB gzip; pre-existing >500kB chunk + fflate dynamic-import warnings only) |
+| `npm run test` | ✅ **354/354 passing** (34 files), +5 net (349 → 354) |
+| Browser verification | N/A — store/utility-level wiring, not independently browser-observable beyond what Session 25's smoke test already covered |
+
+### Decisions made this session
+- Single shared helper (`warnMissingTokens`) instead of three copies of the
+  filter/toast logic — same check now runs from mount, `?flow=` decode, and
+  manual snapshot restore.
+- Helper takes an optional `nodes` param (defaulting to live `canvasStore`
+  state) so callers that already have the relevant node list in hand
+  (`?flow=` decode result, snapshot's own `nodes`) can pass it directly
+  instead of re-reading from `canvasStore` after the write.
+
+### Known edge cases / deferred
+- None new — this session closes both edge cases flagged in Session 25's
+  handoff (the `?flow=` async-resolution gap and the Snapshot Manager restore
+  path).
+
+### What to load at resume
+```
+@CLAUDE.md @docs/progress.md
+```
 ---
 <!-- auto-prepended by on_stop_reminder.py on 2026-06-26 -->
 ## Handoff — 2026-06-26 (Session 26 — fix(security+export): authToken excluded from localStorage + BaseRetriever export)

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useCanvasStore } from './canvasStore'
 import { useSnapshotStore } from './snapshotStore'
+import { useToastStore } from './toastStore'
 import type { AgentFlowNode } from '../types'
 
 function llmNode(id: string): AgentFlowNode {
@@ -68,6 +69,44 @@ describe('snapshotStore — restoreSnapshot', () => {
     useSnapshotStore.getState().restoreSnapshot(snap.id)
 
     expect(loadGraph).toHaveBeenCalledWith(snap.nodes, snap.edges)
+  })
+})
+
+describe('snapshotStore — restoreSnapshot warns about missing tokens', () => {
+  it('pushes a warning toast when a restored node has endpointUrl but no authToken', () => {
+    const restoredNode: AgentFlowNode = {
+      id: 't1',
+      type: 'tool',
+      position: { x: 0, y: 0 },
+      data: { label: 't1', endpointUrl: 'https://api.example.com/tool', authToken: undefined },
+    }
+    useSnapshotStore.setState({
+      snapshots: [{ id: 's1', name: 'S', savedAt: new Date().toISOString(), nodes: [restoredNode], edges: [] }],
+    })
+    const pushToast = vi.spyOn(useToastStore.getState(), 'pushToast')
+
+    useSnapshotStore.getState().restoreSnapshot('s1')
+
+    expect(pushToast).toHaveBeenCalledTimes(1)
+    const [, tone] = pushToast.mock.calls[0]
+    expect(tone).toBe('warning')
+  })
+
+  it('does not push a toast when restored nodes have authToken set', () => {
+    const restoredNode: AgentFlowNode = {
+      id: 't1',
+      type: 'tool',
+      position: { x: 0, y: 0 },
+      data: { label: 't1', endpointUrl: 'https://api.example.com/tool', authToken: 'secret' },
+    }
+    useSnapshotStore.setState({
+      snapshots: [{ id: 's1', name: 'S', savedAt: new Date().toISOString(), nodes: [restoredNode], edges: [] }],
+    })
+    const pushToast = vi.spyOn(useToastStore.getState(), 'pushToast')
+
+    useSnapshotStore.getState().restoreSnapshot('s1')
+
+    expect(pushToast).not.toHaveBeenCalled()
   })
 })
 
