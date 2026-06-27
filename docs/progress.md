@@ -8,6 +8,34 @@
 
 
 
+
+---
+<!-- auto-prepended by on_stop_reminder.py on 2026-06-26 -->
+## Handoff — 2026-06-26 (Session 34 — feat(mcp,llm): implement MCP server registry and per-node provider overrides - Create MCPServersPanel slide-in UI for managing external MCP server connections - Integrate registered MCP server lookups in simulationStore with fallback support - Add providerOverride field to LLM/Agent nodes to support dynamic routing - Implement unit tests for per-node provider/model override validation - Support provider overrides in the Python template exporter output - Fix auto_test.py hook to resolve file paths from tool_input parameters - Archive older session handoffs and update documentation logs)
+
+### What was completed
+- [x] Modified `.claude/hooks/auto_format.py`
+- [x] Modified `.claude/hooks/auto_test.py`
+- [ ] TODO: annotate WHY each change was made (auto-detected list above is files only)
+
+### Build & Test Status
+| Check | Result |
+|---|---|
+| `npm run typecheck` | ✅ clean |
+| `npm run build` | TODO (not run by hook) |
+| `npm run test` | ✅ 368/368 passing |
+| Browser verification | TODO |
+
+### Decisions made this session
+- [ ] TODO: one bullet per architectural decision
+
+### Known edge cases / deferred
+- [ ] TODO: one bullet per deferred item or known gap
+
+### What to load at resume
+```
+@CLAUDE.md @docs/progress.md
+```
 ---
 <!-- auto-prepended by on_stop_reminder.py on 2026-06-26 -->
 ## Handoff — 2026-06-26 (Session 33 — feat(agents): add session-planner roadmap subagent)

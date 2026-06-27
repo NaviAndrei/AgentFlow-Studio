@@ -1709,3 +1709,45 @@ describe('Per-node LLM routing', () => {
     expect(config.settings.model).toBe('gpt-4o')
   })
 })
+
+describe('span log — live-mode per-node timing capture', () => {
+  it('adds a span for each live-executed node', async () => {
+    useSimulationStore.getState().setLiveMode(true)
+    loadGraph(
+      [node('s', 'start'), node('l', 'llm'), node('o', 'output')],
+      [edge('s', 'l'), edge('l', 'o')],
+    )
+    const s = await runToEnd()
+
+    const nodeIds = s.spanLog.map((span) => span.nodeId)
+    expect(nodeIds).toEqual(['s', 'l', 'o'])
+  })
+
+  it('completes each span with a status, duration, and end time', async () => {
+    useSimulationStore.getState().setLiveMode(true)
+    loadGraph(
+      [node('s', 'start'), node('l', 'llm'), node('o', 'output')],
+      [edge('s', 'l'), edge('l', 'o')],
+    )
+    const s = await runToEnd()
+
+    for (const span of s.spanLog) {
+      expect(span.status).toBe('ok')
+      expect(span.endTime).toBeGreaterThanOrEqual(span.startTime)
+      expect(span.durationMs).toBe(span.endTime - span.startTime)
+    }
+  })
+
+  it('getRunSpans returns only the spans for the matching run', async () => {
+    useSimulationStore.getState().setLiveMode(true)
+    loadGraph(
+      [node('s', 'start'), node('l', 'llm'), node('o', 'output')],
+      [edge('s', 'l'), edge('l', 'o')],
+    )
+    const s = await runToEnd()
+    const runId = s.runId
+    expect(runId).not.toBeNull()
+    expect(s.getRunSpans(runId as string)).toEqual(s.spanLog)
+    expect(s.getRunSpans('not-a-real-run-id')).toEqual([])
+  })
+})

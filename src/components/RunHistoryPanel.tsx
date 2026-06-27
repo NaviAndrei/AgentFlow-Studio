@@ -1,9 +1,10 @@
-import { useMemo } from 'react'
-import { ChevronLeft, ChevronRight, History, Search, Trash2 } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { ChevronDown, ChevronLeft, ChevronRight, History, Search, Trash2 } from 'lucide-react'
 import { useRunHistoryStore } from '../store/runHistoryStore'
 import { useDebuggerStore } from '../store/debuggerStore'
 import { useSimulationStore } from '../store/simulationStore'
 import { CostBreakdown } from './CostPanel'
+import { SpanTimeline } from './SpanTimeline'
 import { TraceEntryRow } from './TraceLog'
 import { diffRuns, type NodeDiff } from '../utils/diffRuns'
 import type { RunRecord } from '../types'
@@ -110,6 +111,7 @@ export function RunHistoryPanel() {
   const setCompareRunIds = useRunHistoryStore((s) => s.setCompareRunIds)
 
   const selectedRun = runs.find((r) => r.id === selectedRunId) ?? null
+  const [spansOpen, setSpansOpen] = useState(false)
 
   const setDockTab = useDebuggerStore((s) => s.setDockTab)
   const resetDebugger = useDebuggerStore((s) => s.reset)
@@ -232,6 +234,22 @@ export function RunHistoryPanel() {
                 Cost &amp; Tokens
               </div>
               <CostBreakdown summary={selectedRun.costSnapshot} />
+            </div>
+          )}
+
+          {selectedRun.spanLog && selectedRun.spanLog.length > 0 && (
+            <div className="mb-3">
+              <button
+                onClick={() => setSpansOpen((open) => !open)}
+                className="mb-1 flex w-full items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-gray-500 hover:text-gray-300"
+              >
+                <ChevronDown
+                  size={11}
+                  className={`transition-transform ${spansOpen ? '' : '-rotate-90'}`}
+                />
+                Span Timeline
+              </button>
+              {spansOpen && <SpanTimeline spans={selectedRun.spanLog} />}
             </div>
           )}
 

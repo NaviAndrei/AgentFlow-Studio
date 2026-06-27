@@ -38,6 +38,7 @@ export function MetricsBar() {
   const elapsedMs = useSimulationMetricsStore((s) => s.elapsedMs)
   const tokens = useSimulationMetricsStore((s) => s.tokens)
   const costSummary = useSimulationMetricsStore((s) => s.costSummary)
+  const spanLog = useSimulationStore((s) => s.spanLog)
   const runs = useEvalStore((s) => s.runs)
   const lastRun = runs.length > 0 ? runs[runs.length - 1] : null
   const passing =
@@ -55,6 +56,7 @@ export function MetricsBar() {
   const formatCost = (v: number) =>
     v < 0.001 ? `$${v.toFixed(5)}` : `$${v.toPrecision(4)}`
 
+  const lastSpan = spanLog.length > 0 ? spanLog[spanLog.length - 1] : null
   const finished = currentNodeIndex >= queueLength
   const shownStep = stepTotal === 0 ? 0 : Math.min(stepIndex + 1, stepTotal)
   const progressPct =
@@ -94,6 +96,11 @@ export function MetricsBar() {
             <span className="text-accent">
               {formatCost(costSummary.totalCostUsd)}
             </span>
+          </span>
+        )}
+        {lastSpan && (
+          <span className="flex items-center gap-1 tabular-nums">
+            <span className="text-accent">{lastSpan.durationMs}ms</span> latency
           </span>
         )}
         {lastRun && totalCases > 0 && (

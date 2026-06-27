@@ -43,9 +43,14 @@ import type {
   ExecutionEngine,
   NodeCostEntry,
   RunCostSummary,
+  RunSpan,
+  RunTrace,
   StepSnapshot,
   TraceEntry,
 } from '../types'
+
+/** Hard cap on spans kept per run; oldest entries are dropped once exceeded. */
+const MAX_SPANS_PER_RUN = 500
 
 /**
  * Attach a per-node output token cap to a resolved LLM config. Purely
@@ -235,6 +240,16 @@ interface SimulationState {
   trace: TraceEntry[]
   /** T2-2: per-step state captures for the Time-Travel Debugger. */
   snapshots: StepSnapshot[]
+  /** Id of the run currently active (or last active), used to key spanLog
+   *  lookups against archived RunRecords once the run finishes. */
+  runId: string | null
+  /** Per-node timing/cost capture for the current run's Span Timeline. */
+  spanLog: RunSpan[]
+  /** Spans for `runId` — the live run if it matches, else the archived
+   *  RunRecord in Run History. */
+  getRunSpans: (runId: string) => RunSpan[]
+  /** Downloads the spans for `runId` as a JSON Blob. */
+  exportRunTrace: (runId: string) => void
   traceOpen: boolean
   /** Set when a Human-in-Loop node has executed and is awaiting approval. */
   pendingApproval: { nodeId: string } | null
@@ -565,7 +580,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
     const elapsedMs = useSimulationMetricsStore.getState().elapsedMs
     const stepIndex = useSimulationMetricsStore.getState().stepIndex
     useRunHistoryStore.getState().addRun({
-      id: crypto.randomUUID(),
+      id: get().runId ?? crypto.randomUUID(),
       startedAt: Date.now() - elapsedMs,
       finishedAt: Date.now(),
       durationMs: elapsedMs,
@@ -584,6 +599,16 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
       traceSnapshot: structuredClone(trace),
       snapshots: structuredClone(get().snapshots),
       costSnapshot: structuredClone(costSummary),
+      spanLog: structuredClone(get().spanLog),
+    })
+  }
+
+  /** Appends a span to the current run's log, trimming the oldest entry past MAX_SPANS_PER_RUN. */
+  const pushSpan = (span: RunSpan) => {
+    const next = [...get().spanLog, span]
+    set({
+      spanLog:
+        next.length > MAX_SPANS_PER_RUN ? next.slice(next.length - MAX_SPANS_PER_RUN) : next,
     })
   }
 
@@ -1206,6 +1231,11 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
     nodeId: string,
   ): Promise<unknown> => {
     const metrics = useSimulationMetricsStore.getState()
+    const spanId = crypto.randomUUID()
+    const startTime = Date.now()
+    const tokensBefore = metrics.tokens
+    let status: 'ok' | 'error' = 'ok'
+    try {
     switch (node.type) {
       case 'start': {
         const content = get().userInput.trim() || 'Hello!'
@@ -1655,6 +1685,34 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
           return { error: message }
         }
       }
+    }
+    } catch (err) {
+      status = 'error'
+      throw err
+    } finally {
+      const endTime = Date.now()
+      const totalTokens = Math.max(0, useSimulationMetricsStore.getState().tokens - tokensBefore)
+      const tokensIn = Math.round(totalTokens * 0.7)
+      const tokensOut = totalTokens - tokensIn
+      const base = useLLMConfigStore.getState().getConfig()
+      const model =
+        (node.data.modelOverride ?? '').trim() || (node.data.model ?? '').trim() || base.settings.model
+      const pricing = getPricing(model)
+      const costUsd =
+        (tokensIn / 1_000_000) * pricing.inputPer1M + (tokensOut / 1_000_000) * pricing.outputPer1M
+      pushSpan({
+        spanId,
+        nodeId,
+        nodeName: node.data.label,
+        nodeType: node.type ?? 'unknown',
+        startTime,
+        endTime,
+        durationMs: endTime - startTime,
+        status,
+        tokensIn,
+        tokensOut,
+        costUsd,
+      })
     }
   }
 
@@ -2781,6 +2839,8 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
       erroredNodeIds: [],
       trace: [],
       snapshots: [],
+      runId: crypto.randomUUID(),
+      spanLog: [],
       pendingApproval: null,
       tryCatchStatus: {},
       retryStatus: {},
@@ -2807,6 +2867,23 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
     erroredNodeIds: [],
     trace: [],
     snapshots: [],
+    runId: null,
+    spanLog: [],
+    getRunSpans: (runId) => {
+      if (runId === get().runId) return get().spanLog
+      return useRunHistoryStore.getState().runs.find((r) => r.id === runId)?.spanLog ?? []
+    },
+    exportRunTrace: (runId) => {
+      const spans = get().getRunSpans(runId)
+      const payload: RunTrace = { runId, spans }
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `run-trace-${runId}.json`
+      link.click()
+      URL.revokeObjectURL(url)
+    },
     traceOpen: false,
     pendingApproval: null,
     tryCatchStatus: {},
@@ -2876,6 +2953,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
         erroredNodeIds: [],
         trace: [],
         snapshots: [],
+        spanLog: [],
         pendingApproval: null,
         tryCatchStatus: {},
         retryStatus: {},

@@ -377,6 +377,27 @@ export interface RunCostSummary {
   model: string
 }
 
+/** One node execution's timing/cost capture, recorded for the Span Timeline. */
+export interface RunSpan {
+  spanId: string
+  nodeId: string
+  nodeName: string
+  nodeType: string
+  startTime: number
+  endTime: number
+  durationMs: number
+  status: 'ok' | 'error'
+  tokensIn: number
+  tokensOut: number
+  costUsd: number
+}
+
+/** Exported trace bundle for a run's spans (Blob download payload). */
+export interface RunTrace {
+  runId: string
+  spans: RunSpan[]
+}
+
 /** A single saved version of a prompt's text. */
 export interface PromptVersion {
   id: string
@@ -417,4 +438,6 @@ export interface RunRecord {
   /** T2-2: per-step state captures for the Time-Travel Debugger. */
   snapshots: StepSnapshot[]
   costSnapshot: RunCostSummary | null
+  /** Absent on RunRecords archived before the Span Timeline existed. */
+  spanLog?: RunSpan[]
 }
