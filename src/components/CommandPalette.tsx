@@ -4,8 +4,9 @@ import { Search } from 'lucide-react'
 import { useUIStore } from '../store/uiStore'
 import { useCanvasStore } from '../store/canvasStore'
 import { useSimulationStore } from '../store/simulationStore'
-import { scoreCommand } from '../utils/commandPalette'
+import { filterNodesBySearch, parseNodeSearchQuery, scoreCommand } from '../utils/commandPalette'
 import type { PaletteCommand } from '../utils/commandPalette'
+import { getRfInstance } from '../utils/rfInstance'
 import { ConfirmDialog } from './Modal'
 
 export function CommandPalette() {
@@ -163,7 +164,24 @@ export function CommandPalette() {
     startSimulation,
   ])
 
+  const nodeSearchQuery = parseNodeSearchQuery(query)
+
+  const nodeSearchCommands = useMemo<PaletteCommand[]>(() => {
+    if (nodeSearchQuery === null) return []
+    return filterNodesBySearch(nodes, nodeSearchQuery)
+      .map((n) => ({
+        id: `jump-node-${n.id}`,
+        label: `${n.data.label || '(untitled)'} — ${n.type}`,
+        keywords: [],
+        group: 'Nodes',
+        action: () => {
+          getRfInstance()?.setCenter(n.position.x, n.position.y, { zoom: 1.2 })
+        },
+      }))
+  }, [nodeSearchQuery, nodes])
+
   const filtered = useMemo(() => {
+    if (nodeSearchQuery !== null) return nodeSearchCommands
     return commands
       .map((cmd) => ({ cmd, score: scoreCommand(cmd, query) }))
       .filter((r) => r.score > 0)
@@ -173,7 +191,7 @@ export function CommandPalette() {
           : a.cmd.group.localeCompare(b.cmd.group),
       )
       .map((r) => r.cmd)
-  }, [commands, query])
+  }, [commands, query, nodeSearchQuery, nodeSearchCommands])
 
   useEffect(() => {
     if (!open) return
