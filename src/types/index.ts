@@ -396,6 +396,49 @@ export interface PromptEntry {
   pinnedVersionId: string
 }
 
+/**
+ * Per-node execution span captured by the live simulation walker.
+ * Richer than TraceEntry: records wall-clock timing, token split, and cost
+ * so the SpanTimeline component can render proportional latency bars and
+ * MetricsBar can surface last-node latency without re-scanning the trace.
+ */
+export interface RunSpan {
+  /** crypto.randomUUID() generated before the node's switch/case runs. */
+  spanId: string
+  /** The canvas node id that was executed. */
+  nodeId: string
+  nodeName: string
+  nodeType: string
+  /** Epoch ms — captured with Date.now() before the switch/case. */
+  startTime: number
+  /** Epoch ms — captured in the finally block after execution. */
+  endTime: number
+  /** endTime - startTime */
+  durationMs: number
+  /** Estimated input tokens (from estimateTokens helper, or 0 for non-LLM nodes). */
+  tokensIn: number
+  /** Estimated output tokens. */
+  tokensOut: number
+  /** Estimated USD cost for this node's execution. */
+  costUsd: number
+  /** 'ok' unless an exception was thrown during execution. */
+  status: 'ok' | 'error'
+  /** Present only when status === 'error'. */
+  errorMessage?: string
+}
+
+/**
+ * Full ordered list of RunSpans for a single completed run.
+ * Used as the export envelope for exportRunTrace() — downloaded as JSON,
+ * no server required.
+ */
+export interface RunTrace {
+  runId: string
+  /** Epoch ms when the export was triggered. */
+  exportedAt: number
+  spans: RunSpan[]
+}
+
 /** A snapshot of one completed/stopped simulation run, kept in Run History. */
 export interface RunRecord {
   id: string
@@ -417,4 +460,11 @@ export interface RunRecord {
   /** T2-2: per-step state captures for the Time-Travel Debugger. */
   snapshots: StepSnapshot[]
   costSnapshot: RunCostSummary | null
+  /**
+   * Per-node execution spans for this run.
+   * Optional for backward compatibility — RunRecords persisted before this
+   * field was introduced simply have undefined here; SpanTimeline renders
+   * nothing in that case.
+   */
+  spanLog?: RunSpan[]
 }
