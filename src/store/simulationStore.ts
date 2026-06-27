@@ -22,7 +22,7 @@ import {
 } from '../utils/flowSemantics'
 import { useCanvasStore } from './canvasStore'
 import { useEvalStore } from './evalStore'
-import { useLLMConfigStore } from './llmConfigStore'
+import { useLLMConfigStore, type BudgetConfig } from './llmConfigStore'
 import { useMCPStore } from './mcpStore'
 import { useMemoryStore } from './memoryStore'
 import { useSimulationMetricsStore } from './simulationMetricsStore'
@@ -435,6 +435,26 @@ function findNode(id: string): AgentFlowNode | undefined {
 
 export function prefersReducedMotion(): boolean {
   return window.matchMedia('(prefers-reduced-motion: reduce)').matches
+}
+
+/**
+ * Compares accumulated spend/tokens for the current run against the
+ * configured budget cap. 'warn' fires at 80% of either limit, 'block' at
+ * or past 100%. A budget field left unset is never checked.
+ */
+export function checkBudget(
+  currentUsd: number,
+  budget: BudgetConfig,
+  currentTokens = 0,
+): 'allow' | 'warn' | 'block' {
+  const ratios: number[] = []
+  if (budget.maxUSD != null && budget.maxUSD > 0) ratios.push(currentUsd / budget.maxUSD)
+  if (budget.maxTokens != null && budget.maxTokens > 0) ratios.push(currentTokens / budget.maxTokens)
+  if (ratios.length === 0) return 'allow'
+  const worst = Math.max(...ratios)
+  if (worst >= 1) return 'block'
+  if (worst >= 0.8) return 'warn'
+  return 'allow'
 }
 
 /** Inner-graph execution result returned by runSubgraph. */
@@ -1235,6 +1255,17 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
     const startTime = Date.now()
     const tokensBefore = metrics.tokens
     let status: 'ok' | 'error' = 'ok'
+
+    if (node.type !== 'start') {
+      const { budgetConfig } = useLLMConfigStore.getState()
+      const budgetStatus = checkBudget(metrics.costUsd, budgetConfig, metrics.tokens)
+      if (budgetStatus === 'block') {
+        useToastStore.getState().pushToast('Budget limit reached — run stopped', 'warning')
+        get().stop()
+        return { error: 'Budget limit reached' }
+      }
+    }
+
     try {
     switch (node.type) {
       case 'start': {
@@ -1700,6 +1731,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
       const pricing = getPricing(model)
       const costUsd =
         (tokensIn / 1_000_000) * pricing.inputPer1M + (tokensOut / 1_000_000) * pricing.outputPer1M
+      useSimulationMetricsStore.getState().addCostUsd(costUsd)
       pushSpan({
         spanId,
         nodeId,
@@ -2875,7 +2907,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
     },
     exportRunTrace: (runId) => {
       const spans = get().getRunSpans(runId)
-      const payload: RunTrace = { runId, spans }
+      const payload: RunTrace = { runId, spans, exportedAt: Date.now() }
       const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
       const url = URL.createObjectURL(blob)
       const link = document.createElement('a')

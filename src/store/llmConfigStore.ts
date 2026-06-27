@@ -2,6 +2,12 @@ import { create } from 'zustand'
 import { defaultProviderSettings, listOllamaModels } from '../llm'
 import type { ProviderId, ProviderSettings, ResolvedLLMConfig } from '../llm'
 
+/** Hard caps on a simulation run's spend; either field may be left unset. */
+export interface BudgetConfig {
+  maxUSD?: number
+  maxTokens?: number
+}
+
 interface LLMConfigState {
   activeProvider: ProviderId
   /** Per-provider connection settings; edits to one provider never touch another. */
@@ -11,6 +17,7 @@ interface LLMConfigState {
   settingsOpen: boolean
   /** Transient error surfaced as a tooltip near the Live toggle. */
   liveError: string | null
+  budgetConfig: BudgetConfig
   setActiveProvider: (provider: ProviderId) => void
   updateProviderSettings: (
     provider: ProviderId,
@@ -20,6 +27,7 @@ interface LLMConfigState {
   setLiveError: (error: string | null) => void
   refreshOllamaModels: () => Promise<void>
   getConfig: () => ResolvedLLMConfig
+  setBudgetConfig: (budget: BudgetConfig) => void
 }
 
 export const useLLMConfigStore = create<LLMConfigState>((set, get) => ({
@@ -28,8 +36,11 @@ export const useLLMConfigStore = create<LLMConfigState>((set, get) => ({
   ollamaModels: [],
   settingsOpen: false,
   liveError: null,
+  budgetConfig: {},
 
   setActiveProvider: (activeProvider) => set({ activeProvider }),
+
+  setBudgetConfig: (budgetConfig) => set({ budgetConfig }),
 
   updateProviderSettings: (provider, patch) =>
     set((state) => ({

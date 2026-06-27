@@ -11,7 +11,7 @@ import { useCanvasStore } from './canvasStore'
 import { useEvalStore } from './evalStore'
 import { useLLMConfigStore } from './llmConfigStore'
 import { useMemoryStore } from './memoryStore'
-import { useSimulationStore } from './simulationStore'
+import { checkBudget, useSimulationStore } from './simulationStore'
 import { useToastStore } from './toastStore'
 import { useSimulationMetricsStore } from './simulationMetricsStore'
 import { streamChat } from '../llm'
@@ -972,6 +972,39 @@ describe("executeLiveNode â default branch real LLM", () => {
     expect(useSimulationMetricsStore.getState().tokens).toBeGreaterThan(0)
   })
 })
+
+describe("executeLiveNode — llm node modelOverride resolution", () => {
+  it("uses node.data.modelOverride when present, instead of the global model", async () => {
+    useSimulationStore.getState().setLiveMode(true)
+    loadGraph(
+      [
+        node("s", "start"),
+        node("a", "llm", { model: "global-model", modelOverride: "gpt-4o-mini" }),
+        node("o", "output"),
+      ],
+      [edge("s", "a"), edge("a", "o")],
+    )
+    await runToEnd()
+
+    expect(streamChat).toHaveBeenCalledTimes(1)
+    const [config] = vi.mocked(streamChat).mock.calls[0]
+    expect(config.settings.model).toBe("gpt-4o-mini")
+  })
+
+  it("falls back to the global model when node.data.modelOverride is absent", async () => {
+    useSimulationStore.getState().setLiveMode(true)
+    loadGraph(
+      [node("s", "start"), node("a", "llm", { model: "global-model" }), node("o", "output")],
+      [edge("s", "a"), edge("a", "o")],
+    )
+    await runToEnd()
+
+    expect(streamChat).toHaveBeenCalledTimes(1)
+    const [config] = vi.mocked(streamChat).mock.calls[0]
+    expect(config.settings.model).not.toBe("gpt-4o-mini")
+  })
+})
+
 describe("executeLiveNode â tool/retriever branches real LLM", () => {
   it("tool: calls streamChat with the node's model and system prompt", async () => {
     useSimulationStore.getState().setLiveMode(true)
@@ -1749,5 +1782,44 @@ describe('span log — live-mode per-node timing capture', () => {
     expect(runId).not.toBeNull()
     expect(s.getRunSpans(runId as string)).toEqual(s.spanLog)
     expect(s.getRunSpans('not-a-real-run-id')).toEqual([])
+  })
+})
+
+describe('checkBudget', () => {
+  it('returns warn at 80% of the USD cap', () => {
+    expect(checkBudget(0.008, { maxUSD: 0.01 })).toBe('warn')
+  })
+
+  it('returns block at or past the USD cap', () => {
+    expect(checkBudget(0.011, { maxUSD: 0.01 })).toBe('block')
+  })
+
+  it('returns allow when well under the cap', () => {
+    expect(checkBudget(0.001, { maxUSD: 0.01 })).toBe('allow')
+  })
+
+  it('returns allow when no budget is configured', () => {
+    expect(checkBudget(1000, {})).toBe('allow')
+  })
+})
+
+describe('simulation — budget guard stops the run', () => {
+  it('aborts the run and toasts when accumulated cost exceeds maxUSD', async () => {
+    useLLMConfigStore.getState().setBudgetConfig({ maxUSD: 0.0000001 })
+    useSimulationStore.getState().setLiveMode(true)
+    loadGraph(
+      [node('s', 'start'), node('a', 'llm'), node('o', 'output')],
+      [edge('s', 'a'), edge('a', 'o')],
+    )
+    const pushToast = vi.spyOn(useToastStore.getState(), 'pushToast')
+    pushToast.mockClear()
+
+    useSimulationStore.getState().start()
+    await vi.waitFor(() => {
+      expect(useSimulationStore.getState().isActive).toBe(false)
+    })
+
+    expect(pushToast).toHaveBeenCalledWith('Budget limit reached — run stopped', 'warning')
+    useLLMConfigStore.getState().setBudgetConfig({})
   })
 })

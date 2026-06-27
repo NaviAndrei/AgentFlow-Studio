@@ -1,4 +1,6 @@
 import { ChevronRight, CircleDollarSign } from 'lucide-react'
+import { useState } from 'react'
+import { useLLMConfigStore } from '../store/llmConfigStore'
 import { useSimulationMetricsStore } from '../store/simulationMetricsStore'
 import { useUIStore } from '../store/uiStore'
 import type { RunCostSummary } from '../types'
@@ -76,6 +78,66 @@ export function CostBreakdown({ summary }: { summary: RunCostSummary }) {
   )
 }
 
+function BudgetGuardSection() {
+  const budgetConfig = useLLMConfigStore((s) => s.budgetConfig)
+  const setBudgetConfig = useLLMConfigStore((s) => s.setBudgetConfig)
+  const costUsd = useSimulationMetricsStore((s) => s.costUsd)
+  const [maxUSD, setMaxUSD] = useState(budgetConfig.maxUSD?.toString() ?? '')
+  const [maxTokens, setMaxTokens] = useState(budgetConfig.maxTokens?.toString() ?? '')
+
+  const pct = budgetConfig.maxUSD ? Math.min((costUsd / budgetConfig.maxUSD) * 100, 100) : 0
+  const barColor = pct >= 100 ? '#dc2626' : pct >= 80 ? '#ca8a04' : '#16a34a'
+
+  return (
+    <div className="mb-3 border-b border-white/10 pb-3">
+      <span className="mb-2 block text-[11px] font-semibold uppercase tracking-wider text-gray-300">
+        Budget Guard
+      </span>
+      <label className="mb-2 block">
+        <span className="text-[10px] text-gray-500">Max USD</span>
+        <input
+          type="number"
+          min={0}
+          step={0.01}
+          value={maxUSD}
+          onChange={(e) => setMaxUSD(e.target.value)}
+          className="mt-0.5 w-full rounded border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-gray-200"
+        />
+      </label>
+      <label className="mb-2 block">
+        <span className="text-[10px] text-gray-500">Max Tokens</span>
+        <input
+          type="number"
+          min={0}
+          step={1}
+          value={maxTokens}
+          onChange={(e) => setMaxTokens(e.target.value)}
+          className="mt-0.5 w-full rounded border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-gray-200"
+        />
+      </label>
+      <button
+        onClick={() =>
+          setBudgetConfig({
+            maxUSD: maxUSD.trim() === '' ? undefined : Number(maxUSD),
+            maxTokens: maxTokens.trim() === '' ? undefined : Number(maxTokens),
+          })
+        }
+        className="mb-2 w-full rounded bg-accent/20 py-1 text-[11px] font-medium text-accent hover:bg-accent/30"
+      >
+        Save
+      </button>
+      {budgetConfig.maxUSD != null && (
+        <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/5">
+          <div
+            className="h-full rounded-full transition-all"
+            style={{ width: `${Math.max(pct, 1)}%`, backgroundColor: barColor }}
+          />
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function CostPanel() {
   const open = useUIStore((s) => s.costPanelOpen)
   const setOpen = useUIStore((s) => s.setCostPanelOpen)
@@ -107,6 +169,7 @@ export function CostPanel() {
       </div>
 
       <div className="flex-1 overflow-y-auto px-3 py-3">
+        <BudgetGuardSection />
         {!summary && (
           <p className="rounded border border-dashed border-white/10 px-2 py-3 text-center text-[10px] text-gray-600">
             Run the flow to see cost breakdown.

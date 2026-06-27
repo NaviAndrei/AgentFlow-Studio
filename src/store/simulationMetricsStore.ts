@@ -7,10 +7,13 @@ interface SimulationMetricsState {
   activeNodeCount: number
   elapsedMs: number
   tokens: number
+  /** Running USD total for the current run, accumulated per-node as spans finish. */
+  costUsd: number
   costSummary: RunCostSummary | null
   setStep: (index: number, total: number) => void
   setActiveNodeCount: (count: number) => void
   addTokens: (count: number) => void
+  addCostUsd: (amount: number) => void
   setCostSummary: (summary: RunCostSummary | null) => void
   startTimer: () => void
   pauseTimer: () => void
@@ -28,6 +31,7 @@ export const useSimulationMetricsStore = create<SimulationMetricsState>(
     activeNodeCount: 0,
     elapsedMs: 0,
     tokens: 0,
+    costUsd: 0,
     costSummary: null,
 
     // stepTotal never shrinks within a run: the queue grows as targets are
@@ -37,6 +41,7 @@ export const useSimulationMetricsStore = create<SimulationMetricsState>(
       set({ stepIndex, stepTotal: Math.max(get().stepTotal, stepTotal) }),
     setActiveNodeCount: (activeNodeCount) => set({ activeNodeCount }),
     addTokens: (count) => set({ tokens: get().tokens + count }),
+    addCostUsd: (amount) => set({ costUsd: get().costUsd + amount }),
 
     setCostSummary: (costSummary) => set({ costSummary }),
 
@@ -68,6 +73,7 @@ export const useSimulationMetricsStore = create<SimulationMetricsState>(
         activeNodeCount: 0,
         elapsedMs: 0,
         tokens: 0,
+        costUsd: 0,
         costSummary: null,
       })
     },
