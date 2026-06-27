@@ -6,6 +6,7 @@
  * logic without violating React hook rules.
  */
 import { useSpanStore } from '../store/spanStore'
+import type { Span } from '../store/spanStore'
 import type { TraceEntry } from '../types'
 
 /**
@@ -30,7 +31,7 @@ export function closeSpan(
   output?: unknown,
 ): void {
   if (!spanId) return
-  useSpanStore.getState().endSpan(spanId, entry.status as Parameters<typeof useSpanStore.getState().endSpan>[1], output)
+  useSpanStore.getState().endSpan(spanId, entry.status as Span['status'], output)
 }
 
 /**

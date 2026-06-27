@@ -392,12 +392,6 @@ export interface RunSpan {
   costUsd: number
 }
 
-/** Exported trace bundle for a run's spans (Blob download payload). */
-export interface RunTrace {
-  runId: string
-  spans: RunSpan[]
-}
-
 /** A single saved version of a prompt's text. */
 export interface PromptVersion {
   id: string
@@ -481,4 +475,11 @@ export interface RunRecord {
   /** T2-2: per-step state captures for the Time-Travel Debugger. */
   snapshots: StepSnapshot[]
   costSnapshot: RunCostSummary | null
+  /**
+   * Per-node execution spans for this run.
+   * Optional for backward compatibility — RunRecords persisted before this
+   * field was introduced simply have undefined here; SpanTimeline renders
+   * nothing in that case.
+   */
+  spanLog?: RunSpan[]
 }
