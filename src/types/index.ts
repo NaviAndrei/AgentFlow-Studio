@@ -57,6 +57,61 @@ export interface MCPTool {
   inputSchema: Record<string, unknown>
 }
 
+/** One stored memory entry with a hash-based sparse embedding (no ML dependency). */
+export interface VectorEntry {
+  id: string
+  text: string
+  embedding: number[]
+  metadata?: Record<string, unknown>
+  createdAt: number
+}
+
+/** A scored match returned by vectorMemory's semanticSearch. */
+export interface MemorySearchResult {
+  entry: VectorEntry
+  score: number
+}
+
+/** One row of an imported dataset, scored after a Dataset Runner pass. */
+export interface EvalRow {
+  id: string
+  input: string
+  expectedOutput: string
+  actualOutput?: string
+  score?: number
+  scoreMethod?: 'exact' | 'pending'
+  error?: string
+}
+
+/** An imported CSV/JSON dataset for the Dataset Runner. */
+export interface EvalDataset {
+  id: string
+  name: string
+  rows: EvalRow[]
+  createdAt: number
+}
+
+/** One completed pass of a dataset through the current flow. */
+export interface EvalDatasetRun {
+  id: string
+  datasetId: string
+  startedAt: number
+  completedAt?: number
+  results: EvalRow[]
+  averageScore?: number
+}
+
+export type TriggerMode = 'webhook' | 'schedule'
+
+/** Arming state for a triggerStore-managed trigger, keyed by node id. */
+export interface TriggerConfig {
+  mode: TriggerMode
+  webhookId?: string
+  webhookSecret?: string
+  intervalMs?: number
+  isArmed: boolean
+}
+
 /**
  * Flat data shape shared by every node type. Type-specific fields are
  * optional; default factories in utils/nodeDefaults.ts fill in the ones

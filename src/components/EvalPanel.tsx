@@ -1,7 +1,128 @@
 import { useRef, useState } from 'react'
-import { ChevronRight, FlaskConical, Plus, Trash2, Upload } from 'lucide-react'
+import { ChevronRight, FlaskConical, Play, Plus, Trash2, Upload } from 'lucide-react'
 import { useEvalStore } from '../store/evalStore'
 import { parseDatasetFile } from '../utils/datasetParser'
+import { parseCSVToDataset } from '../utils/evalScoring'
+
+function DatasetRunnerSection() {
+  const datasets = useEvalStore((s) => s.datasets)
+  const addDataset = useEvalStore((s) => s.addDataset)
+  const removeDataset = useEvalStore((s) => s.removeDataset)
+  const runDataset = useEvalStore((s) => s.runDataset)
+  const currentRunId = useEvalStore((s) => s.currentRunId)
+  const datasetRuns = useEvalStore((s) => s.datasetRuns)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const lastRun = datasetRuns.length > 0 ? datasetRuns[datasetRuns.length - 1] : null
+
+  const handleFile = (file: File) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      try {
+        const text = String(reader.result ?? '')
+        addDataset(parseCSVToDataset(text, file.name))
+        setError(null)
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Could not parse CSV')
+      }
+    }
+    reader.readAsText(file)
+  }
+
+  return (
+    <div className="mt-4 border-t border-white/10 pt-3">
+      <div className="mb-2 flex items-center justify-between">
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+          Dataset Runner ({datasets.length})
+        </span>
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          className="flex items-center gap-1 rounded-md border border-white/10 px-2 py-0.5 text-[10px] text-gray-300 hover:border-accent/50 hover:text-white"
+        >
+          <Upload size={10} />
+          Upload CSV
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".csv"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0]
+            if (file) handleFile(file)
+            e.target.value = ''
+          }}
+        />
+      </div>
+      {error && <p className="mb-2 text-[10px] text-red-400">{error}</p>}
+      {datasets.length === 0 && (
+        <p className="rounded border border-dashed border-white/10 px-2 py-3 text-center text-[10px] text-gray-600">
+          Upload a CSV with input,expected_output columns.
+        </p>
+      )}
+      <ul className="space-y-1">
+        {datasets.map((d) => (
+          <li
+            key={d.id}
+            className="flex items-center gap-2 rounded border border-white/5 bg-canvas px-2 py-1.5"
+          >
+            <span className="flex-1 truncate text-[11px] text-gray-300">
+              {d.name} ({d.rows.length})
+            </span>
+            <button
+              onClick={() => void runDataset(d.id)}
+              disabled={currentRunId !== null}
+              aria-label={`Run ${d.name}`}
+              className="text-gray-400 hover:text-accent disabled:opacity-40"
+            >
+              <Play size={11} />
+            </button>
+            <button
+              onClick={() => removeDataset(d.id)}
+              aria-label={`Delete ${d.name}`}
+              className="text-gray-600 hover:text-red-400"
+            >
+              <Trash2 size={11} />
+            </button>
+          </li>
+        ))}
+      </ul>
+      {currentRunId && (
+        <p className="mt-2 text-[10px] text-accent">Running dataset…</p>
+      )}
+      {lastRun && (
+        <div className="mt-3">
+          <div className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+            Last Dataset Run — avg {((lastRun.averageScore ?? 0) * 100).toFixed(0)}%
+          </div>
+          <div className="max-h-40 overflow-y-auto rounded border border-white/10">
+            <table className="w-full text-[10px]">
+              <thead className="sticky top-0 bg-surface-2 text-gray-400">
+                <tr>
+                  <th className="px-1.5 py-1 text-left">Input</th>
+                  <th className="px-1.5 py-1 text-left">Expected</th>
+                  <th className="px-1.5 py-1 text-left">Actual</th>
+                  <th className="px-1.5 py-1 text-right">Score</th>
+                </tr>
+              </thead>
+              <tbody>
+                {lastRun.results.map((r) => (
+                  <tr key={r.id} className={r.score === 1 ? 'text-green-300' : 'text-red-300'}>
+                    <td className="max-w-[80px] truncate px-1.5 py-1">{r.input}</td>
+                    <td className="max-w-[80px] truncate px-1.5 py-1">{r.expectedOutput}</td>
+                    <td className="max-w-[80px] truncate px-1.5 py-1">{r.actualOutput ?? '—'}</td>
+                    <td className="px-1.5 py-1 text-right">{r.score ?? '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
 
 function badgeColor(score: number): string {
   if (score >= 80) return 'text-green-400'
@@ -258,6 +379,8 @@ export function EvalPanel() {
             </ul>
           </div>
         )}
+
+        <DatasetRunnerSection />
       </div>
     </div>
   )

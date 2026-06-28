@@ -1441,6 +1441,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
         if (operation === 'write') {
           const content = latestContent()
           useMemoryStore.getState().write(namespace, content)
+          useMemoryStore.getState().writeEntry(namespace, content)
           return { namespace, operation, wrote: content }
         }
         const all = useMemoryStore.getState().read(namespace)
@@ -1461,6 +1462,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
         const namespace = (node.data.writeNamespace ?? 'default').trim() || 'default'
         const content = latestContent()
         useMemoryStore.getState().write(namespace, content)
+        useMemoryStore.getState().writeEntry(namespace, content)
         return {
           namespace,
           memoryKind: node.data.memoryKind ?? 'episodic',

@@ -117,6 +117,8 @@ function SystemPromptRegistryLink({ data, update }: FieldsProps) {
 
 function LLMFields({ data, update }: FieldsProps) {
   const temperature = data.temperature ?? 0.7
+  const usingGlobal = !data.modelOverride && !data.providerOverride
+
   return (
     <>
       <label className="block">
@@ -138,19 +140,59 @@ function LLMFields({ data, update }: FieldsProps) {
           Override model is set.
         </p>
       </label>
-      <label className="block">
-        <span className={labelCls}>Override model</span>
+      <label className="flex items-center gap-2">
         <input
-          className={inputCls}
-          value={data.modelOverride ?? ''}
-          onChange={(e) => update({ modelOverride: e.target.value })}
-          placeholder="Use global setting"
+          type="checkbox"
+          checked={usingGlobal}
+          onChange={(e) => {
+            if (e.target.checked) {
+              update({ modelOverride: undefined, providerOverride: undefined })
+            }
+          }}
+          className="accent-accent"
         />
-        <p className="mt-1 text-[10px] text-gray-600">
-          Live mode only — sends this model id to the configured provider
-          instead of the global one.
-        </p>
+        <span className={labelCls}>Use Global Model Settings</span>
       </label>
+      {!usingGlobal && (
+        <>
+          <label className="block">
+            <span className={labelCls}>Override model</span>
+            <input
+              className={inputCls}
+              value={data.modelOverride ?? ''}
+              onChange={(e) => update({ modelOverride: e.target.value })}
+              placeholder="Use global setting"
+            />
+            <p className="mt-1 text-[10px] text-gray-600">
+              Live mode only — sends this model id to the configured provider
+              instead of the global one.
+            </p>
+          </label>
+          <label className="block">
+            <span className={labelCls}>Provider Override</span>
+            <div className="relative">
+              <input
+                className={inputCls}
+                value={data.providerOverride ?? ''}
+                onChange={(e) => update({ providerOverride: e.target.value || undefined })}
+                placeholder="Default (global setting)"
+              />
+              {data.providerOverride && (
+                <button
+                  onClick={() => update({ providerOverride: undefined })}
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300"
+                  aria-label="Clear provider override"
+                >
+                  <X size={11} />
+                </button>
+              )}
+            </div>
+            <p className="mt-1 text-[10px] text-gray-600">
+              Live mode only — routes this node to a different provider (e.g. openai, gemini).
+            </p>
+          </label>
+        </>
+      )}
       <label className="block">
         <span className={labelHintCls}>
           System prompt
@@ -177,29 +219,6 @@ function LLMFields({ data, update }: FieldsProps) {
           onChange={(e) => update({ temperature: Number(e.target.value) })}
           className="w-full accent-accent"
         />
-      </label>
-      <label className="block">
-        <span className={labelCls}>Provider Override</span>
-        <div className="relative">
-          <input
-            className={inputCls}
-            value={data.providerOverride ?? ''}
-            onChange={(e) => update({ providerOverride: e.target.value || undefined })}
-            placeholder="Default (global setting)"
-          />
-          {data.providerOverride && (
-            <button
-              onClick={() => update({ providerOverride: undefined })}
-              className="absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300"
-              aria-label="Clear provider override"
-            >
-              <X size={11} />
-            </button>
-          )}
-        </div>
-        <p className="mt-1 text-[10px] text-gray-600">
-          Live mode only — routes this node to a different provider (e.g. openai, gemini).
-        </p>
       </label>
     </>
   )

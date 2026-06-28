@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { ChevronDown, ChevronLeft, ChevronRight, History, Search, Trash2 } from 'lucide-react'
+import { ChevronDown, ChevronLeft, ChevronRight, Download, History, Search, Trash2 } from 'lucide-react'
 import { useRunHistoryStore } from '../store/runHistoryStore'
 import { useDebuggerStore } from '../store/debuggerStore'
 import { useSimulationStore } from '../store/simulationStore'
@@ -7,7 +7,19 @@ import { CostBreakdown } from './CostPanel'
 import { SpanTimeline } from './SpanTimeline'
 import { TraceEntryRow } from './TraceLog'
 import { diffRuns, type NodeDiff } from '../utils/diffRuns'
+import { exportTraceAsJSON } from '../utils/traceExporter'
 import type { RunRecord } from '../types'
+
+function downloadTrace(run: RunRecord) {
+  const json = exportTraceAsJSON(run.id, run.spanLog ?? [])
+  const blob = new Blob([json], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `trace-${run.id}.json`
+  a.click()
+  URL.revokeObjectURL(url)
+}
 
 function formatRelativeTime(ts: number): string {
   const diff = Date.now() - ts
@@ -249,7 +261,18 @@ export function RunHistoryPanel() {
                 />
                 Span Timeline
               </button>
-              {spansOpen && <SpanTimeline spans={selectedRun.spanLog} />}
+              {spansOpen && (
+                <>
+                  <SpanTimeline spans={selectedRun.spanLog} />
+                  <button
+                    onClick={() => downloadTrace(selectedRun)}
+                    className="mt-1.5 flex items-center gap-1 rounded-md border border-white/10 px-2 py-0.5 text-[10px] text-gray-300 hover:border-accent/50 hover:text-white"
+                  >
+                    <Download size={10} />
+                    Export Trace
+                  </button>
+                </>
+              )}
             </div>
           )}
 
