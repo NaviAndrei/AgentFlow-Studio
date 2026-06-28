@@ -620,13 +620,13 @@ function CodeExecutorFields({ data, update }: FieldsProps) {
           value={language}
           onChange={(e) =>
             update({
-              language: e.target.value as 'python' | 'javascript' | 'bash',
+              language: e.target.value as 'python' | 'javascript' | 'bash', // bash: reserved for E2B backend V2
             })
           }
         >
           <option value="python">python</option>
           <option value="javascript">javascript</option>
-          <option value="bash">bash</option>
+          <option value="bash" disabled>Bash (requires E2B — coming in V2)</option>
         </select>
       </label>
       {language === 'python' && (
