@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import {
   Background,
   BackgroundVariant,
@@ -46,8 +46,33 @@ export function Canvas() {
   const setEdgeKind = useCanvasStore((s) => s.setEdgeKind)
   const removeEdge = useCanvasStore((s) => s.removeEdge)
   const minimapVisible = useUIStore((s) => s.minimapVisible)
+  const pendingNodes = useCanvasStore((s) => s.pendingNodes)
+  const pendingEdges = useCanvasStore((s) => s.pendingEdges)
+  const commitPendingFlow = useCanvasStore((s) => s.commitPendingFlow)
+  const clearPendingFlow = useCanvasStore((s) => s.clearPendingFlow)
   const { screenToFlowPosition } = useReactFlow()
   const [edgeMenu, setEdgeMenu] = useState<EdgeMenuState | null>(null)
+
+  // Ghost-preview pending nodes: dimmed + non-interactive until committed.
+  const displayNodes = useMemo(
+    () =>
+      pendingNodes.length === 0
+        ? nodes
+        : [
+            ...nodes,
+            ...pendingNodes.map((n) => ({
+              ...n,
+              selectable: false,
+              draggable: false,
+              className: 'opacity-50 pointer-events-none',
+            })),
+          ],
+    [nodes, pendingNodes],
+  )
+  const displayEdges = useMemo(
+    () => (pendingEdges.length === 0 ? edges : [...edges, ...pendingEdges]),
+    [edges, pendingEdges],
+  )
 
   const onDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
     event.preventDefault()
@@ -120,8 +145,8 @@ export function Canvas() {
     <>
       <ParticleDefs />
       <ReactFlow<AgentFlowNode>
-        nodes={nodes}
-        edges={edges}
+        nodes={displayNodes}
+        edges={displayEdges}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         onNodesChange={onNodesChange}
@@ -193,6 +218,23 @@ export function Canvas() {
               Delete edge
             </button>
           </div>
+        </div>
+      )}
+      {pendingNodes.length > 0 && (
+        <div className="absolute bottom-6 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 rounded-lg border border-accent/40 bg-surface px-4 py-2 text-xs text-gray-200 shadow-2xl">
+          <span>🪄 {pendingNodes.length} nodes ready to add</span>
+          <button
+            onClick={commitPendingFlow}
+            className="rounded-md bg-accent px-2.5 py-1 text-xs font-semibold text-black transition-opacity hover:opacity-90"
+          >
+            Add to canvas
+          </button>
+          <button
+            onClick={clearPendingFlow}
+            className="rounded-md border border-white/10 px-2.5 py-1 text-xs text-gray-300 transition-colors hover:border-accent/50 hover:text-white"
+          >
+            Discard
+          </button>
         </div>
       )}
     </>

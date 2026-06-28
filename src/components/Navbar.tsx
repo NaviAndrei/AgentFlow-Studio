@@ -41,6 +41,10 @@ import { PROVIDERS, listOllamaModels } from '../llm'
 import { ConfirmDialog } from './Modal'
 import { HintIcon } from './HintIcon'
 import { HINTS } from '../data/hints'
+import { usePermission } from '../hooks/usePermission'
+import type { WorkspaceRole } from '../types'
+
+const WORKSPACE_ROLES: WorkspaceRole[] = ['viewer', 'editor', 'deployer', 'admin']
 
 export function Navbar() {
   const clearCanvas = useCanvasStore((s) => s.clearCanvas)
@@ -75,6 +79,14 @@ export function Navbar() {
   const liveError = useLLMConfigStore((s) => s.liveError)
   const setLiveError = useLLMConfigStore((s) => s.setLiveError)
   const setSettingsOpen = useLLMConfigStore((s) => s.setSettingsOpen)
+  const setNlBuilderOpen = useUIStore((s) => s.setNlBuilderOpen)
+  const currentRole = useUIStore((s) => s.currentRole)
+  const setRole = useUIStore((s) => s.setRole)
+  const canClearCanvas = usePermission('clearCanvas')
+  const canSave = usePermission('saveBlueprint')
+  const canRun = usePermission('startRun')
+  const canExport = usePermission('exportFlow')
+  const canSwitchRole = usePermission('switchRole')
 
   useEffect(() => {
     if (!liveError) return
@@ -192,16 +204,29 @@ export function Navbar() {
       </div>
       <div className="flex items-center gap-2">
         <button
-          onClick={handleNew}
+          onClick={() => setNlBuilderOpen(true)}
+          title="Build a flow from a plain-English description"
           className="flex items-center gap-1.5 rounded-md border border-white/10 px-3 py-1.5 text-xs text-gray-300 transition-colors hover:border-accent/50 hover:text-white"
+        >
+          🪄 Build
+        </button>
+        <button
+          onClick={handleNew}
+          disabled={!canClearCanvas}
+          title={canClearCanvas ? undefined : 'Requires admin role'}
+          className="flex items-center gap-1.5 rounded-md border border-white/10 px-3 py-1.5 text-xs text-gray-300 transition-colors hover:border-accent/50 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
         >
           <FilePlus2 size={13} />
           New
         </button>
         <button
           onClick={handleSave}
-          disabled={!hasNodes}
-          title="Download the canvas as JSON (nodes, edges, viewport)"
+          disabled={!hasNodes || !canSave}
+          title={
+            canSave
+              ? 'Download the canvas as JSON (nodes, edges, viewport)'
+              : 'Requires editor role or higher'
+          }
           className="flex items-center gap-1.5 rounded-md border border-white/10 px-3 py-1.5 text-xs text-gray-300 transition-colors hover:border-accent/50 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
         >
           <Download size={13} />
@@ -280,11 +305,13 @@ export function Navbar() {
         <div className="flex items-center gap-1">
           <button
             onClick={() => (simulationActive ? stopSimulation() : startSimulation())}
-            disabled={!hasNodes && !simulationActive}
+            disabled={(!hasNodes && !simulationActive) || (!simulationActive && !canRun)}
             title={
-              !simulationActive && costEstimate.count > 0
-                ? `~$${costEstimate.estimatedCostUsd.toFixed(4)} estimated across ${costEstimate.count} LLM node${costEstimate.count > 1 ? 's' : ''}`
-                : undefined
+              !simulationActive && !canRun
+                ? 'Requires deployer role or higher'
+                : !simulationActive && costEstimate.count > 0
+                  ? `~$${costEstimate.estimatedCostUsd.toFixed(4)} estimated across ${costEstimate.count} LLM node${costEstimate.count > 1 ? 's' : ''}`
+                  : undefined
             }
             className={`flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
               simulationActive
@@ -395,13 +422,15 @@ export function Navbar() {
         <div className="flex items-center gap-1">
           <button
             onClick={() => setExportOpen(true)}
-            disabled={hasErrors || liveMode}
+            disabled={hasErrors || liveMode || !canExport}
             title={
-              hasErrors
-                ? 'Fix validation errors before exporting'
-                : liveMode
-                  ? 'Disable Live mode to export'
-                  : undefined
+              !canExport
+                ? 'Requires editor role or higher'
+                : hasErrors
+                  ? 'Fix validation errors before exporting'
+                  : liveMode
+                    ? 'Disable Live mode to export'
+                    : undefined
             }
             className="flex items-center gap-1.5 rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-black transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
           >
@@ -418,6 +447,28 @@ export function Navbar() {
         >
           <HelpCircle size={13} />
         </button>
+        {canSwitchRole ? (
+          <select
+            value={currentRole}
+            onChange={(e) => setRole(e.target.value as WorkspaceRole)}
+            title="Demo mode: role-based access control is UI-only. Backend auth is a V2 feature."
+            aria-label="Workspace role"
+            className="rounded-md border border-white/10 bg-surface px-2 py-1.5 text-xs text-gray-300 transition-colors hover:border-accent/50 focus:border-accent focus:outline-none"
+          >
+            {WORKSPACE_ROLES.map((r) => (
+              <option key={r} value={r}>
+                👤 {r}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <span
+            title="Demo mode: role-based access control is UI-only. Backend auth is a V2 feature."
+            className="rounded-md border border-white/10 px-2 py-1.5 text-xs text-gray-400"
+          >
+            👤 {currentRole}
+          </span>
+        )}
       </div>
       <ConfirmDialog
         open={confirmNewOpen}

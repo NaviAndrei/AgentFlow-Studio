@@ -1,5 +1,12 @@
 import { create } from 'zustand'
-import type { AgentFlowEdge, AgentFlowNode, Blueprint } from '../types'
+import type {
+  AgentFlowEdge,
+  AgentFlowNode,
+  Blueprint,
+  PermissionAction,
+  WorkspaceRole,
+} from '../types'
+import { ROLE_PERMISSIONS } from '../types'
 import { useCanvasStore } from './canvasStore'
 import { useEvalStore } from './evalStore'
 import { usePromptStore } from './promptStore'
@@ -31,6 +38,14 @@ interface UIState {
   minimapVisible: boolean
   /** Global CSS marching-dashes effect on edges, independent of simulation. */
   animatedEdgesEnabled: boolean
+  /** F14 — Natural-language flow builder modal visibility. */
+  nlBuilderOpen: boolean
+  /** F16 — current demo-mode workspace role + flag. */
+  currentRole: WorkspaceRole
+  isDemoMode: boolean
+  setRole: (role: WorkspaceRole) => void
+  checkPermission: (action: PermissionAction) => boolean
+  setNlBuilderOpen: (open: boolean) => void
   setGalleryOpen: (open: boolean) => void
   setExportOpen: (open: boolean) => void
   setQuickAddOpen: (open: boolean) => void
@@ -55,6 +70,22 @@ interface UIState {
 const widePanelDefault =
   typeof window === 'undefined' || window.innerWidth >= 1024
 
+const ROLE_STORAGE_KEY = 'workspace-role'
+const VALID_ROLES: WorkspaceRole[] = ['viewer', 'editor', 'deployer', 'admin']
+
+/** Hydrate the persisted role (demo-mode RBAC); defaults to 'admin'. */
+function loadRole(): WorkspaceRole {
+  if (typeof window === 'undefined') return 'admin'
+  try {
+    const stored = window.localStorage.getItem(ROLE_STORAGE_KEY)
+    if (stored && (VALID_ROLES as string[]).includes(stored))
+      return stored as WorkspaceRole
+  } catch {
+    // localStorage unavailable (private mode) — fall through to default.
+  }
+  return 'admin'
+}
+
 export const useUIStore = create<UIState>((set, get) => ({
   galleryOpen: false,
   exportOpen: false,
@@ -72,6 +103,26 @@ export const useUIStore = create<UIState>((set, get) => ({
   landingDismissed: false,
   minimapVisible: true,
   animatedEdgesEnabled: false,
+  nlBuilderOpen: false,
+  currentRole: loadRole(),
+  isDemoMode: true,
+
+  setRole: (currentRole) => {
+    set({ currentRole })
+    try {
+      window.localStorage.setItem(ROLE_STORAGE_KEY, currentRole)
+    } catch {
+      // Ignore persistence failures (private mode / disabled storage).
+    }
+  },
+  checkPermission: (action) => {
+    const { currentRole, isDemoMode } = get()
+    return (
+      ROLE_PERMISSIONS[currentRole].includes(action) ||
+      (action === 'switchRole' && isDemoMode)
+    )
+  },
+  setNlBuilderOpen: (nlBuilderOpen) => set({ nlBuilderOpen }),
 
   setRailOffsetPx: (railOffsetPx) => set({ railOffsetPx }),
   setGalleryOpen: (galleryOpen) => set({ galleryOpen }),

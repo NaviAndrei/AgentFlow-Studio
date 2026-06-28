@@ -36,3 +36,28 @@ describe('uiStore — MCP panel toggle', () => {
     expect(useUIStore.getState().mcpPanelOpen).toBe(false)
   })
 })
+
+describe('uiStore — RBAC (F16)', () => {
+  beforeEach(() => {
+    useUIStore.setState({ currentRole: 'admin', isDemoMode: true })
+  })
+
+  it('admin can deleteNode by default', () => {
+    expect(useUIStore.getState().checkPermission('deleteNode')).toBe(true)
+  })
+
+  it('viewer cannot deleteNode', () => {
+    useUIStore.getState().setRole('viewer')
+    expect(useUIStore.getState().checkPermission('deleteNode')).toBe(false)
+  })
+
+  it('editor cannot startRun', () => {
+    useUIStore.getState().setRole('editor')
+    expect(useUIStore.getState().checkPermission('startRun')).toBe(false)
+  })
+
+  it('demo mode allows switchRole for any role', () => {
+    useUIStore.getState().setRole('viewer')
+    expect(useUIStore.getState().checkPermission('switchRole')).toBe(true)
+  })
+})

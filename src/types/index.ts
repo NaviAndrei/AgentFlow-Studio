@@ -39,6 +39,50 @@ export type AgentFlowNodeType =
 
 export type MemoryType = 'short-term' | 'vector-store' | 'checkpointer'
 
+/** F16 — demo-mode workspace roles (UI-only RBAC; backend auth is a V2 feature). */
+export type WorkspaceRole = 'viewer' | 'editor' | 'deployer' | 'admin'
+
+export type PermissionAction =
+  | 'deleteNode'
+  | 'clearCanvas'
+  | 'saveBlueprint'
+  | 'startRun'
+  | 'manageTriggers'
+  | 'exportFlow'
+  | 'changeSettings'
+  | 'switchRole'
+
+export const ROLE_PERMISSIONS: Record<WorkspaceRole, PermissionAction[]> = {
+  viewer: [],
+  editor: ['deleteNode', 'saveBlueprint', 'exportFlow'],
+  deployer: ['deleteNode', 'saveBlueprint', 'exportFlow', 'startRun', 'manageTriggers'],
+  admin: [
+    'deleteNode',
+    'clearCanvas',
+    'saveBlueprint',
+    'startRun',
+    'manageTriggers',
+    'exportFlow',
+    'changeSettings',
+    'switchRole',
+  ],
+}
+
+/** F15 — A2A (Agent-to-Agent) remote agent node config. */
+export interface A2AAgentConfig {
+  agentUrl: string
+  skillId?: string
+  authToken?: string
+  pollIntervalMs?: number
+  maxPollAttempts?: number
+}
+
+export interface A2AAgentCard {
+  name: string
+  description?: string
+  skills: Array<{ id: string; name: string }>
+}
+
 /** A registered MCP server entry in the mcpStore registry. */
 export interface MCPServerConfig {
   serverKey: string
@@ -183,6 +227,8 @@ export type AgentFlowNodeData = {
   language?: 'python' | 'javascript' | 'bash'
   timeout?: number
   allowNetworkAccess?: boolean
+  /** F18 — explicit script to run; when empty the node runs upstream-generated code. */
+  code?: string
   /** Evaluator — LLM-as-judge that scores and routes. */
   scoringPrompt?: string
   scoreType?: 'pass_fail' | 'numeric' | 'letter_grade'
@@ -225,6 +271,9 @@ export type AgentFlowNodeData = {
   taskDescription?: string
   authToken?: string
   timeoutSeconds?: number
+  /** F15 — structured A2A config + cached discovery card. */
+  a2aConfig?: A2AAgentConfig
+  a2aAgentCard?: A2AAgentCard
   /** Multimodal Input — image/audio/document entry for vision-capable LLMs. */
   inputType?: 'image' | 'audio' | 'document' | 'mixed'
   inputVariable?: string

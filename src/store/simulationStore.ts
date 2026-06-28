@@ -32,6 +32,9 @@ import { resolveNodePrompts } from '../utils/resolvePrompts'
 import { detectCycle, ESCAPE_NODE_TYPES, hasEscapeOnCycle } from '../utils/validation'
 import { useRunHistoryStore } from './runHistoryStore'
 import { useToastStore } from './toastStore'
+import { useUIStore } from './uiStore'
+import { sendA2ATask, pollA2ATask } from '../utils/a2aClient'
+import { runJavaScriptInSandbox, runPythonInSandbox } from '../utils/sandboxExecutor'
 import type {
   AgentFlowEdge,
   AgentFlowNode,
@@ -1673,6 +1676,79 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
         await delay(300)
         return { final_reply: truncate(lastAssistant?.content ?? '', 400) }
       }
+      case 'a2aAgent': {
+        // F15 — dispatch a JSON-RPC task to an external A2A v1.0 agent, poll
+        // to completion, and surface the text artifact. Never crashes the run.
+        const cfg = node.data.a2aConfig
+        const url = (cfg?.agentUrl ?? node.data.agentUrl ?? '').trim()
+        if (!url) {
+          useToastStore
+            .getState()
+            .pushToast(`${node.data.label}: A2A node missing agent URL`, 'warning')
+          return { error: 'A2A node missing agent URL' }
+        }
+        const authToken = cfg?.authToken ?? node.data.authToken
+        const onStatusUpdate = (s: string) =>
+          useToastStore.getState().pushToast(`A2A: ${s}...`, 'info')
+        const sent = await sendA2ATask(
+          url,
+          String(latestContent()),
+          cfg?.skillId,
+          authToken,
+        )
+        if (sent.error || !sent.taskId) {
+          useToastStore
+            .getState()
+            .pushToast(`${node.data.label}: ${sent.error ?? 'A2A send failed'}`, 'warning')
+          return { error: sent.error ?? 'A2A send failed' }
+        }
+        const polled = await pollA2ATask(
+          url,
+          sent.taskId,
+          {
+            pollIntervalMs: cfg?.pollIntervalMs ?? 2000,
+            maxPollAttempts: cfg?.maxPollAttempts ?? 30,
+            authToken,
+          },
+          onStatusUpdate,
+        )
+        if (polled.error) {
+          useToastStore
+            .getState()
+            .pushToast(`${node.data.label}: ${polled.error}`, 'warning')
+          return { error: polled.error, status: polled.status, taskId: sent.taskId }
+        }
+        if (polled.output) {
+          set({
+            messages: [...get().messages, { role: 'user', content: polled.output }],
+          })
+        }
+        return { output: polled.output, status: polled.status, taskId: sent.taskId }
+      }
+      case 'codeExecutor': {
+        // F18 — real sandboxed execution (iframe for JS, Pyodide WASM for
+        // Python) replacing the simulated fake. Errors are surfaced as toasts.
+        const lang = node.data.language ?? 'javascript'
+        const fn =
+          lang === 'python' ? runPythonInSandbox : runJavaScriptInSandbox
+        const code = node.data.code?.trim() ? node.data.code : latestContent()
+        const result = await fn(code, latestContent())
+        if (result.timedOut) {
+          useToastStore
+            .getState()
+            .pushToast(`${node.data.label}: code execution timed out`, 'warning')
+        }
+        if (result.stderr) {
+          useToastStore
+            .getState()
+            .pushToast(`${node.data.label}: ${truncate(result.stderr, 120)}`, 'warning')
+        }
+        return {
+          stdout: result.stdout,
+          returnValue: result.returnValue,
+          timedOut: result.timedOut,
+        }
+      }
       default: {
         // Agents, supervisors, loops etc. call the real provider in Live
         // mode, mirroring the 'llm' case with a role-flavored fallback
@@ -2638,7 +2714,12 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
 
       // Code Executor: first attempt fails (default fake), subsequent attempts
       // (a re-visit caused by a fix loop) "succeed" so the loop can terminate.
-      if (node.type === 'codeExecutor' && (visitCounts.get(nodeId) ?? 1) >= 2) {
+      // Simulated engine only — Live mode runs the real sandbox (F18).
+      if (
+        node.type === 'codeExecutor' &&
+        !get().liveMode &&
+        (visitCounts.get(nodeId) ?? 1) >= 2
+      ) {
         output = {
           language: node.data.language ?? 'python',
           stdout: 'OK\nResult: 42',
@@ -2938,6 +3019,12 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
       }),
 
     start: () => {
+      if (!useUIStore.getState().checkPermission('startRun')) {
+        useToastStore
+          .getState()
+          .pushToast('Run blocked: insufficient permissions', 'warning')
+        return
+      }
       const executionQueue = buildSeeds()
       if (executionQueue.length === 0) return
 

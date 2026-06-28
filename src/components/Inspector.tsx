@@ -20,6 +20,11 @@ import { usePromptStore } from '../store/promptStore'
 import { ExternalLink, Link as LinkIcon, X } from 'lucide-react'
 import type { AgentFlowNodeData, AgentFlowNodeType, MemoryType } from '../types'
 import { useMCPStore } from '../store/mcpStore'
+import { useToastStore } from '../store/toastStore'
+import { callLLMDirect } from '../utils/callLLMDirect'
+import { buildSuggestionPrompt } from '../utils/buildSuggestionPrompt'
+import { SuggestionDiffPreview } from './SuggestionDiffPreview'
+import { fetchAgentCard } from '../utils/a2aClient'
 
 const inputCls =
   'w-full rounded-md border border-white/10 bg-surface-2 px-2 py-1.5 text-xs text-gray-200 focus:border-accent focus:outline-none'
@@ -115,6 +120,70 @@ function SystemPromptRegistryLink({ data, update }: FieldsProps) {
   )
 }
 
+/**
+ * "✨ Suggest" affordance: one LLM call returns an improved system prompt,
+ * shown as an inline word-level diff the user accepts or rejects. Opt-in only.
+ * Reads the selected node + upstream labels straight from canvasStore.
+ */
+function SystemPromptSuggest({ data, update }: FieldsProps) {
+  const [isSuggesting, setIsSuggesting] = useState(false)
+  const [pendingSuggestion, setPendingSuggestion] = useState<string | null>(null)
+  const selectedNodeId = useCanvasStore((s) => s.selectedNodeId)
+
+  const handleSuggest = async () => {
+    const { nodes, edges, selectedNodeId: id } = useCanvasStore.getState()
+    const node = nodes.find((n) => n.id === id)
+    if (!node) return
+    const upstreamIds = new Set(
+      edges.filter((e) => e.target === node.id).map((e) => e.source),
+    )
+    const upstreamLabels = nodes
+      .filter((n) => upstreamIds.has(n.id))
+      .map((n) => n.data.label)
+      .filter(Boolean)
+    setIsSuggesting(true)
+    const result = await callLLMDirect(
+      buildSuggestionPrompt(node, upstreamLabels),
+      '',
+    )
+    setIsSuggesting(false)
+    if (result.error || !result.text.trim()) {
+      useToastStore
+        .getState()
+        .pushToast(result.error ?? 'No suggestion returned', 'warning')
+      return
+    }
+    setPendingSuggestion(result.text.trim())
+  }
+
+  return (
+    <div className="mt-2">
+      <button
+        onClick={() => void handleSuggest()}
+        disabled={isSuggesting}
+        className="rounded-md border border-white/10 px-2 py-1 text-xs text-gray-300 transition-colors hover:border-accent/50 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        {isSuggesting ? 'Generating…' : '✨ Suggest'}
+      </button>
+      {pendingSuggestion !== null && (
+        <SuggestionDiffPreview
+          current={data.systemPrompt ?? ''}
+          suggested={pendingSuggestion}
+          onAccept={() => {
+            if (selectedNodeId)
+              useCanvasStore
+                .getState()
+                .updateNodeData(selectedNodeId, { systemPrompt: pendingSuggestion })
+            else update({ systemPrompt: pendingSuggestion })
+            setPendingSuggestion(null)
+          }}
+          onReject={() => setPendingSuggestion(null)}
+        />
+      )}
+    </div>
+  )
+}
+
 function LLMFields({ data, update }: FieldsProps) {
   const temperature = data.temperature ?? 0.7
   const usingGlobal = !data.modelOverride && !data.providerOverride
@@ -204,6 +273,7 @@ function LLMFields({ data, update }: FieldsProps) {
           onChange={(e) => update({ systemPrompt: e.target.value })}
         />
         <SystemPromptRegistryLink data={data} update={update} />
+        <SystemPromptSuggest data={data} update={update} />
       </label>
       <label className="block">
         <span className={labelHintCls}>
@@ -559,6 +629,19 @@ function CodeExecutorFields({ data, update }: FieldsProps) {
           <option value="bash">bash</option>
         </select>
       </label>
+      {language === 'python' && (
+        <p className="text-[10px] text-gray-500">
+          🐍 Python runs via Pyodide WASM (~8MB, loaded on first use)
+        </p>
+      )}
+      <label className="block">
+        <span className={labelCls}>Code (leave empty to run upstream-generated code)</span>
+        <textarea
+          className={`${inputCls} h-28 resize-none font-mono`}
+          value={data.code ?? ''}
+          onChange={(e) => update({ code: e.target.value })}
+        />
+      </label>
       <label className="block">
         <span className={labelCls}>Timeout (seconds)</span>
         <input
@@ -658,6 +741,35 @@ function MultimodalInputFields({ data, update }: FieldsProps) {
 }
 
 function A2AAgentFields({ data, update }: FieldsProps) {
+  const [discovering, setDiscovering] = useState(false)
+  const card = data.a2aAgentCard
+  const cfg = data.a2aConfig
+
+  const updateA2A = (patch: Partial<NonNullable<AgentFlowNodeData['a2aConfig']>>) =>
+    update({
+      a2aConfig: {
+        agentUrl: data.agentUrl ?? cfg?.agentUrl ?? '',
+        ...cfg,
+        ...patch,
+      },
+    })
+
+  const handleDiscover = async () => {
+    const url = (data.agentUrl ?? '').trim()
+    if (!url) {
+      useToastStore.getState().pushToast('Enter an agent URL first', 'warning')
+      return
+    }
+    setDiscovering(true)
+    const result = await fetchAgentCard(url)
+    setDiscovering(false)
+    if (!result) {
+      useToastStore.getState().pushToast('Could not discover agent', 'warning')
+      return
+    }
+    update({ a2aAgentCard: result })
+  }
+
   return (
     <>
       <label className="block">
@@ -681,6 +793,70 @@ function A2AAgentFields({ data, update }: FieldsProps) {
           placeholder="http://localhost:8000/a2a"
         />
       </label>
+      <button
+        onClick={() => void handleDiscover()}
+        disabled={discovering}
+        className="rounded-md border border-white/10 px-2 py-1 text-xs text-gray-300 transition-colors hover:border-accent/50 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        {discovering ? 'Discovering…' : 'Discover'}
+      </button>
+      {card && (
+        <p className="text-[10px] text-gray-400">
+          Agent: <span className="text-gray-200">{card.name}</span>
+          {card.skills.length > 0 &&
+            ` — skills: ${card.skills.map((s) => s.name).join(', ')}`}
+        </p>
+      )}
+      <label className="block">
+        <span className={labelCls}>Skill</span>
+        {card && card.skills.length > 0 ? (
+          <select
+            className={inputCls}
+            value={cfg?.skillId ?? ''}
+            onChange={(e) => updateA2A({ skillId: e.target.value })}
+          >
+            <option value="">(default)</option>
+            {card.skills.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <input
+            className={inputCls}
+            value={cfg?.skillId ?? ''}
+            onChange={(e) => updateA2A({ skillId: e.target.value })}
+            placeholder="skill id (optional)"
+          />
+        )}
+      </label>
+      <div className="grid grid-cols-2 gap-2">
+        <label className="block">
+          <span className={labelCls}>Poll interval (ms)</span>
+          <input
+            type="number"
+            min={500}
+            className={inputCls}
+            value={cfg?.pollIntervalMs ?? 2000}
+            onChange={(e) =>
+              updateA2A({ pollIntervalMs: Math.max(500, Number(e.target.value) || 2000) })
+            }
+          />
+        </label>
+        <label className="block">
+          <span className={labelCls}>Max poll attempts</span>
+          <input
+            type="number"
+            min={1}
+            className={inputCls}
+            value={cfg?.maxPollAttempts ?? 30}
+            onChange={(e) =>
+              updateA2A({ maxPollAttempts: Math.max(1, Number(e.target.value) || 30) })
+            }
+          />
+        </label>
+      </div>
       <label className="block">
         <span className={labelCls}>Task description</span>
         <textarea

@@ -20,6 +20,8 @@ import { validateGraph } from '../utils/validation'
 import { getLayoutedElements, type LayoutDirection } from '../utils/autoLayout'
 import { getRfInstance } from '../utils/rfInstance'
 import { useMemoryStore } from './memoryStore'
+import { useUIStore } from './uiStore'
+import { useToastStore } from './toastStore'
 
 interface Snapshot {
   nodes: AgentFlowNode[]
@@ -72,6 +74,13 @@ interface CanvasState {
   getProblemsByNodeId: () => Map<string, ValidationIssue[]>
   /** Call after a successful Save to clear the dirty flag. */
   markClean: () => void
+  /** F14 — NL-builder ghost preview: staged nodes/edges not yet on the live canvas. */
+  pendingNodes: AgentFlowNode[]
+  pendingEdges: AgentFlowEdge[]
+  setPendingFlow: (nodes: AgentFlowNode[], edges: AgentFlowEdge[]) => void
+  /** Append staged nodes/edges to the live canvas (does not replace). */
+  commitPendingFlow: () => void
+  clearPendingFlow: () => void
 }
 
 /**
@@ -150,6 +159,23 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
     history: [],
     future: [],
     isDirty: false,
+    pendingNodes: [],
+    pendingEdges: [],
+
+    setPendingFlow: (pendingNodes, pendingEdges) =>
+      set({ pendingNodes, pendingEdges }),
+    clearPendingFlow: () => set({ pendingNodes: [], pendingEdges: [] }),
+    commitPendingFlow: () => {
+      const { nodes, edges, pendingNodes, pendingEdges } = get()
+      if (pendingNodes.length === 0 && pendingEdges.length === 0) return
+      pushHistory(`Add ${pendingNodes.length} node(s) from description`)
+      set({
+        ...validated([...nodes, ...pendingNodes], [...edges, ...pendingEdges]),
+        pendingNodes: [],
+        pendingEdges: [],
+        isDirty: true,
+      })
+    },
 
     onNodesChange: (changes) => {
       const dragChange = changes.find(
@@ -331,6 +357,12 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
     },
 
     deleteSelected: () => {
+      if (!useUIStore.getState().checkPermission('deleteNode')) {
+        useToastStore
+          .getState()
+          .pushToast('Delete blocked: insufficient permissions', 'warning')
+        return
+      }
       const { nodes, edges } = get()
       const nodeIds = new Set(
         nodes.filter((n) => n.selected).map((n) => n.id),

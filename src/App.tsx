@@ -15,6 +15,7 @@ import { HumanInLoopModal } from './components/HumanInLoopModal'
 import { Inspector } from './components/Inspector'
 import { LastRunSummaryBar } from './components/LastRunSummaryBar'
 import { LLMSettingsModal } from './components/LLMSettingsModal'
+import { NLFlowBuilderModal } from './components/NLFlowBuilderModal'
 import { Navbar } from './components/Navbar'
 import { PanelRail } from './components/PanelRail'
 import { MCPServersPanel } from './components/MCPServersPanel'
@@ -75,6 +76,7 @@ export default function App() {
           <SnapshotModal />
           <QuickAddPopup />
           <LLMSettingsModal />
+          <NLFlowBuilderModal />
           <PanelErrorBoundary name="Debugger">
             <TraceLog />
           </PanelErrorBoundary>
