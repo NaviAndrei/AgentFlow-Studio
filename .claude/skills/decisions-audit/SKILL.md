@@ -7,6 +7,7 @@ description: >
   "Do Not Touch" markers. Reads DECISIONS.md to surface rationale first.
 allowed-tools:
   - Read
+context: fork
 ---
 
 ## Procedure

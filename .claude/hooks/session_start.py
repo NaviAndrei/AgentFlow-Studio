@@ -30,7 +30,16 @@ def main() -> None:
     try:
         root = Path(__file__).resolve().parents[2]
 
-        for rel in ("CLAUDE.md", "docs/progress.md", "ARCHITECTURE.md"):
+        # Only load ARCHITECTURE.md when recent changes touch architecture-relevant paths
+        arch_paths = ["src/nodes/", "src/store/", "src/utils/", "src/simulation/"]
+        changed_files = run_git(["git", "diff", "--name-only", "HEAD"])
+        load_architecture = any(p in changed_files for p in arch_paths)
+
+        core_files = ["CLAUDE.md", "docs/progress.md"]
+        if load_architecture:
+            core_files.append("ARCHITECTURE.md")
+
+        for rel in core_files:
             p = root / rel
             if p.exists():
                 content = read_head(p)
@@ -55,7 +64,14 @@ def main() -> None:
         print(json.dumps(output))
     except Exception:
         try:
-            print(json.dumps({"additionalContext": "", "systemMessage": "session_start: loaded project context"}))
+            print(
+                json.dumps(
+                    {
+                        "additionalContext": "",
+                        "systemMessage": "session_start: loaded project context",
+                    }
+                )
+            )
         except Exception:
             pass
 

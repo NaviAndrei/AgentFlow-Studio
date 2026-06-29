@@ -8,6 +8,7 @@ description: >
 allowed-tools:
   - Read
   - Grep
+context: fork
 ---
 
 ## Procedure

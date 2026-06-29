@@ -67,13 +67,30 @@ CONTEXT_MAP: dict[str, str] = {
     "test": "src/utils/codeExporter.test.ts",
     # Hooks
     "hook": ".claude/hooks",
+    # Design system
+    "components": "COMPONENTS.md",
+    "panel": "COMPONENTS.md",
+    "panelrail": "COMPONENTS.md",
+    "tracelog": "COMPONENTS.md",
+    "inspector": "COMPONENTS.md",
+    # Tasks
+    "tasks": "TASKS.md",
+    "backlog": "TASKS.md",
+    # Decisions
+    "decisions": "DECISIONS.md",
+    "invariant": "DECISIONS.md",
+    "do not touch": "DECISIONS.md",
 }
+
+MAX_INJECTIONS = 2
 
 injected: list[str] = []
 added: set[str] = set()
 project_root: str = os.getcwd()
 
 for keyword, rel_path in CONTEXT_MAP.items():
+    if len(injected) >= MAX_INJECTIONS:
+        break
     if keyword not in prompt:
         continue
     if rel_path in added:
@@ -94,7 +111,10 @@ for keyword, rel_path in CONTEXT_MAP.items():
         pass
 
 if injected:
-    log_action("injected", f"keywords matched → {len(injected)} contexts: {', '.join(sorted(added))}")
+    log_action(
+        "injected",
+        f"keywords matched → {len(injected)} contexts: {', '.join(sorted(added))}",
+    )
     print(json.dumps({"additionalContext": "\n---\n".join(injected)}))
 else:
     log_action("no_match", f"prompt length={len(prompt)}")

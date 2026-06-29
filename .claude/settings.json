@@ -80,14 +80,31 @@
           },
           {
             "type": "command",
-            "command": "python .claude/hooks/progress_guard.py"
-          },
-          {
-            "type": "command",
             "command": "npm run test 2>&1 | tail -3"
           }
         ]
       }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python .claude/hooks/pre_compact_snapshot.py"
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python .claude/hooks/post_compact_inject.py"
+          }
+        ]
+      }
     ]
-  }
+  },
+  "fallbackModel": ["claude-sonnet-4-5", "claude-haiku-4-5"]
 }

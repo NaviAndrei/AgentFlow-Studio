@@ -1098,4 +1098,4 @@ src/store/simulationStore.ts (agent/supervisor/loop currently use fakeStreamText
 - **`G` shortcut escape hatch**: fires globally without `isEditableTarget` check — low risk today, re-evaluate if custom focusable editors are added.
 - ~~**`on_stop_reminder.py` duplicate hook**: fires multiple times per session
   end producing N identical empty template blocks.~~ — fixed Session 14: guard checks
-  if `(TODO: fill session name)` is in the first 400 chars before prepending.
+  if the session-name placeholder is in the first 400 chars before prepending.

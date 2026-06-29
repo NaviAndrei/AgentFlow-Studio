@@ -75,6 +75,18 @@ def main() -> None:
 
         progress_mtime = PROGRESS_FILE.stat().st_mtime
 
+        # Check for unfilled TODO markers (merged from progress_guard.py)
+        TODO_MARKERS = ["TODO: fill session name", "TODO: what did we accomplish"]
+        try:
+            content = PROGRESS_FILE.read_text(encoding="utf-8")
+            if any(marker in content for marker in TODO_MARKERS):
+                block(
+                    "docs/progress.md has unfilled TODO markers. "
+                    "Complete the handoff block before stopping."
+                )
+        except Exception:
+            pass
+
         if progress_mtime < session_start_mtime:
             block(
                 "docs/progress.md has not been updated this session. "
