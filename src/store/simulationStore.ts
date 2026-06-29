@@ -370,9 +370,6 @@ function abortInFlight() {
   abortController = null
 }
 
-const delay = (ms: number) =>
-  new Promise<void>((resolve) => window.setTimeout(resolve, ms))
-
 /**
  * Like `delay`, but resolves immediately if a Stop/Pause/Restart bumps
  * `runToken` past the captured value — either before the call (already
@@ -1271,6 +1268,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
   const executeLiveNode = async (
     node: AgentFlowNode,
     nodeId: string,
+    token: number,
   ): Promise<unknown> => {
     const metrics = useSimulationMetricsStore.getState()
     const spanId = crypto.randomUUID()
@@ -1293,7 +1291,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
       case 'start': {
         const content = get().userInput.trim() || 'Hello!'
         set({ messages: [{ role: 'user', content }] })
-        await delay(400)
+        await abortableDelay(400, token)
         return { inputs: { message: content } }
       }
       case 'llm': {
@@ -1492,7 +1490,6 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
         }
       }
       case 'httpRequest': {
-        const token = runToken
         const nodeOutputs = get().nodeOutputs
         const url = resolveHttpTemplate(node.data.httpUrl ?? '', nodeOutputs)
         const method = node.data.httpMethod ?? 'GET'
@@ -1544,7 +1541,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
       case 'condition': {
         // Same predicate evaluation as the simulated engine, against the real
         // transcript content.
-        await delay(400)
+        await abortableDelay(400, token)
         return conditionOutput(nodeId, node.data.branches, latestContent())
       }
       case 'router': {
@@ -1593,7 +1590,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
             node.data.criteria ?? '',
             content,
           )
-          await delay(400)
+          await abortableDelay(400, token)
           return { taken: decision.taken, matched: decision.matched }
         }
         // llm-judge: one real pass/fail classification call.
@@ -1629,7 +1626,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
           Boolean,
         )
         if (branches.length === 0) {
-          await delay(400)
+          await abortableDelay(400, token)
           return { taken: 'pass', note: 'no branches configured' }
         }
         const base = useLLMConfigStore.getState().getConfig()
@@ -1685,14 +1682,14 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
         set({
           messages: [...get().messages, { role: 'user', content: summary }],
         })
-        await delay(400)
+        await abortableDelay(400, token)
         return merged
       }
       case 'output': {
         const lastAssistant = [...get().messages]
           .reverse()
           .find((m) => m.role === 'assistant')
-        await delay(300)
+        await abortableDelay(300, token)
         return { final_reply: truncate(lastAssistant?.content ?? '', 400) }
       }
       case 'a2aAgent': {
@@ -1932,7 +1929,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
         return { output: {}, trace: [], stepCount: 0, error: 'aborted' }
       }
       const startedAt = Date.now()
-      await delay(nodeStepDurationMs(node.type))
+      await abortableDelay(nodeStepDurationMs(node.type), parentRunToken)
       if (parentRunToken !== runToken) {
         return { output: {}, trace: [], stepCount: 0, error: 'aborted' }
       }
@@ -2469,7 +2466,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
         if (node.type === 'subgraph') {
           // Subgraph runs its own inner walker regardless of liveMode — the
           // walker itself routes inner nodes between live and simulated.
-          await delay(nodeStepDurationMs(node.type))
+          await abortableDelay(nodeStepDurationMs(node.type), token)
           output = fakeOutputFor(node, get().userInput)
           const ref = (node.data.subgraphRef ?? '').trim()
           if (ref) {
@@ -2534,13 +2531,13 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
           }
           if (!get().liveMode) metrics.addTokens(fakeTokensFor(node))
         } else if (get().liveMode) {
-          output = await executeLiveNode(node, nodeId)
+          output = await executeLiveNode(node, nodeId, token)
         } else {
           const streamText = fakeStreamTextFor(node)
           if (streamText) {
             set({ nodeStreams: { ...get().nodeStreams, [nodeId]: streamText } })
           }
-          await delay(nodeStepDurationMs(node.type))
+          await abortableDelay(nodeStepDurationMs(node.type), token)
           output = fakeOutputFor(node, get().userInput)
           if (node.type === 'condition') {
             // Evaluate the configured branch predicates against the latest
@@ -2950,7 +2947,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
     ) {
       await executeCurrent(token)
       if (token !== runToken || !get().isActive) return
-      await delay(LOOP_GAP_MS)
+      await abortableDelay(LOOP_GAP_MS, token)
     }
   }
 
