@@ -291,6 +291,14 @@ interface SimulationState {
 // Invalidates in-flight run loops AND in-flight node executions whenever
 // playback state changes; executeCurrent re-checks it after every await.
 let runToken = 0
+// Fires whenever runToken is bumped, so abortableDelay can resolve on a
+// single event instead of polling Date.now() against a deadline.
+const runTokenAbortTarget = new EventTarget()
+function bumpRunToken(): number {
+  runToken++
+  runTokenAbortTarget.dispatchEvent(new Event('abort'))
+  return runToken
+}
 // Guards against re-entrant node execution (e.g. rapid Step clicks).
 let stepInFlight = false
 // Cancels the in-flight live LLM fetch on stop/pause/restart.
@@ -366,21 +374,30 @@ const delay = (ms: number) =>
   new Promise<void>((resolve) => window.setTimeout(resolve, ms))
 
 /**
- * Like `delay`, but polls `runToken` so a Stop/Pause/Restart during the wait
- * (which bumps `runToken`) resolves immediately instead of after the full
- * duration.
+ * Like `delay`, but resolves immediately if a Stop/Pause/Restart bumps
+ * `runToken` past the captured value — either before the call (already
+ * stale) or mid-wait (via the `bumpRunToken` abort event), instead of
+ * waiting out the full duration.
  */
 const abortableDelay = (ms: number, token: number): Promise<void> =>
   new Promise<void>((resolve) => {
-    const deadline = Date.now() + ms
-    const tick = () => {
-      if (token !== runToken || Date.now() >= deadline) {
-        resolve()
-        return
-      }
-      window.setTimeout(tick, Math.min(50, deadline - Date.now()))
+    if (token !== runToken) {
+      resolve()
+      return
     }
-    tick()
+
+    const timeout = window.setTimeout(() => {
+      runTokenAbortTarget.removeEventListener('abort', onAbort)
+      resolve()
+    }, ms)
+
+    const onAbort = () => {
+      if (token === runToken) return
+      window.clearTimeout(timeout)
+      resolve()
+    }
+
+    runTokenAbortTarget.addEventListener('abort', onAbort, { once: true })
   })
 
 /**
@@ -2596,7 +2613,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
         const retryDone = await maybeRetry(nodeId, token, 'error')
         if (retryDone === 'retried') return
         if (retryDone === 'exhausted') {
-          runToken++
+          bumpRunToken()
           set({
             isRunning: false,
             erroredNodeIds: [...get().erroredNodeIds, nodeId],
@@ -2679,7 +2696,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
 
         // Genuine failure: pause without advancing, so Play retries this
         // node once the user has fixed the problem.
-        runToken++
+        bumpRunToken()
         set({
           isRunning: false,
           erroredNodeIds: [...get().erroredNodeIds, nodeId],
@@ -2824,7 +2841,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
         const retryDone = await maybeRetry(nodeId, token, 'empty_output')
         if (retryDone === 'retried') return
         if (retryDone === 'exhausted') {
-          runToken++
+          bumpRunToken()
           set({
             isRunning: false,
             erroredNodeIds: [...get().erroredNodeIds, nodeId],
@@ -3040,14 +3057,14 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
         )
       }
 
-      runToken++
+      bumpRunToken()
       set({ isActive: true })
       resetRunState(executionQueue)
       get().play()
     },
 
     stop: () => {
-      runToken++
+      bumpRunToken()
       get().clearHashCache()
       abortInFlight()
       discardPendingStreams()
@@ -3093,12 +3110,12 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
         return
       set({ isRunning: true })
       useSimulationMetricsStore.getState().startTimer()
-      const token = ++runToken
+      const token = bumpRunToken()
       void runLoop(token)
     },
 
     pause: () => {
-      runToken++
+      bumpRunToken()
       abortInFlight()
       flushStreams()
       set({ isRunning: false })
@@ -3107,7 +3124,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
 
     step: () => {
       if (!get().isActive || finished() || get().pendingApproval) return
-      const token = ++runToken
+      const token = bumpRunToken()
       set({ isRunning: false })
       const metrics = useSimulationMetricsStore.getState()
       metrics.startTimer()
@@ -3117,7 +3134,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
     },
 
     restart: () => {
-      runToken++
+      bumpRunToken()
       abortInFlight()
       resetRunState(buildSeeds())
       get().play()
@@ -3129,7 +3146,7 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
       if (!target) return
       const priorSnapshots = snapshots.slice(0, stepIndex)
 
-      runToken++
+      bumpRunToken()
       abortInFlight()
       set({ isActive: true })
       resetRunState([target.nodeId])
