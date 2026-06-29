@@ -1,0 +1,34 @@
+---
+description: Eliminate `as any`, `@ts-ignore`, and implicit any. Replaces with proper discriminated unions and typed interfaces. One file at a time.
+argument-hint: [filepath] e.g. src/store/canvasStore.ts
+---
+
+Read CLAUDE.md top-to-bottom before touching any file.
+Run: npm run test 2>&1 | tail -3
+Record the baseline test count — it must not decrease.
+
+TARGET FILE: $ARGUMENTS
+
+STEP 1 — MAP THE VIOLATIONS
+grep -n "as any\|@ts-ignore\|@ts-expect-error" $ARGUMENTS
+List every line number and the surrounding context (3 lines above and below each).
+
+STEP 2 — FIX IN PLACE
+For each violation:
+- `as any` on a store slice → infer the type from usage, create a typed interface if none exists
+- `as any` on an event handler → use the correct DOM or React event type
+- `as any` on unknown API response → create a Zod schema or interface matching the shape
+- `@ts-ignore` suppressing a real error → fix the root cause, not the suppression
+- `@ts-ignore` on a legitimate lib type gap → replace with `@ts-expect-error` + a comment explaining why
+
+RULES:
+- Never widen a type to fix a violation (replacing `as any` with `as unknown` is not a fix)
+- If fixing requires changing an interface used by multiple files, make the interface change in its definition file and fix all callers
+- Do not change any runtime behavior — type-only changes only
+
+STEP 3 — VERIFY
+Run: tsc --noEmit → must show 0 errors
+Run: npm run test → count must equal baseline
+If either fails, revert the last change and report what went wrong.
+
+Commit: "fix(types): eliminate any-casts in [filename]"

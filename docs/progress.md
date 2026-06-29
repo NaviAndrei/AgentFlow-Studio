@@ -9,6 +9,124 @@
 
 
 
+
+
+
+
+---
+<!-- auto-prepended by on_stop_reminder.py on 2026-06-29 -->
+## Handoff — 2026-06-29 (Session 38 — fix(simulation): thread abort token into node-step latency delays)
+
+### What was completed
+- [x] Modified `.claude/commands/audit.md`
+- [x] Modified `.claude/settings.json`
+- [x] Modified `CLAUDE.md`
+- [x] Modified `docs/progress.md`
+- [ ] TODO: annotate WHY each change was made (auto-detected list above is files only)
+
+### Build & Test Status
+| Check | Result |
+|---|---|
+| `npm run typecheck` | ✅ clean |
+| `npm run build` | TODO (not run by hook) |
+| `npm run test` | ✅ 421/421 passing |
+| Browser verification | TODO |
+
+### Decisions made this session
+- [ ] TODO: one bullet per architectural decision
+
+### Known edge cases / deferred
+- [ ] TODO: one bullet per deferred item or known gap
+
+### What to load at resume
+```
+@CLAUDE.md @docs/progress.md
+```
+---
+<!-- auto-prepended by on_stop_reminder.py on 2026-06-29 -->
+## Handoff — 2026-06-29 (Session 37 — fix(utils): replace abortableDelay polling with single-timer + AbortSignal pattern)
+
+### What was completed
+- [x] Modified `.claude/commands/audit.md`
+- [x] Modified `.claude/settings.json`
+- [x] Modified `CLAUDE.md`
+- [x] Modified `docs/progress.md`
+- [ ] TODO: annotate WHY each change was made (auto-detected list above is files only)
+
+### Build & Test Status
+| Check | Result |
+|---|---|
+| `npm run typecheck` | ✅ clean |
+| `npm run build` | TODO (not run by hook) |
+| `npm run test` | ✅ 421/421 passing |
+| Browser verification | TODO |
+
+### Decisions made this session
+- [ ] TODO: one bullet per architectural decision
+
+### Known edge cases / deferred
+- [ ] TODO: one bullet per deferred item or known gap
+
+### What to load at resume
+```
+@CLAUDE.md @docs/progress.md
+```
+---
+<!-- auto-prepended by on_stop_reminder.py on 2026-06-29 -->
+## Handoff — 2026-06-29 (Session 36 — chore: update CLAUDE.md architecture, add feature-status command, fix bash selector)
+
+### What was completed
+- [x] Modified `.claude/commands/audit.md`
+- [x] Modified `.claude/settings.json`
+- [x] Modified `CLAUDE.md`
+- [x] Modified `docs/progress.md`
+- [ ] TODO: annotate WHY each change was made (auto-detected list above is files only)
+
+### Build & Test Status
+| Check | Result |
+|---|---|
+| `npm run typecheck` | ✅ clean |
+| `npm run build` | TODO (not run by hook) |
+| `npm run test` | TODO: X/Y passing (test run failed or timed out) |
+| Browser verification | TODO |
+
+### Decisions made this session
+- [ ] TODO: one bullet per architectural decision
+
+### Known edge cases / deferred
+- [ ] TODO: one bullet per deferred item or known gap
+
+### What to load at resume
+```
+@CLAUDE.md @docs/progress.md
+```
+---
+<!-- auto-prepended by on_stop_reminder.py on 2026-06-28 -->
+## Handoff — 2026-06-28 (Session 35 — chore: update CLAUDE.md architecture, add feature-status command, fix bash selector)
+
+### What was completed
+- [x] Modified `.claude/commands/audit.md`
+- [x] Modified `.claude/settings.json`
+- [ ] TODO: annotate WHY each change was made (auto-detected list above is files only)
+
+### Build & Test Status
+| Check | Result |
+|---|---|
+| `npm run typecheck` | ✅ clean |
+| `npm run build` | TODO (not run by hook) |
+| `npm run test` | ✅ 421/421 passing |
+| Browser verification | TODO |
+
+### Decisions made this session
+- [ ] TODO: one bullet per architectural decision
+
+### Known edge cases / deferred
+- [ ] TODO: one bullet per deferred item or known gap
+
+### What to load at resume
+```
+@CLAUDE.md @docs/progress.md
+```
 ---
 <!-- auto-prepended by on_stop_reminder.py on 2026-06-26 -->
 ## Handoff — 2026-06-26 (Session 34 — feat(mcp,llm): implement MCP server registry and per-node provider overrides - Create MCPServersPanel slide-in UI for managing external MCP server connections - Integrate registered MCP server lookups in simulationStore with fallback support - Add providerOverride field to LLM/Agent nodes to support dynamic routing - Implement unit tests for per-node provider/model override validation - Support provider overrides in the Python template exporter output - Fix auto_test.py hook to resolve file paths from tool_input parameters - Archive older session handoffs and update documentation logs)
