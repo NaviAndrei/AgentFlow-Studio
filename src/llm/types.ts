@@ -1,5 +1,3 @@
-import type { ChatMessage } from '../types'
-
 /** Every connectable provider. Adding one = new entry here + a registry descriptor. */
 export type ProviderId =
   | 'ollama'
@@ -53,12 +51,3 @@ export interface ProviderDescriptor {
   keyPlaceholder?: string
 }
 
-export type StreamFn = (
-  config: ResolvedLLMConfig,
-  messages: ChatMessage[],
-  onChunk: (text: string) => void,
-  signal?: AbortSignal,
-) => Promise<string>
-
-/** Connectivity check; resolves with a human-readable success message. */
-export type TestFn = (config: ResolvedLLMConfig) => Promise<string>

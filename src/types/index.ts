@@ -145,17 +145,6 @@ export interface EvalDatasetRun {
   averageScore?: number
 }
 
-export type TriggerMode = 'webhook' | 'schedule'
-
-/** Arming state for a triggerStore-managed trigger, keyed by node id. */
-export interface TriggerConfig {
-  mode: TriggerMode
-  webhookId?: string
-  webhookSecret?: string
-  intervalMs?: number
-  isArmed: boolean
-}
-
 /**
  * Flat data shape shared by every node type. Type-specific fields are
  * optional; default factories in utils/nodeDefaults.ts fill in the ones
