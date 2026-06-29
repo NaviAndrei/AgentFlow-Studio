@@ -66,3 +66,11 @@ npm run test         # Run Vitest suite
 - Task backlog & progress → [TASKS.md](file:///c:/Users/IvanA/Claude_Code/AgentFLow-Studio/TASKS.md)
 - Session handoff → [progress.md](file:///c:/Users/IvanA/Claude_Code/AgentFLow-Studio/docs/progress.md)
 - Pre-push CI → `scripts/pre-push-check.ps1` (typecheck → build → test pipeline)
+
+## Auto-Memory & Feedback Rules
+> Synced from `C:\Users\IvanA\.claude\projects\C--Users-IvanA-Claude-Code-AgentFLow-Studio\memory\`.
+
+- `project_audit_2026-06-11_status.md` — Tracks the AgentFlow audit plan as complete; Blueprint thumbnails are intentionally deferred and should not be flagged as outstanding work.
+- `feedback_solo_dev_main_only.md` — Enforces that the user works solo directly on `main`; never suggest or create feature branches.
+- `feedback_reconcile_session_specs_with_code.md` — Requires verifying numbered "Session N" task specs against the live codebase first, since prior sessions may have already built features differently than the spec assumes.
+- `feedback_no_autonomous_git.md` — Prohibits running `git checkout -b`/`commit`/`push` autonomously, even when a plan or "Commit: ..." instruction implies it; always surface manual git commands instead.

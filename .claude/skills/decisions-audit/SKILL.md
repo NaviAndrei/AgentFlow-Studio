@@ -11,7 +11,15 @@ allowed-tools:
 
 ## Procedure
 
-1. Read DECISIONS.md fully before any modification.
+1. Grep-first lookup before any modification (cheaper than a full read on
+   cache hits — ~50 tokens vs. ~3000):
+   a. Run `grep -i "<search_term>"` against `DECISIONS.md`, using the
+      actual component, function, or pattern name from context as
+      `<search_term>`.
+   b. If grep returns matches: read only those line ranges (±20 lines of
+      context around each match) — do not read the full file.
+   c. If grep returns no matches: read DECISIONS.md in full, since the
+      term may be phrased differently than expected.
 2. Search for the component/function/pattern the user wants to change.
 3. If found in DECISIONS.md: surface the decision rationale and ask for
    explicit confirmation before proceeding.

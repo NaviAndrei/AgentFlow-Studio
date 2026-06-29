@@ -4,6 +4,36 @@
 > Older handoffs: `docs/progress-archive.md`
 > See docs/progress-archive.md for Sessions 1–25 (Sessions 14–25 archived 2026-06-26).
 
+## Handoff — 2026-06-30 (Session 56 — chore(claude): blocking stop hook + skill/memory updates)
+
+### What was completed
+- [x] **Blocking stop hook**: Rewrote `.claude/hooks/on_stop_reminder.py` — replaced the old auto-fill/TODO-sync logic with a strict mtime check comparing `.claude/.session_start` vs `docs/progress.md`. If `progress.md` hasn't been touched since session start, the hook now prints `{"decision":"block",...}` and exits `2` (blocking session end) instead of silently auto-filling a template. Forces the user to run `/handoff`/"end session" before stopping.
+- [x] **CLAUDE.md auto-memory sync**: Appended a `## Auto-Memory & Feedback Rules` section to the bottom of `CLAUDE.md` listing all 4 active feedback/project memory files with one-line summaries, so the always-loaded CLAUDE.md context now mirrors what's in the cross-session auto-memory store.
+- [x] **New skill — `component-design-audit`**: Added `.claude/skills/component-design-audit/SKILL.md` (read-only: `Read`, `Grep` only). Audits modified components against `COMPONENTS.md` (directory placement, PanelRail usage, z-index hierarchy, panel registry vs. inline JSX, `uiStore`-owned panel state, no inline styles, typed props interface) and outputs a severity table.
+- [x] **`decisions-audit` skill optimization**: Replaced Step 1 of `.claude/skills/decisions-audit/SKILL.md` with a grep-first strategy — `grep -i "<term>"` against `DECISIONS.md` first; only read the matched ±20-line ranges, or fall back to a full read if grep finds nothing. Cuts the typical-case cost from a full-file read (~3000 tokens) to a targeted grep (~50 tokens).
+
+### Build & Test Status
+| Check | Result |
+|---|---|
+| `npm run typecheck` | N/A — config/skill/hook files only, no TypeScript touched |
+| `npm run build` | N/A — no app code touched |
+| `npm run test` | N/A — no app code touched |
+| Browser verification | N/A — Claude Code tooling change, not app-observable |
+
+### Decisions made this session
+- The stop hook was fully replaced rather than extended — the prior version's auto-fill/TODO-sync behavior conflicted with the new requirement to *block* (not silently patch) when `progress.md` is stale, so keeping both would have caused the hook to auto-fill a stub and then immediately pass the staleness check it was supposed to enforce.
+- `component-design-audit` and `decisions-audit` are both read-only (`Read`/`Grep` only, no `Edit`/`Write`) — audits should surface findings for the user to act on, not self-apply fixes.
+
+### Known edge cases / deferred
+- First run after this change: `.claude/.session_start` did not exist, so the new hook will initialize it (`STATE_FILE.touch()`) and allow once before the blocking check becomes active on the *next* session.
+
+### What to load at resume
+```
+@CLAUDE.md @docs/progress.md
+```
+
+---
+
 ## Handoff — 2026-06-29 (Session 52 — perf: lazy-load Inspector via React.lazy + Suspense)
 
 ### What was completed
