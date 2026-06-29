@@ -386,16 +386,18 @@ const abortableDelay = (ms: number, token: number): Promise<void> =>
       return
     }
 
-    const timeout = window.setTimeout(() => {
-      runTokenAbortTarget.removeEventListener('abort', onAbort)
-      resolve()
-    }, ms)
+    let timeout: ReturnType<typeof window.setTimeout>
 
     const onAbort = () => {
       if (token === runToken) return
       window.clearTimeout(timeout)
       resolve()
     }
+
+    timeout = window.setTimeout(() => {
+      runTokenAbortTarget.removeEventListener('abort', onAbort)
+      resolve()
+    }, ms)
 
     runTokenAbortTarget.addEventListener('abort', onAbort, { once: true })
   })
