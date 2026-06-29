@@ -138,16 +138,6 @@ export async function listTools(
 }
 
 /**
- * Query an MCP server (Streamable HTTP transport) for its tool names. Performs
- * the spec handshake — `initialize` → `notifications/initialized` →
- * `tools/list` — on one session (honoring the `mcp-session-id` header), since
- * compliant servers reject calls made before initialization.
- */
-export async function discoverMcpTools(serverUrl: string): Promise<string[]> {
-  return (await listTools(serverUrl)).map((t) => t.name)
-}
-
-/**
  * Invoke a tool on an MCP server via `tools/call`, returning the raw `result`
  * from the JSON-RPC response.
  */
