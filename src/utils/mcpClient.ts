@@ -5,6 +5,29 @@
  */
 import type { MCPTool } from '../types'
 
+function isLocalHostname(hostname: string): boolean {
+  const host = hostname.replace(/^\[|\]$/g, '').toLowerCase()
+  return host === 'localhost' || host === '127.0.0.1' || host === '::1' || host.endsWith('.localhost')
+}
+
+/**
+ * Enforce https: for MCP server URLs — the Authorization bearer token rides
+ * on every call, so plain http: would leak it on the wire. localhost is
+ * exempted outside production builds, since local MCP dev servers rarely
+ * have TLS configured.
+ */
+export function validateMcpUrl(url: string): string | null {
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    return `Invalid MCP server URL: ${url}`
+  }
+  if (parsed.protocol === 'https:') return null
+  if (import.meta.env.DEV && isLocalHostname(parsed.hostname)) return null
+  return `MCP server URL must use https: (got ${parsed.protocol.replace(':', '')}://${parsed.hostname})`
+}
+
 interface JsonRpcResponse {
   result?: {
     tools?: { name: string; description?: string; inputSchema?: Record<string, unknown> }[]
@@ -51,6 +74,9 @@ async function openSession(
   authToken?: string,
   signal?: AbortSignal,
 ): Promise<(body: unknown) => Promise<Response>> {
+  const urlError = validateMcpUrl(serverUrl)
+  if (urlError) throw new Error(urlError)
+
   const headers: Record<string, string> = {
     'content-type': 'application/json',
     accept: 'application/json, text/event-stream',

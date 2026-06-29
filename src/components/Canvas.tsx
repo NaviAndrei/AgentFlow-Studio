@@ -23,6 +23,9 @@ const edgeTypes: EdgeTypes = {
   agentflow: FlowEdge,
 }
 
+const DEFAULT_EDGE_OPTIONS = { type: 'agentflow' }
+const PRO_OPTIONS = { hideAttribution: false }
+
 const EDGE_KIND_OPTIONS: { kind: EdgeKind; label: string; icon: typeof ArrowRight }[] = [
   { kind: 'direct', label: 'Direct', icon: ArrowRight },
   { kind: 'conditional', label: 'Conditional', icon: GitBranch },
@@ -128,6 +131,8 @@ export function Canvas() {
     [],
   )
 
+  const onPaneClick = useCallback(() => setEdgeMenu(null), [])
+
   const onEdgeContextMenu = useCallback(
     (event: ReactMouseEvent, edge: AgentFlowEdge) => {
       event.preventDefault()
@@ -154,15 +159,15 @@ export function Canvas() {
         onConnect={onConnect}
         onInit={setRfInstance}
         isValidConnection={isValidConnection}
-        onPaneClick={() => setEdgeMenu(null)}
+        onPaneClick={onPaneClick}
         onEdgeContextMenu={onEdgeContextMenu}
         onDrop={onDrop}
         onDragOver={onDragOver}
         colorMode="dark"
         fitView
         deleteKeyCode={null}
-        defaultEdgeOptions={{ type: 'agentflow' }}
-        proOptions={{ hideAttribution: false }}
+        defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
+        proOptions={PRO_OPTIONS}
       >
         <SelectionToolbar />
         <Background

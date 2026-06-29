@@ -1,6 +1,8 @@
-import { useEffect } from 'react'
+import { Suspense, lazy, useEffect, useState } from 'react'
 import { ReactFlowProvider } from '@xyflow/react'
+import { PanelRightOpen } from 'lucide-react'
 import { useCanvasStore } from './store/canvasStore'
+import { useUIStore } from './store/uiStore'
 import { decodeFlow } from './utils/shareUrl'
 import { warnMissingTokens } from './utils/warnMissingTokens'
 import { BlueprintGallery } from './components/BlueprintGallery'
@@ -12,7 +14,7 @@ import { CostPanel } from './components/CostPanel'
 import { EvalPanel } from './components/EvalPanel'
 import { ExportModal } from './components/ExportModal'
 import { HumanInLoopModal } from './components/HumanInLoopModal'
-import { Inspector } from './components/Inspector'
+const Inspector = lazy(() => import('./components/Inspector').then((m) => ({ default: m.Inspector })))
 import { LastRunSummaryBar } from './components/LastRunSummaryBar'
 import { LLMSettingsModal } from './components/LLMSettingsModal'
 import { NLFlowBuilderModal } from './components/NLFlowBuilderModal'
@@ -35,6 +37,17 @@ import { WelcomeOverlay } from './components/WelcomeOverlay'
 
 export default function App() {
   useKeyboardShortcuts()
+
+  const inspectorOpen = useUIStore((s) => s.inspectorOpen)
+  const toggleInspector = useUIStore((s) => s.toggleInspector)
+  // Inspector pulls in heavy sub-imports (callLLMDirect, mcpClient, a2aClient,
+  // etc.) that we don't want paid for until the user actually opens it. Mount
+  // it once on first open and keep it mounted to avoid remount cost on close.
+  const [inspectorEverOpened, setInspectorEverOpened] = useState(inspectorOpen)
+
+  useEffect(() => {
+    if (inspectorOpen) setInspectorEverOpened(true)
+  }, [inspectorOpen])
 
   useEffect(() => {
     const param = new URLSearchParams(window.location.search).get('flow')
@@ -67,7 +80,22 @@ export default function App() {
               <WelcomeOverlay />
             </main>
             <PanelErrorBoundary name="Inspector">
-              <Inspector />
+              {inspectorEverOpened ? (
+                <Suspense fallback={null}>
+                  <Inspector />
+                </Suspense>
+              ) : (
+                <div className="flex w-9 shrink-0 flex-col items-center border-l border-white/10 bg-surface py-2">
+                  <button
+                    onClick={toggleInspector}
+                    title="Show inspector"
+                    aria-label="Show inspector"
+                    className="rounded-md p-1.5 text-gray-400 transition-colors hover:bg-surface-2 hover:text-white"
+                  >
+                    <PanelRightOpen size={15} />
+                  </button>
+                </div>
+              )}
             </PanelErrorBoundary>
           </div>
           <BlueprintGallery />
@@ -80,14 +108,24 @@ export default function App() {
           <PanelErrorBoundary name="Debugger">
             <TraceLog />
           </PanelErrorBoundary>
-          <EvalPanel />
-          <CostPanel />
-          <PromptRegistryPanel />
+          <PanelErrorBoundary name="Eval">
+            <EvalPanel />
+          </PanelErrorBoundary>
+          <PanelErrorBoundary name="Cost">
+            <CostPanel />
+          </PanelErrorBoundary>
+          <PanelErrorBoundary name="Prompt Registry">
+            <PromptRegistryPanel />
+          </PanelErrorBoundary>
           <PanelErrorBoundary name="Run History">
             <RunHistoryPanel />
           </PanelErrorBoundary>
-          <ProblemsPanel />
-          <MCPServersPanel />
+          <PanelErrorBoundary name="Problems">
+            <ProblemsPanel />
+          </PanelErrorBoundary>
+          <PanelErrorBoundary name="MCP Servers">
+            <MCPServersPanel />
+          </PanelErrorBoundary>
           <PanelRail />
           <MetricsBar />
           <HumanInLoopModal />

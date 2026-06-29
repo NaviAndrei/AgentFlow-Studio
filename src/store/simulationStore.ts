@@ -12,6 +12,7 @@ import {
 import { streamChat } from '../llm'
 import type { ResolvedLLMConfig } from '../llm'
 import { callTool } from '../utils/mcpClient'
+import { validateHttpUrl } from '../utils/validateHttpUrl'
 import {
   evaluateConditionBranches,
   evaluateKeywordGuardrail,
@@ -1492,6 +1493,14 @@ export const useSimulationStore = create<SimulationState>((set, get) => {
       case 'httpRequest': {
         const nodeOutputs = get().nodeOutputs
         const url = resolveHttpTemplate(node.data.httpUrl ?? '', nodeOutputs)
+
+        const blockedReason = validateHttpUrl(url)
+        if (blockedReason) {
+          const message = `${node.data.label ?? node.id}: ${blockedReason}`
+          useToastStore.getState().pushToast(message, 'warning')
+          return { error: blockedReason }
+        }
+
         const method = node.data.httpMethod ?? 'GET'
         const timeoutMs = node.data.httpTimeoutMs ?? 10000
 

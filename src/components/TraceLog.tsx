@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useReactFlow } from '@xyflow/react'
 import { ChevronDown, Trash2, Zap } from 'lucide-react'
 import { getNodeMeta } from '../nodes'
@@ -124,7 +124,10 @@ export function TraceLog() {
   // Time Travel needs a selected run with snapshots; fall back to the trace tab.
   const tab = dockTab === 'timeTravel' && hasTimeTravel ? 'timeTravel' : 'trace'
 
-  const entries = trace.filter((e) => matchesFilter(e, filter))
+  const entries = useMemo(
+    () => trace.filter((e) => matchesFilter(e, filter)),
+    [trace, filter],
+  )
 
   const focusNode = (entry: TraceEntry) => {
     const node = useCanvasStore.getState().nodes.find((n) => n.id === entry.nodeId)

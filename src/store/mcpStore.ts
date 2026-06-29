@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { MCPServerConfig } from '../types'
 import { useToastStore } from './toastStore'
+import { validateMcpUrl } from '../utils/mcpClient'
 
 interface MCPState {
   servers: Record<string, MCPServerConfig>
@@ -41,6 +42,12 @@ export const useMCPStore = create<MCPState>()(
       async testConnection(serverKey) {
         const server = get().servers[serverKey]
         if (!server) return
+        const urlError = validateMcpUrl(server.endpointUrl)
+        if (urlError) {
+          get().updateServer(serverKey, { isConnected: false })
+          useToastStore.getState().pushToast(`${server.label}: ${urlError}`, 'warning')
+          return
+        }
         const controller = new AbortController()
         const timer = window.setTimeout(() => controller.abort(), 3000)
         try {
