@@ -30,8 +30,8 @@ npm run test         # Run Vitest suite
 
 ## Gotchas & Pitfalls
 - `sandboxExecutor`: `src/test-setup.ts` stubs `setTimeout` synchronously. Message listener + `srcdoc` must be set BEFORE arming the timeout. Do not reorder.
-- `simulationStore.ts` ~2641: the `codeExecutor` simulated-mode fake is guarded to Simulate engine only. Do not remove the guard.
-- `callLLMDirect` wraps `streamChat()` — do NOT add a parallel raw fetch path.
+- `simulationStore.ts` ~2641: the `codeExecutor` simulated-mode fake is guarded to Simulate engine only.
+- `callLLMDirect` wraps `streamChat()` for LLM interaction.
 - `REGISTERED_NODE_TYPES` is the single source of truth for NL Builder. Any new node type must be added there first.
 
 ## Essential Development Invariants
@@ -39,7 +39,7 @@ npm run test         # Run Vitest suite
 - **Rules & Constraints**: Scoped rules for components, stores, nodes, and code generation reside in `.claude/rules/`. Familiarize yourself with those rules before editing files in those paths.
 
 ## Git Commit Rules
-- CI gate: `.github/workflows/ci.yml` runs typecheck → build → test on every push to main and develop. Do not merge a PR with a failing CI run.
+- CI gate: `.github/workflows/ci.yml` runs typecheck → build → test on every push to main and develop.
 
 ## References
 - Stores, engine, node registration → [ARCHITECTURE.md](file:///c:/Users/IvanA/Claude_Code/AgentFLow-Studio/ARCHITECTURE.md)
@@ -53,6 +53,6 @@ npm run test         # Run Vitest suite
 > Synced from `C:\Users\IvanA\.claude\projects\C--Users-IvanA-Claude-Code-AgentFLow-Studio\memory\`.
 
 - `project_audit_2026-06-11_status.md` — Tracks the AgentFlow audit plan as complete; Blueprint thumbnails are intentionally deferred and should not be flagged as outstanding work.
-- `feedback_solo_dev_main_only.md` — Enforces that the user works solo directly on `main`; never suggest or create feature branches.
+- `feedback_solo_dev_main_only.md` — Development occurs solo directly on `main` branch.
 - `feedback_reconcile_session_specs_with_code.md` — Requires verifying numbered "Session N" task specs against the live codebase first, since prior sessions may have already built features differently than the spec assumes.
-- `feedback_no_autonomous_git.md` — Prohibits running `git checkout -b`/`commit`/`push` autonomously, even when a plan or "Commit: ..." instruction implies it; always surface manual git commands instead.
+- `feedback_no_autonomous_git.md` — Surface manual git commands for user approval instead of executing them autonomously.

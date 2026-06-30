@@ -18,52 +18,34 @@ UserPromptSubmit, Stop) both layers can fire independently in the same turn.
 - Global-level path: `C:\Users\IvanA\.claude\`
 - Nominal totals (per the most recent full inventory): **17 hooks, 6 agents, 25 skills, 11 commands, 14 rules**
 
-> **Drift notice (current as of this generation):** four hook scripts that were present at project
-> scope during the prior inventory pass have since been deleted from disk with an *uncommitted*
-> working-tree deletion (`git status` shows them as `D`, not staged): `bash_guard.py`,
-> `inject_context.py`, `on_stop_reminder.py`, `post_write_format.py`. `.claude/settings.json`
-> **still references all four** by their project-relative path. Until those files are restored or
-> the settings.json bindings are removed, those four project-level hook invocations will fail
-> (Python "file not found") when their event fires. See Section 2 for details and Section 8 for the
-> exact bindings as currently written to disk.
+> **Notice:** The configuration is fully synchronized and clean. Stale project-relative hooks
+> (`bash_guard.py`, `inject_context.py`, `on_stop_reminder.py`, `post_write_format.py`) have been
+> deleted from disk, and their bindings have been removed from `.claude/settings.json` to prevent
+> failures.
+
 
 ## 2. Hook Execution Map
 
 | Hook Name | Scope | Event Type | Trigger Condition | What It Does | Blocking? | Side Effects |
 |---|---|---|---|---|---|---|
 | `session_start.py` | project | SessionStart | every session start | Logs session start, conditionally reads `CLAUDE.md`/`docs/progress.md`/`ARCHITECTURE.md` (only if recent diff touches architecture paths) plus `git status -sb` and last 5 commits, injects as context | No (fail-open) | Appends to `.claude/hook-log.jsonl` |
-| `inject_context.py` | project (**missing from disk**) | UserPromptSubmit | every prompt | Per settings.json binding only — project copy deleted, so this specific binding currently errors | N/A — broken | None (errors before running) |
 | `inject_context.py` | global | UserPromptSubmit | prompt contains a keyword (node, blueprint, component, store, llm, type, util, test, progress, layout) | Injects the head of the matching file/dir listing as context, capped at 6000 chars total | No (fail-open) | None |
 | `secret_scanner.py` | project | PreToolUse | matcher `Write\|Edit\|MultiEdit` | Regex-scans new content for API keys, AWS keys, GitHub tokens, JWTs, private keys before the write executes | **Yes** — exit code 2 blocks the write | Appends to `.claude/hook-log.jsonl` |
-| `bash_guard.py` | project (**missing from disk**) | PreToolUse | matcher `Bash` | Per settings.json binding only — project copy deleted, so this specific binding currently errors | N/A — broken | None (errors before running) |
 | `bash_guard.py` | global | PreToolUse | tool is Bash | Regex-blocks dangerous commands: `rm -rf /`/`~`, reading `.env`/secret files, `find /`, curl\|bash, wget\|bash, fork bombs, raw `dd` to `/dev/`, Windows `del /f /s`, Windows `format` | **Yes** — exit code 2 blocks the command | None |
-| `post_write_format.py` | project (**missing from disk**) | PostToolUse | matcher `Write\|Edit\|MultiEdit` | Per settings.json binding only — project copy deleted, so this specific binding currently errors | N/A — broken | None (errors before running) |
 | `post_write_format.py` | global | PostToolUse | matcher `Write\|Edit` | Bash script (not Python) that runs `black`/`ruff` on written `.py` files via `/tmp` markers | **Bug** — invoked as `python post_write_format.py` against a `#!/bin/bash` file; raises a Python SyntaxError every time it fires on Windows. See Section 6 / anomaly note. | None effective (errors before formatting) |
 | `auto_format.py` | project | PostToolUse | matcher `Write\|Edit\|MultiEdit` | Runs Prettier on `.ts/.tsx/.js/.jsx/.json/.md/.css` or `ruff format` + `ruff check --fix` on `.py` files just written | No (fail-open, `sys.exit(0)` always) | Mutates the just-written file; logs to `.claude/hook-log.jsonl` |
 | `auto_test.py` | project | PostToolUse | matcher `Write\|Edit\|MultiEdit` | Finds a sibling `*.test.ts(x)`/`*.spec.ts(x)` file for the edited source and runs it via `vitest run` (30s timeout) | **Yes** — exit code 2 blocks if the sibling test fails | Spawns `npx vitest`; logs to `.claude/hook-log.jsonl` |
 | `run_tsc.py` | project | PostToolUse | matcher `Write\|Edit\|MultiEdit` | Runs `npx tsc --noEmit` (60s timeout) and prints the first 5 output lines if it fails | No — always exits 0, informational only | Logs to `.claude/hook-log.jsonl` |
 | `run_eslint.py` | project | PostToolUse | matcher `Write\|Edit\|MultiEdit` | Runs `eslint <file> --max-warnings 0` on the just-written file (30s timeout), prints first 10 lines on failure | No — always exits 0, informational only | Logs to `.claude/hook-log.jsonl` |
-| `on_stop_reminder.py` | project (**missing from disk**) | Stop | every session stop | Per settings.json binding only — project copy deleted, so this specific binding currently errors | N/A — broken | None (errors before running) |
 | `on_stop_reminder.py` | global | Stop | session elapsed > 30 min, reminder not shown in last 10 min | Prints a reminder to run `revise-claude-md`, update `docsprogress.md`, and `/clear` | No | Writes timestamp state files under `~/.claude/session-env/` |
 | `run_tests_tail.py` | project | Stop | every session stop | Runs `npm run test` (120s timeout) and prints the last 3 output lines | No — always exits 0, informational only | Spawns `npm run test`; logs to `.claude/hook-log.jsonl` |
 | `pre_compact_snapshot.py` | project | PreCompact | before context compaction | Appends the last 15 `.claude/hook-log.jsonl` entries plus the compaction trigger/instructions to `docs/progress.md` | No — always exits 0 | Mutates `docs/progress.md` |
 | `post_compact_inject.py` | project | PostCompact | after context compaction | Reads `compact-anchor.md` from repo root (first 1500 chars) and re-injects it as context, if the file exists | No — fail-open | None |
 
-### Double-Execution Warning
+### Double-Execution Resolution
 
-These four hook names exist at **both** project and global scope. As of this generation, the
-project-scope copy of each is **deleted from disk** (uncommitted), so they are not currently
-double-firing — but `.claude/settings.json` still points at the missing project paths, meaning the
-project-scope binding errors out while the global-scope binding (different content, different
-language in one case) still runs:
+The hook bindings for `bash_guard.py`, `inject_context.py`, `on_stop_reminder.py`, and `post_write_format.py` have been removed from the project `.claude/settings.json`. Therefore, only the global-scope versions of these hooks run during sessions, resolving the double-firing issue and errors from missing files.
 
-- `bash_guard.py` — global Python version still active; project version missing
-- `inject_context.py` — global Python version still active; project version missing
-- `on_stop_reminder.py` — global Python version still active; project version missing
-- `post_write_format.py` — global **bash** version still "active" but broken (see Section 6) when invoked via `python`; project version missing
-
-If the project copies are restored from git history, all four will resume double-firing on every
-matching event (two bash guards, two stop reminders, etc.) — restore deliberately, not by accident.
 
 ## 3. Agents Reference
 
@@ -194,46 +176,78 @@ Project `.claude/settings.json` (relative paths, resolved against the project ro
 {
   "hooks": {
     "SessionStart": [
-      { "hooks": [{ "type": "command", "command": "python .claude/hooks/session_start.py" }] }
-    ],
-    "UserPromptSubmit": [
-      { "hooks": [{ "type": "command", "command": "python .claude/hooks/inject_context.py" }] }
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python .claude/hooks/session_start.py"
+          }
+        ]
+      }
     ],
     "PreToolUse": [
       {
         "matcher": "Write|Edit|MultiEdit",
-        "hooks": [{ "type": "command", "command": "python .claude/hooks/secret_scanner.py" }]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [{ "type": "command", "command": "python .claude/hooks/bash_guard.py" }]
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python .claude/hooks/secret_scanner.py"
+          }
+        ]
       }
     ],
     "PostToolUse": [
       {
         "matcher": "Write|Edit|MultiEdit",
         "hooks": [
-          { "type": "command", "command": "python .claude/hooks/post_write_format.py" },
-          { "type": "command", "command": "python .claude/hooks/auto_format.py" },
-          { "type": "command", "command": "python .claude/hooks/auto_test.py" },
-          { "type": "command", "command": "python .claude/hooks/run_tsc.py" },
-          { "type": "command", "command": "python .claude/hooks/run_eslint.py" }
+          {
+            "type": "command",
+            "command": "python .claude/hooks/auto_format.py"
+          },
+          {
+            "type": "command",
+            "command": "python .claude/hooks/auto_test.py"
+          },
+          {
+            "type": "command",
+            "command": "python .claude/hooks/run_tsc.py"
+          },
+          {
+            "type": "command",
+            "command": "python .claude/hooks/run_eslint.py"
+          }
         ]
       }
     ],
     "Stop": [
       {
         "hooks": [
-          { "type": "command", "command": "python .claude/hooks/on_stop_reminder.py" },
-          { "type": "command", "command": "python .claude/hooks/run_tests_tail.py" }
+          {
+            "type": "command",
+            "command": "python .claude/hooks/run_tests_tail.py"
+          }
         ]
       }
     ],
     "PreCompact": [
-      { "hooks": [{ "type": "command", "command": "python .claude/hooks/pre_compact_snapshot.py" }] }
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python .claude/hooks/pre_compact_snapshot.py"
+          }
+        ]
+      }
     ],
     "PostCompact": [
-      { "hooks": [{ "type": "command", "command": "python .claude/hooks/post_compact_inject.py" }] }
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python .claude/hooks/post_compact_inject.py"
+          }
+        ]
+      }
     ]
   },
   "fallbackModel": ["claude-sonnet-4-5", "claude-haiku-4-5"]

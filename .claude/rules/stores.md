@@ -13,3 +13,5 @@ paths: ["src/store/**"]
 - **Run Tracking**: Every simulation run gets a unique `runToken` (incrementing number). Abort checks must compare against the current token.
 - **Delays**: Use `abortableDelay(ms, token)` in retry backoffs — never use plain `delay()` or `setTimeout`.
 - **Trace Archive**: Use `structuredClone` when archiving traces to `runHistoryStore` — never use the spread operator.
+- **Simulation Store Guard**: Do not remove the guard in `simulationStore.ts` fake `codeExecutor` (restricted to Simulate engine mode only).
+

@@ -31,6 +31,11 @@ def log_action(action: str, detail: str = "") -> None:
 
 
 def main() -> None:
+    try:
+        sys.stdin.read()
+    except Exception:
+        pass
+
     if DRY_RUN:
         log_action("dry_run_eslint")
         sys.exit(0)

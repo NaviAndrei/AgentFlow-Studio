@@ -6,7 +6,7 @@ description: >-
   "a11y review", "WCAG compliance", "keyboard nav audit", "screen reader
   support for canvas". NOT for general code review or non-canvas UI.
 tools: Read, Grep, Glob, Bash
-model: claude-sonnet-4-5
+model: sonnet
 color: purple
 ---
 
