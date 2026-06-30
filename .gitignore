@@ -9,6 +9,7 @@ dist/
 # System & Log Files
 .DS_Store
 *.log
+.mcp.json
 
 # Editor & AI Tooling Configurations
 .vscode/

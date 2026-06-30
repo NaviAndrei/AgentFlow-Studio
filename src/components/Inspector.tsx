@@ -664,7 +664,7 @@ function CodeExecutorFields({ data, update }: FieldsProps) {
         <HintIcon text={HINTS.fields.allowNetworkAccess} />
       </label>
       <p className="text-[10px] text-gray-600">
-        Sandbox the LLM's generated code. Pair with a downstream Condition
+        Sandbox the LLM&apos;s generated code. Pair with a downstream Condition
         that branches on <code>exit_code</code> to drive a self-correct loop.
       </p>
     </>
@@ -1098,7 +1098,7 @@ function LongTermStoreFields({ data, update }: FieldsProps) {
         />
         <p className="mt-1 text-[10px] text-gray-600">
           Partition key, e.g. <code>user_memories</code> or{' '}
-          <code>(user_id, 'memories')</code>.
+          <code>(user_id, &apos;memories&apos;)</code>.
         </p>
       </label>
       <label className="block">

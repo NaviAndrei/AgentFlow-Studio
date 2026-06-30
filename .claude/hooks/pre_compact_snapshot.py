@@ -6,12 +6,14 @@ Observational only — always exits 0, never blocks the compaction.
 """
 
 import sys
+import os
 import json
 from datetime import datetime, timezone
 from pathlib import Path
 
 HOOK_LOG = Path(".claude/hook-log.jsonl")
 PROGRESS_FILE = Path("docs/progress.md")
+DRY_RUN = os.environ.get("HOOK_DRY_RUN") == "1"
 
 
 def log_action(action: str, detail: str = "") -> None:
@@ -39,6 +41,11 @@ def main() -> None:
 
     trigger = input_data.get("trigger", "unknown")
     custom_instructions = input_data.get("custom_instructions", "")
+
+    if DRY_RUN:
+        log_action("dry_run", "HOOK_DRY_RUN=1 — skipping real action")
+        sys.exit(0)
+        return
 
     try:
         last_lines: list[str] = []

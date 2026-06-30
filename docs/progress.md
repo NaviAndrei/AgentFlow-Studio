@@ -1099,3 +1099,47 @@ src/store/simulationStore.ts (agent/supervisor/loop currently use fakeStreamText
 - ~~**`on_stop_reminder.py` duplicate hook**: fires multiple times per session
   end producing N identical empty template blocks.~~ — fixed Session 14: guard checks
   if the session-name placeholder is in the first 400 chars before prepending.
+
+---
+## Pre-Compact Snapshot — 2026-06-30T09:40
+trigger: manual
+custom_instructions: None
+```
+{"timestamp": "2026-06-29T22:53:49.407027+00:00", "hook": "session_start", "action": "dry_run", "detail": "HOOK_DRY_RUN=1 \u2014 skipping project file reads"}
+{"timestamp": "2026-06-29T22:53:50.011350+00:00", "hook": "bash_guard", "action": "blocked_protected_path", "detail": "Blocked: attempt to delete protected path 'CLAUDE.md' | cmd=cd \"C:\\Users\\IvanA\\Claude_Code\\AgentFLow-Studio\" && echo '{\"tool_name\":\"Bash\",\"tool_input\":{\"command"}
+{"timestamp": "2026-06-29T22:53:50.309665+00:00", "hook": "bash_guard", "action": "allowed", "detail": "cd \"C:\\Users\\IvanA\\Claude_Code\\AgentFLow-Studio\" && echo '{\"tool_name\":\"Bash\",\"tool_input\":{\"command"}
+{"timestamp": "2026-06-29T22:53:52.820349+00:00", "hook": "bash_guard", "action": "allowed", "detail": "ls src/store"}
+{"timestamp": "2026-06-29T22:54:04.013563+00:00", "hook": "bash_guard", "action": "allowed", "detail": "cd \"C:\\Users\\IvanA\\Claude_Code\\AgentFLow-Studio\" && npm run typecheck 2>&1 | tail -30"}
+{"timestamp": "2026-06-29T22:54:28.590028+00:00", "hook": "bash_guard", "action": "allowed", "detail": "cd \"C:\\Users\\IvanA\\Claude_Code\\AgentFLow-Studio\" && npm run build 2>&1 | tail -30"}
+{"timestamp": "2026-06-29T22:54:59.471670+00:00", "hook": "bash_guard", "action": "allowed", "detail": "cd \"C:\\Users\\IvanA\\Claude_Code\\AgentFLow-Studio\" && npm run test 2>&1 | tail -20"}
+{"timestamp": "2026-06-29T22:55:47.036998+00:00", "hook": "on_stop_reminder", "action": "allowed", "detail": "progress.md updated this session"}
+{"timestamp": "2026-06-29T22:56:01.877549+00:00", "hook": "run_tests_tail", "action": "tests_passed", "detail": "returncode=0"}
+{"timestamp": "2026-06-30T04:56:23.717054+00:00", "hook": "session_start", "action": "started"}
+{"timestamp": "2026-06-30T05:27:34.417519+00:00", "hook": "session_start", "action": "started"}
+{"timestamp": "2026-06-30T05:35:13.850594+00:00", "hook": "session_start", "action": "started"}
+{"timestamp": "2026-06-30T05:35:14.593551+00:00", "hook": "inject_context", "action": "no_match", "detail": "prompt length=44"}
+{"timestamp": "2026-06-30T05:37:05.259606+00:00", "hook": "on_stop_reminder", "action": "allowed", "detail": "progress.md updated this session"}
+{"timestamp": "2026-06-30T05:37:21.625662+00:00", "hook": "run_tests_tail", "action": "tests_passed", "detail": "returncode=0"}
+```
+
+---
+## Pre-Compact Snapshot — 2026-06-30T12:31
+trigger: manual
+custom_instructions: None
+```
+{"timestamp": "2026-06-30T06:50:42.694112+00:00", "hook": "bash_guard", "action": "allowed", "detail": "cd \"C:\\Users\\IvanA\\Claude_Code\\AgentFLow-Studio\" && npm run lint 2>&1 | tail -30"}
+{"timestamp": "2026-06-30T06:50:58.309075+00:00", "hook": "post_write_format", "action": "skipped", "detail": "Non-sensitive: C:\\Users\\IvanA\\Claude_Code\\AgentFLow-Studio\\src\\components\\Navbar.tsx"}
+{"timestamp": "2026-06-30T06:50:58.353155+00:00", "hook": "run_eslint", "action": "eslint_skip", "detail": ""}
+{"timestamp": "2026-06-30T06:50:59.905785+00:00", "hook": "auto_format", "action": "formatted", "detail": ".tsx \u2192 C:\\Users\\IvanA\\Claude_Code\\AgentFLow-Studio\\src\\components\\Navbar.tsx"}
+{"timestamp": "2026-06-30T06:51:05.327970+00:00", "hook": "run_tsc", "action": "tsc_pass", "detail": ""}
+{"timestamp": "2026-06-30T06:51:08.418133+00:00", "hook": "bash_guard", "action": "allowed", "detail": "cd \"C:\\Users\\IvanA\\Claude_Code\\AgentFLow-Studio\" && npm run lint 2>&1 | tail -30"}
+{"timestamp": "2026-06-30T06:51:17.714859+00:00", "hook": "bash_guard", "action": "allowed", "detail": "cd \"C:\\Users\\IvanA\\Claude_Code\\AgentFLow-Studio\" && npm run typecheck 2>&1 | tail -40"}
+{"timestamp": "2026-06-30T06:51:28.407295+00:00", "hook": "bash_guard", "action": "allowed", "detail": "cd \"C:\\Users\\IvanA\\Claude_Code\\AgentFLow-Studio\" && npm run build 2>&1 | tail -40"}
+{"timestamp": "2026-06-30T06:52:11.466796+00:00", "hook": "post_write_format", "action": "skipped", "detail": "Non-sensitive: C:\\Users\\IvanA\\Claude_Code\\AgentFLow-Studio\\.mcp.json"}
+{"timestamp": "2026-06-30T06:52:11.532454+00:00", "hook": "run_eslint", "action": "eslint_skip", "detail": ""}
+{"timestamp": "2026-06-30T06:52:13.040807+00:00", "hook": "auto_format", "action": "formatted", "detail": ".json \u2192 C:\\Users\\IvanA\\Claude_Code\\AgentFLow-Studio\\.mcp.json"}
+{"timestamp": "2026-06-30T06:52:18.362370+00:00", "hook": "run_tsc", "action": "tsc_pass", "detail": ""}
+{"timestamp": "2026-06-30T06:52:22.177878+00:00", "hook": "bash_guard", "action": "allowed", "detail": "cd \"C:\\Users\\IvanA\\Claude_Code\\AgentFLow-Studio\" && npm run typecheck 2>&1 | tail -20"}
+{"timestamp": "2026-06-30T06:52:43.537105+00:00", "hook": "on_stop_reminder", "action": "allowed", "detail": "progress.md updated this session"}
+{"timestamp": "2026-06-30T06:52:58.501670+00:00", "hook": "run_tests_tail", "action": "tests_passed", "detail": "returncode=0"}
+```

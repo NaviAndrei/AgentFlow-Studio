@@ -13,6 +13,7 @@ from pathlib import Path
 
 HOOK_LOG = Path(".claude/hook-log.jsonl")
 ANCHOR_FILE = "compact-anchor.md"
+DRY_RUN = os.environ.get("HOOK_DRY_RUN") == "1"
 
 
 def log_action(action: str, detail: str) -> None:
@@ -31,6 +32,16 @@ def log_action(action: str, detail: str) -> None:
 
 
 def main() -> None:
+    try:
+        sys.stdin.read()
+    except Exception:
+        pass
+
+    if DRY_RUN:
+        log_action("dry_run", "HOOK_DRY_RUN=1 — skipping real action")
+        sys.exit(0)
+        return
+
     project_root = os.getcwd()
     anchor_path = os.path.join(project_root, ANCHOR_FILE)
 

@@ -10,16 +10,6 @@
         ]
       }
     ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python .claude/hooks/inject_context.py"
-          }
-        ]
-      }
-    ],
     "PreToolUse": [
       {
         "matcher": "Write|Edit|MultiEdit",
@@ -27,19 +17,6 @@
           {
             "type": "command",
             "command": "python .claude/hooks/secret_scanner.py"
-          }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python .claude/hooks/bash_guard.py"
-          },
-          {
-            "type": "command",
-            "command": "echo \"$CLAUDE_TOOL_INPUT_COMMAND\" | grep -qE 'rm -rf|git push --force|drop table' && exit 2 || exit 0"
           }
         ]
       }
@@ -50,10 +27,6 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python .claude/hooks/post_write_format.py"
-          },
-          {
-            "type": "command",
             "command": "python .claude/hooks/auto_format.py"
           },
           {
@@ -62,11 +35,11 @@
           },
           {
             "type": "command",
-            "command": "npx tsc --noEmit 2>&1 | head -5"
+            "command": "python .claude/hooks/run_tsc.py"
           },
           {
             "type": "command",
-            "command": "npx eslint $CLAUDE_FILE_PATH --max-warnings 0 2>&1 | head -10"
+            "command": "python .claude/hooks/run_eslint.py"
           }
         ]
       }
@@ -76,11 +49,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python .claude/hooks/on_stop_reminder.py"
-          },
-          {
-            "type": "command",
-            "command": "npm run test 2>&1 | tail -3"
+            "command": "python .claude/hooks/run_tests_tail.py"
           }
         ]
       }

@@ -60,11 +60,10 @@ export function Navbar() {
   const toggleMinimap = useUIStore((s) => s.toggleMinimap)
   const animatedEdgesEnabled = useUIStore((s) => s.animatedEdgesEnabled)
   const toggleAnimatedEdges = useUIStore((s) => s.toggleAnimatedEdges)
-  const activeProvider = useLLMConfigStore((s) => s.activeProvider)
   const globalModel = useLLMConfigStore((s) => s.settings[s.activeProvider]?.model ?? '')
   const costEstimate = useMemo(
     () => estimatePreRunCost(nodes, globalModel),
-    [nodes, globalModel, activeProvider],
+    [nodes, globalModel],
   )
   const mcpPanelOpen = useUIStore((s) => s.mcpPanelOpen)
   const toggleMcpPanel = useUIStore((s) => s.toggleMcpPanel)

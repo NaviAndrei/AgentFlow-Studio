@@ -87,7 +87,7 @@ export function NLFlowBuilderModal() {
         )}
         {warnings.length > 0 && (
           <div className="rounded-md border border-amber-500/40 bg-amber-950/40 px-2.5 py-1.5 text-xs text-amber-300">
-            ⚠ {warnings.length} unknown node type(s) were replaced with 'unknown' —
+            ⚠ {warnings.length} unknown node type(s) were replaced with &apos;unknown&apos; —
             you can fix them in the Inspector
           </div>
         )}

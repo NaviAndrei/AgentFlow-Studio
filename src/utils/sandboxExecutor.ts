@@ -46,6 +46,7 @@ export async function runJavaScriptInSandbox(
   document.body.appendChild(iframe)
 
   return new Promise<SandboxResult>((resolve) => {
+    // eslint-disable-next-line prefer-const -- assigned below before first use, kept `let` for clarity of cleanup ordering
     let timer: ReturnType<typeof setTimeout>
     const cleanup = () => {
       clearTimeout(timer)

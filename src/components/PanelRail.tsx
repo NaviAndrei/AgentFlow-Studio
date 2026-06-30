@@ -195,6 +195,7 @@ export function PanelRail() {
       gridRef.current.style.maxHeight = computeMaxHeight()
     }
     return () => window.removeEventListener('resize', handleResize)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- computeMaxHeight is stable per-render derivation, intentionally excluded to avoid re-binding the resize listener
   }, [traceOpen])
 
   // When TraceLog opens, snap rail to valid position if it was dragged low.
@@ -221,6 +222,7 @@ export function PanelRail() {
       }
     }, 0)
     return () => window.clearTimeout(timeoutId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- railOffsetPx read as closure value intentionally; see comment above to prevent re-runs on every drag move
   }, [traceOpen])
 
   // Clear the imperative force-expand override, returning to the

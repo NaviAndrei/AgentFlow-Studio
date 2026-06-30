@@ -13,7 +13,7 @@ export function JsonValue({ value }: { value: unknown }) {
     return <span className="text-gray-500">null</span>
   }
   if (typeof value === 'string') {
-    return <span className="text-amber-300/90">"{value}"</span>
+    return <span className="text-amber-300/90">&quot;{value}&quot;</span>
   }
   if (typeof value === 'number') {
     return <span className="text-violet-300">{value}</span>

@@ -6,12 +6,14 @@ Windows-compatible.
 """
 
 import sys
+import os
 import json
 import subprocess
 from pathlib import Path
 from datetime import datetime, timezone
 
 HOOK_LOG = Path(".claude/hook-log.jsonl")
+DRY_RUN = os.environ.get("HOOK_DRY_RUN") == "1"
 
 # Formatter mappings
 PRETTIER_EXTS = {".ts", ".tsx", ".js", ".jsx", ".json", ".md", ".css"}
@@ -96,6 +98,10 @@ def main():
 
     # Exit silently if file doesn't exist
     if not file_path.exists():
+        sys.exit(0)
+
+    if DRY_RUN:
+        log_action("dry_run", "HOOK_DRY_RUN=1 — skipping real action")
         sys.exit(0)
 
     ext = file_path.suffix.lower()

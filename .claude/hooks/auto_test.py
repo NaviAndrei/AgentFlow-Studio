@@ -1,9 +1,26 @@
 #!/usr/bin/env python3
 """PostToolUse hook: Auto-run sibling test files after source edits."""
+
 import json
+import os
 import sys
 import subprocess
 from pathlib import Path
+
+DRY_RUN = os.environ.get("HOOK_DRY_RUN") == "1"
+
+
+def log_action(action: str, detail: str = "") -> None:
+    try:
+        log_file = Path(".claude/hook-log.jsonl")
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+        entry = {"hook": "auto_test", "action": action}
+        if detail:
+            entry["detail"] = detail[:200]
+        with open(log_file, "a") as f:
+            f.write(json.dumps(entry) + "\n")
+    except Exception:
+        pass
 
 
 def main():
@@ -49,6 +66,10 @@ def main():
     if not test_file:
         sys.exit(0)
 
+    if DRY_RUN:
+        log_action("dry_run_test", str(test_file))
+        sys.exit(0)
+
     # Run vitest with timeout. shell=True so Windows resolves `npx` (npx.cmd) —
     # a bare ["npx", ...] list raises FileNotFoundError under shell=False.
     # Matches the subprocess convention in on_stop_reminder.py.
@@ -58,7 +79,7 @@ def main():
             shell=True,
             capture_output=True,
             text=True,
-            timeout=30
+            timeout=30,
         )
     except subprocess.TimeoutExpired:
         # On timeout: exit 0 silently
@@ -73,19 +94,13 @@ def main():
 
     if result.returncode == 0:
         # Tests passed
-        log_entry = {
-            "action": "tests_passed",
-            "detail": str(test_file)
-        }
+        log_entry = {"action": "tests_passed", "detail": str(test_file)}
         with open(log_file, "a") as f:
             f.write(json.dumps(log_entry) + "\n")
         sys.exit(0)
     else:
         # Tests failed
-        log_entry = {
-            "action": "tests_failed",
-            "detail": str(test_file)
-        }
+        log_entry = {"action": "tests_failed", "detail": str(test_file)}
         with open(log_file, "a") as f:
             f.write(json.dumps(log_entry) + "\n")
 
@@ -96,7 +111,7 @@ def main():
         # Print decision JSON and exit 2
         decision = {
             "decision": "block",
-            "reason": f"auto_test: tests failed for {test_file}:\n{last_output}"
+            "reason": f"auto_test: tests failed for {test_file}:\n{last_output}",
         }
         print(json.dumps(decision))
         sys.exit(2)

@@ -148,7 +148,7 @@ function migrate(
   raw: Record<string, unknown>,
   version: number,
 ): Record<string, unknown> {
-  let doc = raw
+  const doc = raw
   for (let v = version; v < CANVAS_SCHEMA_VERSION; v++) {
     switch (v) {
       // case 1: doc = upgradeV1toV2(doc); break

@@ -1,6 +1,27 @@
 import json
+import os
 import subprocess
+from datetime import datetime, timezone
 from pathlib import Path
+
+HOOK_LOG = Path(".claude/hook-log.jsonl")
+DRY_RUN = os.environ.get("HOOK_DRY_RUN") == "1"
+
+
+def log_action(action: str, detail: str = "") -> None:
+    try:
+        HOOK_LOG.parent.mkdir(parents=True, exist_ok=True)
+        entry = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "hook": "session_start",
+            "action": action,
+        }
+        if detail:
+            entry["detail"] = detail[:200]
+        with open(HOOK_LOG, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry) + "\n")
+    except Exception:
+        pass
 
 
 def read_head(path: Path, limit: int = 2000) -> str:
@@ -26,6 +47,22 @@ def run_git(args: list[str]) -> str:
 
 
 def main() -> None:
+    log_action("started")
+
+    try:
+        sys.stdin.read()
+    except Exception:
+        pass
+
+    if DRY_RUN:
+        log_action("dry_run", "HOOK_DRY_RUN=1 — skipping project file reads")
+        print(
+            json.dumps(
+                {"additionalContext": "", "systemMessage": "session_start: dry run"}
+            )
+        )
+        return
+
     parts = []
     try:
         root = Path(__file__).resolve().parents[2]
